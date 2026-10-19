@@ -67,6 +67,7 @@ export const ExcalidrawAPIProvider = ({
 const ExcalidrawBase = (props: ExcalidrawProps) => {
   const {
     onExport,
+    desktopIntegration,
     className,
     ownerDocument = document,
     onChange,
@@ -209,6 +210,7 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
       <InitializeApp langCode={langCode} theme={theme}>
         <App
           onExport={onExport}
+          desktopIntegration={desktopIntegration}
           className={className}
           ownerDocument={ownerDocument}
           onChange={onChange}
@@ -252,7 +254,7 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
           onDuplicate={onDuplicate}
           validateEmbeddable={validateEmbeddable}
           renderEmbeddable={renderEmbeddable}
-          aiEnabled={aiEnabled !== false}
+          aiEnabled={aiEnabled !== false && !desktopIntegration?.localOnly}
           showDeprecatedFonts={showDeprecatedFonts}
           renderScrollbars={renderScrollbars}
           viewportStatusFrame={viewportStatusFrame}
@@ -556,3 +558,6 @@ export function useExcalidrawStateValue(
 export { _useOnAppStateChange as useOnExcalidrawStateChange };
 
 export { applyDarkModeFilter, getStrokeWidthByKey };
+
+export { setFileSystemAdapter } from "./data/filesystem";
+export type { FileSaveOptions, FileSystemAdapter } from "./data/filesystem";

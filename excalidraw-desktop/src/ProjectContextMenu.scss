@@ -1,0 +1,87 @@
+.excalidraw.desktop-shell {
+  .desktop-file-menu-trigger {
+    position: absolute;
+    bottom: 16px;
+    right: 10px;
+    display: flex;
+    padding: 5px;
+    border: 0;
+    border-radius: var(--border-radius-md);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+
+    &:hover,
+    &[aria-expanded="true"] {
+      background: var(--button-hover-bg);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 2px;
+    }
+
+    svg {
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  .desktop-project-context-menu {
+    position: fixed;
+    z-index: var(--zIndex-ui-context-menu);
+    width: max-content;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    overflow: auto;
+    font-family: inherit;
+    animation: desktop-project-menu-enter 120ms ease-out;
+    transform-origin: top center;
+    -webkit-app-region: no-drag;
+
+    .context-menu-item {
+      display: block;
+      min-width: 0;
+      padding-top: 7px;
+      padding-bottom: 7px;
+      font-size: 13px;
+
+      &:focus-visible {
+        color: var(--popup-bg-color);
+        background-color: var(--select-highlight-color);
+        outline: none;
+      }
+
+      &:disabled {
+        opacity: 0.45;
+        color: var(--popup-text-color);
+        background: transparent;
+        cursor: default;
+      }
+    }
+
+    .context-menu-item__label {
+      margin-inline-end: 0;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+  }
+}
+
+@keyframes desktop-project-menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .excalidraw.desktop-shell .desktop-project-context-menu {
+    animation: none;
+  }
+}

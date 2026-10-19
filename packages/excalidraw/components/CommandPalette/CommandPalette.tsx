@@ -581,7 +581,8 @@ function CommandPaletteInner({
           category: DEFAULT_CATEGORIES.tools,
           icon: mermaidLogoIcon,
           viewMode: false,
-          predicate: appProps.aiEnabled,
+          predicate:
+            appProps.aiEnabled || !!appProps.desktopIntegration?.localOnly,
           perform: () => {
             setAppState((state) => ({
               ...state,

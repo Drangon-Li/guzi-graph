@@ -56,7 +56,11 @@ import type {
   ExcalidrawTextContainer,
 } from "@excalidraw/element/types";
 
-import { actionSaveFileToDisk, actionSaveToActiveFile } from "../actions";
+import {
+  actionLoadScene,
+  actionSaveFileToDisk,
+  actionSaveToActiveFile,
+} from "../actions";
 
 import {
   parseClipboard,
@@ -871,6 +875,10 @@ export const textWysiwyg = ({
       event.preventDefault();
       submittedViaKeyboard = true;
       handleSubmit();
+    } else if (app.props.desktopIntegration && actionLoadScene.keyTest(event)) {
+      event.preventDefault();
+      handleSubmit();
+      app.actionManager.executeAction(actionLoadScene, "keyboard");
     } else if (actionSaveToActiveFile.keyTest(event)) {
       event.preventDefault();
       handleSubmit();

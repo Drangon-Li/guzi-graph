@@ -840,6 +840,19 @@ export type ElementRenderOffsets = ReadonlyMap<
 >;
 
 export interface ExcalidrawProps {
+  desktopIntegration?: {
+    save: (
+      data: {
+        elements: readonly ExcalidrawElement[];
+        appState: AppState;
+        files: BinaryFiles;
+      },
+      saveAs: boolean,
+    ) => Promise<boolean>;
+    open: () => Promise<void>;
+    /** Hide online services while retaining local tools and shortcut help. */
+    localOnly?: boolean;
+  };
   className?: string;
   /**
    * Document that owns Excalidraw's mounted DOM.
@@ -1364,6 +1377,10 @@ export type ExcalidrawImperativeAPIEventMap = {
 export interface ExcalidrawImperativeAPI {
   /** Whether the editor has been unmounted and the API is no longer usable. */
   isDestroyed: boolean;
+  /** Submit active text editing before reading or switching documents. */
+  commitEditing: () => void;
+  /** Commit editing and use the optional desktop document save handler. */
+  desktopSave: (saveAs?: boolean) => Promise<boolean>;
   updateScene: InstanceType<typeof App>["updateScene"];
   applyDeltas: InstanceType<typeof App>["applyDeltas"];
   mutateElement: InstanceType<typeof App>["mutateElement"];

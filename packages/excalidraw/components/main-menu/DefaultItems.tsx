@@ -72,6 +72,7 @@ export const LoadScene = () => {
   const { t } = useI18n();
   const actionManager = useExcalidrawActionManager();
   const elements = useExcalidrawElements();
+  const { desktopIntegration } = useAppProps();
 
   if (!actionManager.isActionEnabled(actionLoadScene)) {
     return null;
@@ -79,6 +80,7 @@ export const LoadScene = () => {
 
   const handleSelect = async () => {
     if (
+      desktopIntegration ||
       !elements.length ||
       (await openConfirmModal({
         title: t("overwriteConfirm.modal.loadFromFile.title"),
@@ -373,6 +375,10 @@ Export.displayName = "Export";
 
 export const Socials = () => {
   const { t } = useI18n();
+  const { desktopIntegration } = useAppProps();
+  if (desktopIntegration?.localOnly) {
+    return null;
+  }
 
   return (
     <>

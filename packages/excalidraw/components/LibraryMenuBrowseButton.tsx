@@ -2,6 +2,8 @@ import { VERSIONS } from "@excalidraw/common";
 
 import { t } from "../i18n";
 
+import { useAppProps } from "./App";
+
 import type { ExcalidrawProps, UIAppState } from "../types";
 
 const LibraryMenuBrowseButton = ({
@@ -13,6 +15,10 @@ const LibraryMenuBrowseButton = ({
   theme: UIAppState["theme"];
   id: string;
 }) => {
+  const { desktopIntegration } = useAppProps();
+  if (desktopIntegration?.localOnly) {
+    return null;
+  }
   const referrer =
     libraryReturnUrl || window.location.origin + window.location.pathname;
   return (

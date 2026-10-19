@@ -276,6 +276,7 @@ import {
   actionToggleCropEditor,
 } from "../actions";
 import { actionWrapTextInContainer } from "../actions/actionBoundText";
+import { saveDesktopDocument } from "../data/desktop";
 import { actionPaste } from "../actions/actionClipboard";
 import { actionCopyElementLink } from "../actions/actionElementLink";
 import { actionUnlockAllElements } from "../actions/actionElementLock";
@@ -774,6 +775,8 @@ class App extends React.Component<AppProps, AppState> {
   private createExcalidrawAPI(): ExcalidrawImperativeAPI {
     const api: ExcalidrawImperativeAPI = {
       isDestroyed: false,
+      commitEditing: () => this.text.textWysiwygSubmitHandler?.(),
+      desktopSave: (saveAs = false) => saveDesktopDocument(this, saveAs),
       updateScene: this.updateScene,
       applyDeltas: this.applyDeltas,
       mutateElement: this.mutateElement,

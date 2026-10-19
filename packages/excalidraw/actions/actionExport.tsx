@@ -14,6 +14,7 @@ import { Tooltip } from "../components/Tooltip";
 import { ExportIcon, questionCircle, saveAs } from "../components/icons";
 import { loadFromJSON, saveAsJSON } from "../data";
 import { isImageFileHandle } from "../data/blob";
+import { saveDesktopDocument } from "../data/desktop";
 import { nativeFileSystemSupported } from "../data/filesystem";
 
 import { resaveAsImageWithScene } from "../data/resave";
@@ -258,11 +259,15 @@ export const actionSaveToActiveFile = register({
   predicate: (elements, appState, props, app) => {
     return (
       !!app.props.UIOptions.canvasActions.saveToActiveFile &&
-      !!appState.fileHandle &&
+      (!!appState.fileHandle || !!app.props.desktopIntegration) &&
       !appState.viewModeEnabled
     );
   },
   perform: async (elements, appState, value, app) => {
+    if (app.props.desktopIntegration) {
+      await saveDesktopDocument(app, false);
+      return false;
+    }
     if (onExportInProgress) {
       return false;
     }
@@ -332,6 +337,10 @@ export const actionSaveFileToDisk = register({
   viewMode: true,
   trackEvent: { category: "export" },
   perform: async (elements, appState, value, app) => {
+    if (app.props.desktopIntegration) {
+      await saveDesktopDocument(app, true);
+      return false;
+    }
     if (onExportInProgress) {
       return false;
     }
@@ -376,14 +385,14 @@ export const actionSaveFileToDisk = register({
     event.key.toLowerCase() === KEYS.S &&
     event.shiftKey &&
     event[KEYS.CTRL_OR_CMD],
-  PanelComponent: ({ updateData }) => (
+  PanelComponent: ({ updateData, appProps }) => (
     <IconButton
       type="button"
       icon={saveAs}
       title={t("buttons.saveAs")}
       aria-label={t("buttons.saveAs")}
       showAriaLabel={useEditorInterface().formFactor === "phone"}
-      hidden={!nativeFileSystemSupported}
+      hidden={!nativeFileSystemSupported && !appProps.desktopIntegration}
       onClick={() => updateData(null)}
       data-testid="save-as-button"
     />
@@ -401,6 +410,11 @@ export const actionLoadScene = register({
   },
   perform: async (elements, appState, _, app) => {
     try {
+      if (app.props.desktopIntegration) {
+        app.api.commitEditing();
+        await app.props.desktopIntegration.open();
+        return false;
+      }
       const {
         elements: loadedElements,
         appState: loadedAppState,

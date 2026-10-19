@@ -46,19 +46,36 @@ export const fileOpen = async <M extends boolean | undefined = false>(opts: {
   return (await normalizeFile(files)) as RetType;
 };
 
-export const fileSave = (
+export type FileSaveOptions = {
+  /** supply without the extension */
+  name: string;
+  extension: FILE_EXTENSION;
+  mimeTypes?: string[];
+  description: string;
+  fileHandle?: FileSystemFileHandle | null;
+};
+
+export type FileSystemAdapter = {
+  fileSave: (
+    blob: Blob,
+    opts: FileSaveOptions,
+  ) => Promise<FileSystemFileHandle | null>;
+};
+
+let fileSystemAdapter: FileSystemAdapter | null = null;
+
+/** Set once by a desktop host; pass null to restore browser file saving. */
+export const setFileSystemAdapter = (adapter: FileSystemAdapter | null) => {
+  fileSystemAdapter = adapter;
+};
+
+export const fileSave = async (
   blob: Blob | Promise<Blob>,
-  opts: {
-    /** supply without the extension */
-    name: string;
-    /** file extension */
-    extension: FILE_EXTENSION;
-    mimeTypes?: string[];
-    description: string;
-    /** existing FileSystemFileHandle */
-    fileHandle?: FileSystemFileHandle | null;
-  },
+  opts: FileSaveOptions,
 ) => {
+  if (fileSystemAdapter) {
+    return fileSystemAdapter.fileSave(await blob, opts);
+  }
   return _fileSave(
     blob,
     {

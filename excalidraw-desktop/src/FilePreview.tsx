@@ -1,0 +1,162 @@
+import { useEffect, useRef, useState } from "react";
+
+import { getFontString } from "@excalidraw/common";
+import { getNonDeletedElements, loadFromBlob } from "@excalidraw/excalidraw";
+import { ExcalLogo } from "@excalidraw/excalidraw/components/icons";
+import { restoreAppState } from "@excalidraw/excalidraw/data/restore";
+import { Fonts } from "@excalidraw/excalidraw/fonts";
+import { exportToCanvas } from "@excalidraw/excalidraw/scene/export";
+
+import type { ExcalidrawElement } from "@excalidraw/element/types";
+
+import type { ProjectFile } from "./shared";
+
+const MAX_THUMBNAIL_SIZE = 720;
+const thumbnails = new WeakMap<Document, Map<string, Promise<string | null>>>();
+
+const loadThumbnailFonts = async (
+  elements: readonly ExcalidrawElement[],
+  ownerDocument: Document,
+) => {
+  await Fonts.loadElementsFonts(elements, ownerDocument);
+  const textPerFont = new Map<string, string>();
+  for (const element of elements) {
+    if (element.type === "text") {
+      const font = getFontString(element);
+      textPerFont.set(
+        font,
+        (textPerFont.get(font) || "") + element.originalText + element.text,
+      );
+    }
+  }
+  // Load with the actual glyphs, including Xiaolai in the hand-drawn CJK stack.
+  // Fonts.loadElementsFonts tolerates failed requests; this also lets us retry
+  // instead of caching a raster made with an unintended system fallback.
+  await Promise.all(
+    Array.from(textPerFont, ([font, text]) =>
+      ownerDocument.fonts.load(font, text),
+    ),
+  );
+};
+
+const getThumbnail = (
+  file: ProjectFile,
+  root: HTMLElement,
+  theme: "light" | "dark",
+) => {
+  const ownerDocument = root.ownerDocument;
+  const ownerWindow = ownerDocument.defaultView!;
+  let cache = thumbnails.get(ownerDocument);
+  if (!cache) {
+    cache = new Map();
+    thumbnails.set(ownerDocument, cache);
+  }
+  const key = JSON.stringify([file.path, file.modifiedAt, file.size, theme]);
+  let thumbnail = cache.get(key);
+  if (!thumbnail) {
+    thumbnail = (async () => {
+      const source = await ownerWindow.desktop.readFile(file.path);
+      const scene = await loadFromBlob(
+        new ownerWindow.Blob([source.content]),
+        null,
+        null,
+      );
+      const elements = getNonDeletedElements(scene.elements || []);
+      if (!elements.length) {
+        return null;
+      }
+      const appState = {
+        ...restoreAppState(scene.appState, null),
+        exportWithDarkMode: theme === "dark",
+        width: 0,
+        height: 0,
+        offsetTop: 0,
+        offsetLeft: 0,
+      };
+      const canvas = await exportToCanvas(
+        elements,
+        appState,
+        scene.files || {},
+        {
+          exportBackground: true,
+          viewBackgroundColor: appState.viewBackgroundColor,
+          exportPadding: 24,
+        },
+        (width, height) => {
+          const scale = MAX_THUMBNAIL_SIZE / Math.max(width, height);
+          const canvas = ownerDocument.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(width * scale));
+          canvas.height = Math.max(1, Math.round(height * scale));
+          return { canvas, scale };
+        },
+        () => loadThumbnailFonts(elements, ownerDocument),
+      );
+      return canvas.toDataURL("image/png");
+    })();
+    cache.set(key, thumbnail);
+    const pending = thumbnail;
+    void thumbnail.catch(() => {
+      if (cache.get(key) === pending) {
+        cache.delete(key);
+      }
+    });
+    if (cache.size > 120) {
+      cache.delete(cache.keys().next().value!);
+    }
+  }
+  return thumbnail;
+};
+
+export const FilePreview = ({
+  file,
+  root,
+  theme,
+}: {
+  file: ProjectFile;
+  root: HTMLElement;
+  theme: "light" | "dark";
+}) => {
+  const container = useRef<HTMLDivElement>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let disposed = false;
+    setPreview(null);
+    setFailed(false);
+    const node = container.current!;
+    const ownerWindow = node.ownerDocument.defaultView!;
+    const load = () => {
+      void getThumbnail(file, root, theme).then(
+        (value) => !disposed && setPreview(value),
+        () => !disposed && setFailed(true),
+      );
+    };
+    const observer = new ownerWindow.IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          observer.disconnect();
+          load();
+        }
+      },
+      { rootMargin: "160px" },
+    );
+    observer.observe(node);
+    return () => {
+      disposed = true;
+      observer.disconnect();
+    };
+  }, [file, root, theme]);
+  return (
+    <div className="desktop-file-preview" ref={container}>
+      {preview ? (
+        <img src={preview} alt="" draggable={false} />
+      ) : (
+        <span
+          className={failed ? "desktop-preview-error" : "desktop-preview-empty"}
+        >
+          {failed ? "预览不可用" : ExcalLogo}
+        </span>
+      )}
+    </div>
+  );
+};

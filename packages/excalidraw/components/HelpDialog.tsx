@@ -10,7 +10,7 @@ import { probablySupportsClipboardBlob } from "../clipboard";
 import { t } from "../i18n";
 import { getShortcutKey } from "../shortcut";
 
-import { useExcalidrawActionManager } from "./App";
+import { useAppProps, useExcalidrawActionManager } from "./App";
 import { Dialog } from "./Dialog";
 import { ExternalLinkIcon, GithubIcon, youtubeIcon } from "./icons";
 
@@ -127,6 +127,7 @@ const ShortcutKey = (props: { children: React.ReactNode }) => (
 
 export const HelpDialog = ({ onClose }: { onClose?: () => void }) => {
   const actionManager = useExcalidrawActionManager();
+  const { desktopIntegration } = useAppProps();
   const handleClose = React.useCallback(() => {
     if (onClose) {
       onClose();
@@ -140,7 +141,7 @@ export const HelpDialog = ({ onClose }: { onClose?: () => void }) => {
         title={t("helpDialog.title")}
         className={"HelpDialog"}
       >
-        <Header />
+        {!desktopIntegration?.localOnly && <Header />}
         <Section title={t("helpDialog.shortcuts")}>
           <ShortcutIsland
             className="HelpDialog__island--tools"

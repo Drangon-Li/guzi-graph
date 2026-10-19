@@ -111,6 +111,7 @@ interface LayerUIProps {
 const DefaultMainMenu: React.FC<{
   UIOptions: AppProps["UIOptions"];
 }> = ({ UIOptions }) => {
+  const { desktopIntegration } = useAppProps();
   return (
     <MainMenu __fallback>
       <MainMenu.DefaultItems.LoadScene />
@@ -124,10 +125,14 @@ const DefaultMainMenu: React.FC<{
       <MainMenu.DefaultItems.SearchMenu />
       <MainMenu.DefaultItems.Help />
       <MainMenu.DefaultItems.ClearCanvas />
-      <MainMenu.Separator />
-      <MainMenu.Group title="Excalidraw links">
-        <MainMenu.DefaultItems.Socials />
-      </MainMenu.Group>
+      {!desktopIntegration?.localOnly && (
+        <>
+          <MainMenu.Separator />
+          <MainMenu.Group title="Excalidraw links">
+            <MainMenu.DefaultItems.Socials />
+          </MainMenu.Group>
+        </>
+      )}
       <MainMenu.Separator />
       <MainMenu.DefaultItems.ToggleTheme allowSystemTheme={false} />
       <MainMenu.DefaultItems.ChangeCanvasBackground />
