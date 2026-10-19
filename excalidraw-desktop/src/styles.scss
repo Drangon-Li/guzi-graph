@@ -60,18 +60,6 @@ body,
     }
   }
 
-  :where(.desktop-projects, .desktop-modal) select {
-    min-height: 36px;
-    max-width: 100%;
-    border: 1px solid var(--input-border-color);
-    border-radius: var(--border-radius-lg);
-    background: var(--island-bg-color);
-    color: var(--text-primary-color);
-    font: inherit;
-    padding: 0 12px;
-    outline-color: var(--color-primary);
-  }
-
   .desktop-titlebar {
     height: 48px;
     flex: 0 0 48px;
@@ -538,7 +526,9 @@ body,
     width: 490px;
     max-width: 100%;
     max-height: 100%;
-    overflow: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     border: 1px solid var(--dialog-border-color);
     border-radius: 12px;
     box-shadow: var(--modal-shadow);
@@ -548,7 +538,9 @@ body,
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 18px 24px 10px;
+    padding: 18px 24px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--default-border-color);
   }
   .desktop-modal h2 {
     font-size: 19px;
@@ -564,7 +556,14 @@ body,
     padding: 5px;
   }
   .desktop-modal-body {
-    padding: 10px 24px 25px;
+    min-height: 0;
+    overflow: auto;
+    padding: 20px 24px;
+  }
+  .desktop-modal > form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
   .desktop-modal-body h3 {
     margin: 15px 0 12px;
@@ -587,14 +586,61 @@ body,
     gap: 10px;
     padding: 16px 24px;
     border-top: 1px solid var(--default-border-color);
+    flex-shrink: 0;
   }
-  .desktop-theme-options {
+  .desktop-settings-body {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .desktop-settings-section {
+    padding: 20px 0;
+    + .desktop-settings-section {
+      border-top: 1px solid var(--default-border-color);
+    }
+    h3 {
+      margin: 0 0 14px;
+    }
+    > .desktop-segmented-control {
+      display: flex;
+    }
+    p {
+      margin: 10px 0 0;
+      font-size: 12px;
+    }
+    .desktop-settings-help {
+      margin-top: -4px;
+      padding-inline-start: 25px;
+    }
+  }
+  .desktop-settings-row {
     display: flex;
-    gap: 10px;
-    margin-bottom: 30px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    + .desktop-settings-row {
+      margin-top: 16px;
+    }
   }
-  .desktop-theme-options .excalidraw-button {
-    flex: 1;
+  .desktop-settings-section
+    > .desktop-segmented-control
+    + .desktop-settings-row {
+    margin-top: 16px;
+  }
+  .desktop-settings-directory {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    border: 1px solid var(--default-border-color);
+    border-radius: 8px;
+    background: var(--color-surface-low);
+    .desktop-settings-path {
+      flex: 1;
+      min-width: 0;
+      margin: 0;
+      font-size: 12px;
+    }
   }
   .desktop-form-label {
     display: flex;
@@ -691,5 +737,30 @@ body,
     .desktop-file-card {
       transition: none;
     }
+  }
+}
+
+.excalidraw.desktop-shell {
+  .desktop-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0;
+    font-size: 14px;
+    line-height: 1.5;
+
+    input {
+      accent-color: var(--color-primary);
+    }
+  }
+
+  .desktop-danger {
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+  }
+
+  .dropdown-menu .dropdown-menu-item {
+    font-size: 13px;
+    min-height: 34px;
   }
 }

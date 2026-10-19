@@ -32,6 +32,12 @@
     position: fixed;
     z-index: var(--zIndex-ui-context-menu);
     width: max-content;
+    min-width: 210px;
+    padding: 5px;
+    border: 1px solid var(--default-border-color);
+    border-radius: 10px;
+    background: var(--popup-bg-color);
+    box-shadow: 0 8px 28px #0002;
     max-width: calc(100vw - 16px);
     max-height: calc(100vh - 16px);
     overflow: auto;
@@ -41,11 +47,34 @@
     -webkit-app-region: no-drag;
 
     .context-menu-item {
-      display: block;
+      display: flex;
+      align-items: center;
+      gap: 10px;
       min-width: 0;
-      padding-top: 7px;
-      padding-bottom: 7px;
+      min-height: 34px;
+      padding: 7px 10px;
+      border-radius: 5px;
       font-size: 13px;
+      line-height: 20px;
+
+      &.has-separator {
+        margin-top: 9px;
+        position: relative;
+
+        &::before {
+          content: "";
+          position: absolute;
+          top: -5px;
+          left: 5px;
+          right: 5px;
+          border-top: 1px solid var(--default-border-color);
+          pointer-events: none;
+        }
+      }
+
+      &.is-danger {
+        color: var(--color-danger);
+      }
 
       &:focus-visible {
         color: var(--popup-bg-color);
@@ -58,6 +87,18 @@
         color: var(--popup-text-color);
         background: transparent;
         cursor: default;
+      }
+    }
+
+    .desktop-project-menu-icon {
+      display: flex;
+      flex: 0 0 16px;
+      width: 16px;
+      height: 16px;
+
+      svg {
+        width: 16px;
+        height: 16px;
       }
     }
 

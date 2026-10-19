@@ -1,0 +1,163 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { EventEmitter } = require("node:events");
+const fs = require("node:fs/promises");
+const path = require("node:path");
+const { pathToFileURL } = require("node:url");
+const { renderPdf, validatePdfRequest } = require("./pdf.cjs");
+
+const request = {
+  name: "drawing",
+  svg: '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480"><rect width="960" height="480" fill="#ff00ff"/></svg>',
+  width: 960,
+  height: 480,
+};
+
+function fixture(failure) {
+  const calls = { destroyed: 0 };
+  class PrintWindow {
+    constructor(options) {
+      calls.options = options;
+      const session = {
+        setPermissionRequestHandler: (handler) => {
+          calls.permissionRequest = handler;
+        },
+        setPermissionCheckHandler: (handler) => {
+          calls.permissionCheck = handler;
+        },
+        webRequest: {
+          onBeforeRequest: (handler) => {
+            calls.request = handler;
+          },
+        },
+      };
+      this.webContents = Object.assign(new EventEmitter(), {
+        session,
+        setWindowOpenHandler: (handler) => {
+          calls.open = handler;
+        },
+        executeJavaScript: async (script) => {
+          calls.script = script;
+          if (failure === "decode") throw new Error("decode failed");
+        },
+        printToPDF: async (options) => {
+          calls.print = options;
+          if (failure === "print") throw new Error("print failed");
+          return Buffer.from("%PDF-fixture");
+        },
+      });
+    }
+    async loadFile(file) {
+      calls.file = file;
+      calls.html = await fs.readFile(file, "utf8");
+      if (failure === "load")
+        throw new Error(`load failed: ${"data:".repeat(10000)}`);
+    }
+    isDestroyed() {
+      return calls.destroyed > 0;
+    }
+    destroy() {
+      calls.destroyed++;
+    }
+  }
+  return { PrintWindow, calls };
+}
+
+test("PDF uses one proportional page in inches, a hidden isolated sandbox and destroys the window", async () => {
+  const { PrintWindow, calls } = fixture();
+  assert.equal(
+    (await renderPdf(PrintWindow, request)).toString(),
+    "%PDF-fixture",
+  );
+  assert.equal(calls.options.show, false);
+  assert.equal(calls.options.webPreferences.preload, undefined);
+  assert.equal(calls.options.webPreferences.sandbox, true);
+  assert.equal(calls.options.webPreferences.nodeIntegration, false);
+  assert.equal(calls.options.webPreferences.contextIsolation, true);
+  assert.match(calls.options.webPreferences.partition, /^pdf-/);
+  assert.deepEqual(calls.print.pageSize, { width: 10, height: 5 });
+  assert.equal(calls.print.printBackground, true);
+  assert.equal(calls.print.preferCSSPageSize, true);
+  assert.deepEqual(calls.print.margins, {
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+  });
+  assert.equal(calls.destroyed, 1);
+  const html = calls.html;
+  assert.match(html, /@page\{size:10in 5in;margin:0\}/);
+  assert.match(html, /<img src="data:image\/svg\+xml;base64,/);
+  assert.match(html, /script-src 'none'/);
+  assert.match(calls.script, /document.fonts.ready/);
+  assert.match(calls.script, /image.decode\(\)/);
+  for (const url of [
+    "https://example.com/image.png",
+    "file:///private/image.png",
+    "app://local/index.html",
+  ])
+    calls.request({ url }, ({ cancel }) => assert.equal(cancel, true));
+  calls.request({ url: "data:image/svg+xml;base64,AA==" }, ({ cancel }) =>
+    assert.equal(cancel, false),
+  );
+  calls.request({ url: pathToFileURL(calls.file).href }, ({ cancel }) =>
+    assert.equal(cancel, false),
+  );
+  await assert.rejects(fs.stat(path.dirname(calls.file)), { code: "ENOENT" });
+  assert.equal(calls.permissionCheck(), false);
+  calls.permissionRequest(null, "media", (allowed) =>
+    assert.equal(allowed, false),
+  );
+  assert.equal(calls.open().action, "deny");
+});
+
+for (const failure of ["load", "decode", "print"])
+  test(`PDF destroys its hidden window when ${failure} fails`, async () => {
+    const { PrintWindow, calls } = fixture(failure);
+    await assert.rejects(renderPdf(PrintWindow, request), {
+      message: "PDF 导出失败，请重试。",
+    });
+    assert.equal(calls.destroyed, 1);
+    await assert.rejects(fs.stat(path.dirname(calls.file)), { code: "ENOENT" });
+  });
+
+test("PDF rejects invalid sizes and non-SVG data before opening a window", () => {
+  for (const update of [
+    { width: NaN },
+    { height: Infinity },
+    { width: -1 },
+    { height: 0 },
+    { svg: "<html>bad</html>" },
+    { svg: null },
+    { name: null },
+    { name: " " },
+  ])
+    assert.throws(() => validatePdfRequest({ ...request, ...update }), /无效/);
+});
+
+test("PDF metadata title uses the drawing name with HTML escaped characters", async () => {
+  const { PrintWindow, calls } = fixture();
+  await renderPdf(PrintWindow, {
+    ...request,
+    name: `A & <drawing> "quote" 'name'`,
+  });
+  const html = calls.html;
+  assert.match(
+    html,
+    /<title>A &amp; &lt;drawing&gt; &quot;quote&quot; &#39;name&#39;<\/title>/,
+  );
+  assert.equal(html.includes("<drawing>"), false);
+});
+
+test("large SVG exports load a temporary HTML file instead of a navigation data URL", async () => {
+  const { PrintWindow, calls } = fixture();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg"><!--${"x".repeat(
+    4 * 1024 * 1024,
+  )}--></svg>`;
+  await renderPdf(PrintWindow, { ...request, svg });
+  assert.equal(typeof calls.file, "string");
+  assert.ok(calls.html.length > 4 * 1024 * 1024);
+  assert.match(calls.file, /excalidraw-pdf-[^/]+[/]drawing.html$/);
+  assert.equal(calls.destroyed, 1);
+  await assert.rejects(fs.stat(path.dirname(calls.file)), { code: "ENOENT" });
+});

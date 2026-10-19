@@ -66,6 +66,7 @@ const mount = (
     onEdit: vi.fn(),
     onSettings: vi.fn(),
     onRecovery: vi.fn(),
+    onRemove: vi.fn(),
   };
   const view = render(<Projects {...props} />, { container: root });
   const trigger = (index = 0) =>
@@ -179,17 +180,17 @@ describe("desktop project menus", () => {
       view.getByRole("menuitem", { name: "在 Finder 中显示" }),
     ).toHaveFocus();
     fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(view.getByRole("menuitem", { name: "删除" })).toHaveFocus();
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(view.getByRole("menuitem", { name: "彻底删除" })).toHaveFocus();
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
     expect(view.getByRole("menuitem", { name: "打开" })).toHaveFocus();
     fireEvent.keyDown(menu, { key: "ArrowUp" });
-    expect(
-      view.getByRole("menuitem", { name: "在 Finder 中显示" }),
-    ).toHaveFocus();
+    expect(view.getByRole("menuitem", { name: "彻底删除" })).toHaveFocus();
     fireEvent.keyDown(menu, { key: "Home" });
     expect(view.getByRole("menuitem", { name: "打开" })).toHaveFocus();
     fireEvent.keyDown(menu, { key: "End" });
-    expect(
-      view.getByRole("menuitem", { name: "在 Finder 中显示" }),
-    ).toHaveFocus();
+    expect(view.getByRole("menuitem", { name: "彻底删除" })).toHaveFocus();
     fireEvent.keyDown(menu, { key: "Tab" });
     expect(view.queryByRole("menu")).not.toBeInTheDocument();
     expect(open).toHaveFocus();
@@ -246,5 +247,17 @@ describe("desktop project menus", () => {
     fireEvent.click(view.trigger());
     act(() => view.getByRole("searchbox").focus());
     expect(view.queryByRole("menu")).not.toBeInTheDocument();
+  });
+  it("groups destructive actions with icons and invokes the separate removal modes", () => {
+    const view = mount();
+    fireEvent.click(view.trigger());
+    const remove = view.getByRole("menuitem", { name: "删除" });
+    expect(remove).toHaveClass("is-danger", "has-separator");
+    expect(remove.querySelector("svg")).not.toBeNull();
+    fireEvent.click(remove);
+    expect(view.props.onRemove).toHaveBeenCalledWith(files[0], "remove");
+    fireEvent.contextMenu(view.card(1));
+    fireEvent.click(view.getByRole("menuitem", { name: "彻底删除" }));
+    expect(view.props.onRemove).toHaveBeenCalledWith(files[1], "trash");
   });
 });

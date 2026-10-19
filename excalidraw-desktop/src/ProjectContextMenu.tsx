@@ -4,9 +4,15 @@ import { createPortal } from "react-dom";
 import "@excalidraw/excalidraw/components/ContextMenu.scss";
 
 import "./ProjectContextMenu.scss";
+import "./DesktopMenus.scss";
+
+import type { ReactNode } from "react";
 
 type MenuItem = {
   label: string;
+  icon?: ReactNode;
+  danger?: boolean;
+  separatorBefore?: boolean;
   disabled?: boolean;
   title?: string;
   onSelect: () => void;
@@ -140,7 +146,9 @@ export const ProjectContextMenu = ({
           type="button"
           role="menuitem"
           tabIndex={-1}
-          className="context-menu-item"
+          className={`context-menu-item${item.danger ? " is-danger" : ""}${
+            item.separatorBefore ? " has-separator" : ""
+          }`}
           key={item.label}
           disabled={item.disabled}
           title={item.title}
@@ -149,6 +157,9 @@ export const ProjectContextMenu = ({
             item.onSelect();
           }}
         >
+          <span className="desktop-project-menu-icon" aria-hidden="true">
+            {item.icon}
+          </span>
           <span className="context-menu-item__label">{item.label}</span>
         </button>
       ))}

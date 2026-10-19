@@ -8,6 +8,8 @@ import type {
 } from "@excalidraw/excalidraw/types";
 
 import { createSceneTracker, errorMessage, fileTitle } from "./document";
+import { handleDesktopEditingCommand } from "./desktopEditing";
+import { translate } from "./i18n";
 
 import type { SceneSnapshot } from "./document";
 import type {
@@ -36,6 +38,7 @@ export interface CanvasDocument {
   draftTask: Promise<void>;
   saving: Promise<boolean> | null;
   recovered: boolean;
+  removalPhase?: "guarding" | "removing";
 }
 
 export interface ClosePrompt {
@@ -53,11 +56,22 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
   const readyRef = useRef(false);
   const closingRef = useRef(false);
   const openQueue = useRef(Promise.resolve());
+  const removalVersion = useRef(0);
+  const removedPaths = useRef(new Map<string, number>());
+  const pendingRemovals = useRef(new Map<string, Promise<void>>());
   const sessionQueue = useRef(Promise.resolve());
+  const settingsQueue = useRef(Promise.resolve());
   const [, render] = useState(0);
   const [settings, setSettings] = useState<DesktopSettings>({
     rootDirectory: null,
     theme: "system",
+    toolPanelDock: "floating",
+    toolPanelWidth: 280,
+    language: "zh-CN",
+    structuredExportFormat: "json",
+    includeInferredStructure: true,
+    skipRemoveConfirmation: false,
+    skipTrashConfirmation: false,
   });
   const [index, setIndex] = useState<ProjectIndex>({
     rootDirectory: null,
@@ -67,7 +81,14 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
   });
   const [loading, setLoading] = useState(true);
   const [closing, setClosing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{
+    message: string;
+    params?: Record<string, string | number>;
+  } | null>(null);
+  const setError = (
+    message: string,
+    params?: Record<string, string | number>,
+  ) => setFailure({ message, params });
   const [drafts, setDrafts] = useState<RecoveryDraft[]>([]);
   const [closePrompt, setClosePrompt] = useState<ClosePrompt | null>(null);
   const handlers = useRef({
@@ -140,10 +161,10 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       id: draft?.id || ownerWindow.crypto.randomUUID(),
       path: file?.path || null,
       title: draft
-        ? `${draft.title}（恢复）`
+        ? draft.title
         : file
         ? fileTitle(file.path)
-        : "未命名",
+        : translate(settings.language, "未命名"),
       modifiedAt: file?.modifiedAt || null,
       initialData:
         file || draft ? { ...initialData, scrollToContent: true } : initialData,
@@ -179,9 +200,22 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     }
   };
 
-  const openDocuments = (files: DiskDocument[], activateOnOpen = true) => {
+  const canCompleteOpen = (path: string, requestedAt: number) =>
+    (removedPaths.current.get(path) || 0) <= requestedAt;
+
+  const openDocuments = (
+    files: DiskDocument[],
+    activateOnOpen = true,
+    requestedAt = removalVersion.current,
+  ) => {
     openQueue.current = openQueue.current.then(async () => {
       for (const file of files) {
+        while (pendingRemovals.current.has(file.path)) {
+          await pendingRemovals.current.get(file.path);
+        }
+        if (!canCompleteOpen(file.path, requestedAt)) {
+          continue;
+        }
         const existing = documentsRef.current.find(
           (document) => document.path === file.path,
         );
@@ -194,12 +228,19 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
         }
         try {
           const data = await parse(file.content);
+          while (pendingRemovals.current.has(file.path)) {
+            await pendingRemovals.current.get(file.path);
+          }
+          if (!canCompleteOpen(file.path, requestedAt)) {
+            continue;
+          }
           createDocument(data, file, undefined, activateOnOpen);
           await recordOpenedFile(file.path);
         } catch (failure) {
-          setError(
-            `无法打开「${fileTitle(file.path)}」：${errorMessage(failure)}`,
-          );
+          setError("无法打开「{title}」：{error}", {
+            title: fileTitle(file.path),
+            error: errorMessage(failure),
+          });
         }
       }
     });
@@ -207,14 +248,22 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
   };
 
   const openFiles = async () => {
+    const requestedAt = removalVersion.current;
     try {
-      await openDocuments(await desktop.openFiles());
+      await openDocuments(await desktop.openFiles(), true, requestedAt);
     } catch (failure) {
       reportError(failure);
     }
   };
 
   const openProject = async (file: ProjectFile) => {
+    const requestedAt = removalVersion.current;
+    while (pendingRemovals.current.has(file.path)) {
+      await pendingRemovals.current.get(file.path);
+    }
+    if (!canCompleteOpen(file.path, requestedAt)) {
+      return;
+    }
     const existing = documentsRef.current.find(
       (document) => document.path === file.path,
     );
@@ -224,7 +273,11 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       return;
     }
     try {
-      await openDocuments([await desktop.readFile(file.path)]);
+      await openDocuments(
+        [await desktop.readFile(file.path)],
+        true,
+        requestedAt,
+      );
     } catch (failure) {
       reportError(failure);
     }
@@ -262,6 +315,12 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
   };
 
   const capture = (document: CanvasDocument, snapshot: SceneSnapshot) => {
+    if (
+      !documentsRef.current.includes(document) ||
+      document.removalPhase === "removing"
+    ) {
+      return;
+    }
     const content = document.tracker(snapshot);
     if (content === document.content) {
       return;
@@ -309,7 +368,14 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     document: CanvasDocument,
     saveAs = false,
     snapshot?: SceneSnapshot,
+    allowRemovalSave = false,
   ): Promise<boolean> => {
+    if (
+      !documentsRef.current.includes(document) ||
+      (document.removalPhase && !allowRemovalSave)
+    ) {
+      return false;
+    }
     if (snapshot) {
       capture(document, snapshot);
     } else {
@@ -320,7 +386,7 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       if (!document.dirty && !saveAs) {
         return true;
       }
-      return saveDocument(document, saveAs);
+      return saveDocument(document, saveAs, undefined, allowRemovalSave);
     }
     if (!document.initialized) {
       setError("画布正在加载，请稍后保存。");
@@ -391,6 +457,9 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
   };
 
   const requestSave = (document: CanvasDocument, saveAs = false) => {
+    if (!documentsRef.current.includes(document) || document.removalPhase) {
+      return Promise.resolve(false);
+    }
     return document.api?.desktopSave(saveAs) || Promise.resolve(false);
   };
 
@@ -402,6 +471,7 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
   const guardClose = async (
     documents: CanvasDocument[],
     discarded: Map<string, number>,
+    allowRemovalSave = false,
   ) => {
     for (const document of documents) {
       commitText(document);
@@ -413,7 +483,9 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
         document.dirty &&
         discarded.get(document.id) !== document.revision
       ) {
-        activate(document.id);
+        if (!allowRemovalSave) {
+          activate(document.id);
+        }
         const choice = await new Promise<"save" | "discard" | "cancel">(
           (resolve) => {
             setClosePrompt({ title: document.title, resolve });
@@ -427,7 +499,11 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
           discarded.set(document.id, document.revision);
           break;
         }
-        if (!(await requestSave(document))) {
+        if (
+          !(await (allowRemovalSave
+            ? saveDocument(document, false, undefined, true)
+            : requestSave(document)))
+        ) {
           return false;
         }
         captureAPI(document);
@@ -436,37 +512,98 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     return true;
   };
 
-  const closeDocument = async (id: string) => {
+  const detachDocument = (document: CanvasDocument) => {
+    ownerWindow.clearTimeout(document.draftTimer);
+    const position = documentsRef.current.indexOf(document);
+    documentsRef.current = documentsRef.current.filter(
+      (item) => item !== document,
+    );
+    if (activeRef.current === document.id) {
+      activeRef.current =
+        documentsRef.current[Math.max(0, position - 1)]?.id || null;
+      projectRef.current = !activeRef.current;
+    }
+    refresh();
+    void saveSession();
+  };
+
+  const closeDocument = async (id: string): Promise<boolean> => {
     if (closingRef.current) {
-      return;
+      return false;
     }
     const document = documentsRef.current.find((item) => item.id === id);
     if (!document) {
-      return;
+      return false;
     }
     closingRef.current = true;
     setClosing(true);
     try {
       const discarded = new Map<string, number>();
       if (!(await guardClose([document], discarded))) {
-        return;
+        return false;
       }
       if (discarded.has(document.id)) {
         await deleteDraft(document);
       }
-      ownerWindow.clearTimeout(document.draftTimer);
-      const position = documentsRef.current.indexOf(document);
-      documentsRef.current = documentsRef.current.filter(
-        (item) => item !== document,
-      );
-      if (activeRef.current === id) {
-        activeRef.current =
-          documentsRef.current[Math.max(0, position - 1)]?.id || null;
-        projectRef.current = !activeRef.current;
-      }
-      refresh();
-      saveSession();
+      detachDocument(document);
+      return true;
     } finally {
+      closingRef.current = false;
+      setClosing(false);
+    }
+  };
+
+  const removeFile = async (file: ProjectFile, mode: "remove" | "trash") => {
+    if (closingRef.current) {
+      return false;
+    }
+    const document = documentsRef.current.find(
+      (item) => item.path === file.path,
+    );
+    closingRef.current = true;
+    setClosing(true);
+    if (document) {
+      document.removalPhase = "guarding";
+    }
+    let finishRemoval!: () => void;
+    pendingRemovals.current.set(
+      file.path,
+      new Promise<void>((resolve) => {
+        finishRemoval = resolve;
+      }),
+    );
+    try {
+      if (document && !(await guardClose([document], new Map(), true))) {
+        return false;
+      }
+      if (document) {
+        document.removalPhase = "removing";
+        ownerWindow.clearTimeout(document.draftTimer);
+        await document.draftTask;
+      }
+      await desktop.removeFile(file.path, mode);
+      removedPaths.current.set(file.path, ++removalVersion.current);
+      if (document?.path === file.path) {
+        await deleteDraft(document);
+        setDrafts((current) =>
+          current.filter((draft) => draft.id !== document.id),
+        );
+        detachDocument(document);
+      }
+      await refreshProjects();
+      return true;
+    } catch (failure) {
+      reportError(failure);
+      return false;
+    } finally {
+      pendingRemovals.current.delete(file.path);
+      finishRemoval();
+      if (document) {
+        delete document.removalPhase;
+        if (documentsRef.current.includes(document) && document.dirty) {
+          scheduleDraft(document);
+        }
+      }
       closingRef.current = false;
       setClosing(false);
     }
@@ -529,19 +666,32 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     }
   };
 
-  const changeTheme = async (theme: DesktopSettings["theme"]) => {
-    try {
-      setSettings(await desktop.updateSettings({ theme }));
-    } catch (failure) {
-      reportError(failure);
-    }
+  const updateSettings = (update: Partial<DesktopSettings>) => {
+    const task = settingsQueue.current.then(async () => {
+      try {
+        const next = await desktop.updateSettings(update);
+        setSettings(next);
+        return next;
+      } catch (failure) {
+        reportError(failure);
+        return null;
+      }
+    });
+    settingsQueue.current = task.then(() => {});
+    return task;
   };
+
+  const changeTheme = (theme: DesktopSettings["theme"]) =>
+    updateSettings({ theme });
 
   const mutateFile = async (
     operation: "rename" | "move",
     file: ProjectFile,
     value: string,
   ) => {
+    if (closingRef.current) {
+      return false;
+    }
     try {
       const next = await (operation === "rename"
         ? desktop.renameFile(file.path, value)
@@ -594,6 +744,14 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
         activate(opened.id);
         return true;
       }
+      await desktop.writeDraft({ ...draft, path: null });
+      const recovered = documentsRef.current.find(
+        (document) => document.id === draft.id,
+      );
+      if (recovered) {
+        activate(recovered.id);
+        return true;
+      }
       createDocument(data, undefined, draft);
       setDrafts((current) => current.filter((item) => item.id !== draft.id));
       return true;
@@ -605,7 +763,7 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
 
   const renameDocument = async (id: string, name: string) => {
     const document = documentsRef.current.find((item) => item.id === id);
-    if (!document) {
+    if (!document || closingRef.current) {
       return false;
     }
     const trimmed = name.trim();
@@ -659,15 +817,29 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
   };
 
   handlers.current = {
-    open: (files) => void openDocuments(files),
+    open: (files) => {
+      if (!closingRef.current) {
+        void openDocuments(files);
+      }
+    },
     command: (command) => {
+      if (command === "undo" || command === "redo") {
+        void handleDesktopEditingCommand(root, command, {
+          canvasActive: !!activeRef.current && !projectRef.current,
+          blocked: modalOpen || closingRef.current || !!closePrompt,
+        }).catch(reportError);
+        return;
+      }
       if (modalOpen) {
         if (command === "close-window") {
           desktop.cancelClose();
         }
         return;
       }
-      if (closingRef.current && command !== "close-window") {
+      if (closingRef.current) {
+        if (command === "close-window") {
+          desktop.cancelClose();
+        }
         return;
       }
       const active = documentsRef.current.find(
@@ -727,7 +899,7 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
         if (disposed) {
           return;
         }
-        setSettings(initialSettings);
+        setSettings((current) => ({ ...current, ...initialSettings }));
         setIndex(initialIndex);
         setDrafts(recovery);
         const restored = await Promise.allSettled(
@@ -739,11 +911,10 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
           if (result.status === "fulfilled") {
             sessionFiles.push(result.value);
           } else {
-            setError(
-              `上次打开的「${fileTitle(
-                session.paths[index],
-              )}」无法读取：${errorMessage(result.reason)}`,
-            );
+            setError("上次打开的「{title}」无法读取：{error}", {
+              title: fileTitle(session.paths[index]),
+              error: errorMessage(result.reason),
+            });
           }
         }
         await openDocuments(sessionFiles, false);
@@ -786,6 +957,10 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root]);
 
+  useEffect(() => {
+    ownerDocument.documentElement.lang = settings.language;
+  }, [ownerDocument, settings.language]);
+
   return {
     documents: documentsRef.current,
     activeId: activeRef.current,
@@ -794,10 +969,24 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     index,
     loading,
     closing,
-    error,
+    error: failure
+      ? translate(
+          settings.language,
+          failure.message,
+          failure.params &&
+            Object.fromEntries(
+              Object.entries(failure.params).map(([key, value]) => [
+                key,
+                key === "error"
+                  ? translate(settings.language, String(value))
+                  : value,
+              ]),
+            ),
+        )
+      : null,
     drafts,
     closePrompt,
-    clearError: () => setError(null),
+    clearError: () => setFailure(null),
     reportError,
     activate,
     showProjects,
@@ -810,6 +999,8 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     editorSave,
     requestSave,
     closeDocument,
+    removeFile,
+    updateSettings,
     changeDirectory,
     changeTheme,
     mutateFile,

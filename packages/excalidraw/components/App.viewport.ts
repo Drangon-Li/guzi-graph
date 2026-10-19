@@ -557,7 +557,7 @@ export class AppViewport {
           this.uiLastMeasured.set(name, footprint);
         }
       } else if (
-        name !== "stats" &&
+        (name === "sidebar" || name === "stylesPanel") &&
         opts?.reserve?.[name] &&
         this.app.editorInterface.formFactor !== "phone"
       ) {
@@ -574,7 +574,7 @@ export class AppViewport {
   };
 
   /** How far the sidebar reaches into the canvas (see `getSideInsets`). */
-  getSidebarInsets = () => this.getSideInsets(["sidebar"]);
+  getSidebarInsets = () => this.getSideInsets(["sidebar", "toolDock"]);
 
   /**
    * Resolves user-supplied viewport offsets into concrete per-side pixel

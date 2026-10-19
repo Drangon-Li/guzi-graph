@@ -55,6 +55,43 @@ beforeEach(() => {
 
 const { h } = window;
 
+describe("context menu keyboard navigation", () => {
+  it("navigates from the popover, wraps focus and closes without running an action", async () => {
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
+    fireEvent.contextMenu(GlobalTestState.interactiveCanvas, {
+      button: 2,
+      clientX: 1,
+      clientY: 1,
+    });
+    const menu = screen.getByRole("menu");
+    const buttons = menu.querySelectorAll("button");
+    fireEvent.keyDown(menu.parentElement!, { key: "ArrowDown" });
+    expect(buttons[0]).toHaveFocus();
+    fireEvent.keyDown(buttons[0], { key: "ArrowUp" });
+    expect(buttons[buttons.length - 1]).toHaveFocus();
+    fireEvent.keyDown(buttons[buttons.length - 1], { key: "Home" });
+    expect(buttons[0]).toHaveFocus();
+    fireEvent.keyDown(buttons[0], { key: "End" });
+    expect(buttons[buttons.length - 1]).toHaveFocus();
+    fireEvent.keyDown(buttons[buttons.length - 1], { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(h.state.contextMenu).toBeNull();
+    expect(h.elements).toHaveLength(0);
+  });
+
+  it("closes on Tab and returns focus to the editor", async () => {
+    const view = await render(<Excalidraw handleKeyboardGlobally={true} />);
+    fireEvent.contextMenu(GlobalTestState.interactiveCanvas, {
+      button: 2,
+      clientX: 1,
+      clientY: 1,
+    });
+    fireEvent.keyDown(screen.getByRole("menu").parentElement!, { key: "Tab" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(view.container.querySelector(".excalidraw")).toHaveFocus();
+  });
+});
+
 describe("contextMenu element", () => {
   beforeEach(async () => {
     localStorage.clear();

@@ -2,19 +2,26 @@ import { useLayoutEffect, useRef, useState } from "react";
 
 import "./InlineTabTitle.scss";
 
+import { translate } from "./i18n";
+
+import type { DesktopLanguage } from "./i18n";
+
 import type { CanvasDocument } from "./workspace";
 
 export const InlineTabTitle = ({
   document,
+  language = "zh-CN",
   selected,
   onActivate,
   onRename,
 }: {
   document: CanvasDocument;
+  language?: DesktopLanguage;
   selected: boolean;
   onActivate: (id: string) => void;
   onRename: (id: string, title: string) => Promise<boolean>;
 }) => {
+  const t = (message: string) => translate(language, message);
   const button = useRef<HTMLButtonElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const phase = useRef<"idle" | "editing" | "pending">("idle");
@@ -71,7 +78,7 @@ export const InlineTabTitle = ({
         {status}
         <input
           ref={input}
-          aria-label="画布名称"
+          aria-label={t("画布名称")}
           aria-busy={pending}
           value={value}
           readOnly={pending}
@@ -126,7 +133,7 @@ export const InlineTabTitle = ({
         setValue(document.title);
         setEditing(true);
       }}
-      title={`${document.path || "尚未保存"} · 双击重命名`}
+      title={`${document.path || t("尚未保存")} · ${t("双击重命名")}`}
     >
       {status}
       <span>{document.title}</span>

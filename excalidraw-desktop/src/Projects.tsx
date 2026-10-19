@@ -3,7 +3,12 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { Button } from "@excalidraw/excalidraw";
 import { TextField } from "@excalidraw/excalidraw/components/TextField";
 import {
+  ArrowIcon,
+  CloseIcon,
   DotsHorizontalIcon,
+  ExternalLinkIcon,
+  PenModeIcon,
+  TrashIcon,
   ExcalLogo,
   LoadIcon,
   PlusIcon,
@@ -12,6 +17,8 @@ import {
 } from "@excalidraw/excalidraw/components/icons";
 
 import { fileTitle } from "./document";
+import { translate } from "./i18n";
+import { DesktopSelect } from "./DesktopControls";
 import { FilePreview } from "./FilePreview";
 import { ProjectContextMenu } from "./ProjectContextMenu";
 
@@ -44,6 +51,7 @@ export const Projects = ({
   onEdit,
   onSettings,
   onRecovery,
+  onRemove,
 }: {
   root: HTMLElement;
   theme: "light" | "dark";
@@ -52,7 +60,10 @@ export const Projects = ({
   onEdit: (edit: ProjectEdit) => void;
   onSettings: () => void;
   onRecovery: () => void;
+  onRemove: (file: ProjectFile, mode: "remove" | "trash") => void;
 }) => {
+  const t = (message: string, params?: Record<string, string | number>) =>
+    translate(workspace.settings.language, message, params);
   const [historyVisible, setHistoryVisible] = useState(true);
   const [category, setCategory] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -97,12 +108,21 @@ export const Projects = ({
       )
       .sort((left, right) =>
         sort === "name"
-          ? left.name.localeCompare(right.name, "zh-Hans-CN", { numeric: true })
+          ? left.name.localeCompare(right.name, workspace.settings.language, {
+              numeric: true,
+            })
           : sort === "oldest"
           ? timestamp(left) - timestamp(right)
           : timestamp(right) - timestamp(left),
       );
-  }, [workspace.index, historyVisible, category, query, sort]);
+  }, [
+    workspace.index,
+    workspace.settings.language,
+    historyVisible,
+    category,
+    query,
+    sort,
+  ]);
   const count = (name: string) =>
     workspace.index.files.filter((file) => file.category === name).length;
   const refresh = async () => {
@@ -117,12 +137,12 @@ export const Projects = ({
           <span>{ExcalLogo}</span>
           <strong>Excalidraw</strong>
         </div>
-        <div className="desktop-sidebar-section">本地画布</div>
+        <div className="desktop-sidebar-section">{t("本地画布")}</div>
         <Button
           selected={historyVisible}
           onSelect={() => setHistoryVisible(true)}
         >
-          <span>历史画布</span>
+          <span>{t("历史画布")}</span>
           <small>{workspace.index.history.length}</small>
         </Button>
         <Button
@@ -132,7 +152,7 @@ export const Projects = ({
             setCategory(null);
           }}
         >
-          <span>全部画布</span>
+          <span>{t("全部画布")}</span>
           <small>{workspace.index.files.length}</small>
         </Button>
         <Button
@@ -142,18 +162,20 @@ export const Projects = ({
             setCategory("");
           }}
         >
-          <span>未分类</span>
+          <span>{t("未分类")}</span>
           <small>{count("")}</small>
         </Button>
         <div className="desktop-sidebar-heading">
-          <span>文件夹分类</span>
+          <span>{t("文件夹分类")}</span>
           <Button
             onSelect={() => onEdit({ kind: "folder" })}
             disabled={!workspace.index.rootDirectory}
             title={
-              workspace.index.rootDirectory ? "新建分类" : "请先设置默认文件夹"
+              workspace.index.rootDirectory
+                ? t("新建分类")
+                : t("请先设置默认文件夹")
             }
-            aria-label="新建分类"
+            aria-label={t("新建分类")}
           >
             {PlusIcon}
           </Button>
@@ -174,15 +196,19 @@ export const Projects = ({
             </Button>
           ))}
           {!workspace.index.folders.length && (
-            <p className="desktop-sidebar-hint">新建文件夹，整理你的画布。</p>
+            <p className="desktop-sidebar-hint">
+              {t("新建文件夹，整理你的画布。")}
+            </p>
           )}
         </div>
         <div className="desktop-sidebar-bottom">
           <Button onSelect={onSettings}>
             {settingsIcon}
-            <span>设置</span>
+            <span>{t("设置")}</span>
           </Button>
-          <span className="desktop-local-label">文件保存在这台 Mac 上</span>
+          <span className="desktop-local-label">
+            {t("文件保存在这台 Mac 上")}
+          </span>
         </div>
       </aside>
       <main className="desktop-project-content">
@@ -190,21 +216,21 @@ export const Projects = ({
           <div>
             <h1>
               {historyVisible
-                ? "历史画布"
+                ? t("历史画布")
                 : category === null
-                ? "全部画布"
-                : category || "未分类"}
+                ? t("全部画布")
+                : category || t("未分类")}
             </h1>
             <p>
               {historyVisible
-                ? "打开或保存过的画布，随时回来继续。"
-                : "默认文件夹中的画布，按分类整理。"}
+                ? t("打开或保存过的画布，随时回来继续。")
+                : t("默认文件夹中的画布，按分类整理。")}
             </p>
           </div>
           <div className="desktop-project-actions">
             <Button onSelect={workspace.openFiles}>
               {LoadIcon}
-              <span>打开文件</span>
+              <span>{t("打开文件")}</span>
               <kbd>⌘O</kbd>
             </Button>
             <Button
@@ -212,14 +238,18 @@ export const Projects = ({
               onSelect={workspace.newDocument}
             >
               {PlusIcon}
-              <span>新建画布</span>
+              <span>{t("新建画布")}</span>
             </Button>
           </div>
         </header>
         {workspace.drafts.length > 0 && (
           <div className="desktop-recovery-banner">
-            <span>发现 {workspace.drafts.length} 份未保存的恢复草稿。</span>
-            <Button onSelect={onRecovery}>查看并恢复</Button>
+            <span>
+              {t("发现 {count} 份未保存的恢复草稿。", {
+                count: workspace.drafts.length,
+              })}
+            </span>
+            <Button onSelect={onRecovery}>{t("查看并恢复")}</Button>
           </div>
         )}
         <div className="desktop-project-toolbar">
@@ -228,24 +258,28 @@ export const Projects = ({
             onChange={setQuery}
             type="search"
             icon={searchIcon}
-            placeholder="搜索画布、分类或文件夹"
+            placeholder={t("搜索画布、分类或文件夹")}
             className="desktop-search"
           />
-          <select
-            aria-label="画布排序"
+          <DesktopSelect
+            root={root}
+            label={t("画布排序")}
             value={sort}
-            onChange={(event) => setSort(event.target.value)}
-          >
-            <option value="modified">
-              {historyVisible ? "最近打开" : "最近修改"}
-            </option>
-            <option value="oldest">
-              {historyVisible ? "最早打开" : "最早修改"}
-            </option>
-            <option value="name">名称 A–Z</option>
-          </select>
+            onValueChange={setSort}
+            options={[
+              {
+                value: "modified",
+                label: historyVisible ? t("最近打开") : t("最近修改"),
+              },
+              {
+                value: "oldest",
+                label: historyVisible ? t("最早打开") : t("最早修改"),
+              },
+              { value: "name", label: t("名称 A–Z") },
+            ]}
+          />
           <Button onSelect={refresh} disabled={refreshing}>
-            {refreshing ? "刷新中…" : "刷新"}
+            {refreshing ? t("刷新中…") : t("刷新")}
           </Button>
         </div>
         <div className="desktop-project-grid">
@@ -290,14 +324,19 @@ export const Projects = ({
               <button
                 className="desktop-file-open"
                 onClick={() => void workspace.openProject(file)}
-                title={`打开 ${file.name}`}
+                title={t("打开 {name}", { name: file.name })}
               >
-                <FilePreview file={file} root={root} theme={theme} />
+                <FilePreview
+                  file={file}
+                  root={root}
+                  theme={theme}
+                  language={workspace.settings.language}
+                />
                 <span className="desktop-file-title">
                   {fileTitle(file.name)}
                 </span>
                 <span className="desktop-file-modified">
-                  {new Intl.DateTimeFormat("zh-CN", {
+                  {new Intl.DateTimeFormat(workspace.settings.language, {
                     month: "short",
                     day: "numeric",
                     hour: "2-digit",
@@ -308,24 +347,24 @@ export const Projects = ({
                   className="desktop-file-category"
                   title={
                     isInDefaultDirectory(file, workspace.index.rootDirectory)
-                      ? file.category || "默认文件夹"
+                      ? file.category || t("默认文件夹")
                       : parentDirectory(file.path)
                   }
                 >
                   {isInDefaultDirectory(file, workspace.index.rootDirectory)
-                    ? file.category || "未分类"
+                    ? file.category || t("未分类")
                     : parentDirectory(file.path)}
                 </span>
               </button>
               <button
                 className="desktop-file-menu-trigger"
-                aria-label={`${file.name} 的操作`}
+                aria-label={t("{name} 的操作", { name: file.name })}
                 aria-haspopup="menu"
                 aria-expanded={menu?.file.path === file.path}
                 aria-controls={
                   menu?.file.path === file.path ? menuId : undefined
                 }
-                title="更多操作"
+                title={t("更多操作")}
                 onClick={(event) => {
                   if (menu?.file.path === file.path) {
                     closeMenu(true);
@@ -352,33 +391,38 @@ export const Projects = ({
             <span>{ExcalLogo}</span>
             <h2>
               {query
-                ? "没有找到匹配的画布"
+                ? t("没有找到匹配的画布")
                 : !historyVisible && !workspace.index.rootDirectory
-                ? "设置默认文件夹以浏览画布"
-                : "这里还没有画布"}
+                ? t("设置默认文件夹以浏览画布")
+                : t("这里还没有画布")}
             </h2>
             <p>
               {query
-                ? "换个名称、分类或文件夹试试。"
+                ? t("换个名称、分类或文件夹试试。")
                 : !historyVisible && !workspace.index.rootDirectory
-                ? "外部打开和保存的文件会保留在历史画布中。"
-                : "新建画布并保存，或打开已有的 .excalidraw 文件。"}
+                ? t("外部打开和保存的文件会保留在历史画布中。")
+                : t("新建画布并保存，或打开已有的 .excalidraw 文件。")}
             </p>
             {!query && (
               <Button
                 className="desktop-primary"
                 onSelect={workspace.newDocument}
               >
-                {PlusIcon}新建画布
+                {PlusIcon}
+                {t("新建画布")}
               </Button>
             )}
           </div>
         )}
         <footer className="desktop-directory">
           <span title={workspace.settings.rootDirectory || ""}>
-            默认文件夹：{workspace.settings.rootDirectory || "尚未设置"}
+            {t("默认文件夹：{path}", {
+              path: workspace.settings.rootDirectory || t("尚未设置"),
+            })}
           </span>
-          <Button onSelect={workspace.changeDirectory}>更改文件夹</Button>
+          <Button onSelect={workspace.changeDirectory}>
+            {t("更改文件夹")}
+          </Button>
         </footer>
       </main>
       {active && menu && (
@@ -386,18 +430,21 @@ export const Projects = ({
           id={menuId}
           root={root}
           anchor={menu.anchor}
-          label={`${menu.file.name} 的操作`}
+          label={t("{name} 的操作", { name: menu.file.name })}
           left={menu.left}
           top={menu.top}
           align={menu.align}
           onClose={closeMenu}
           items={[
             {
-              label: "打开",
+              label: t("打开"),
+              icon: LoadIcon,
               onSelect: () => void workspace.openProject(menu.file),
             },
             {
-              label: "重命名",
+              label: t("重命名"),
+              icon: PenModeIcon,
+              separatorBefore: true,
               onSelect: () => onEdit({ kind: "rename", file: menu.file }),
             },
             {
@@ -405,21 +452,37 @@ export const Projects = ({
                 menu.file,
                 workspace.index.rootDirectory,
               )
-                ? "移动到分类"
-                : "移入默认文件夹分类",
+                ? t("移动到分类")
+                : t("移入默认文件夹分类"),
+              icon: ArrowIcon,
               disabled: !workspace.index.rootDirectory,
               title: workspace.index.rootDirectory
                 ? undefined
-                : "请先设置默认文件夹",
+                : t("请先设置默认文件夹"),
               onSelect: () => onEdit({ kind: "move", file: menu.file }),
             },
             {
-              label: "在 Finder 中显示",
+              label: t("在 Finder 中显示"),
+              icon: ExternalLinkIcon,
+              separatorBefore: true,
               onSelect: () => {
                 void root.ownerDocument
                   .defaultView!.desktop.revealFile(menu.file.path)
                   .catch(workspace.reportError);
               },
+            },
+            {
+              label: t("删除"),
+              icon: CloseIcon,
+              danger: true,
+              separatorBefore: true,
+              onSelect: () => onRemove(menu.file, "remove"),
+            },
+            {
+              label: t("彻底删除"),
+              icon: TrashIcon,
+              danger: true,
+              onSelect: () => onRemove(menu.file, "trash"),
             },
           ]}
         />

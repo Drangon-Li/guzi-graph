@@ -10,6 +10,7 @@ import { useExcalidrawAppState } from "../App";
 
 import {
   getDropdownMenuItemClassName,
+  PersistentMenuContext,
   useHandleDropdownMenuItemSelect,
 } from "./common";
 import MenuItemContent from "./DropdownMenuItemContent";
@@ -39,6 +40,35 @@ const DropdownMenuItem = ({
   ...rest
 }: DropdownMenuItemProps) => {
   const handleSelect = useHandleDropdownMenuItemSelect(onSelect);
+  const persistent = React.useContext(PersistentMenuContext);
+
+  const item = (
+    <button
+      {...rest}
+      type={persistent ? rest.type ?? "button" : rest.type}
+      value={value}
+      className={getDropdownMenuItemClassName(className, selected)}
+      title={rest.title ?? rest["aria-label"]}
+      onClick={
+        persistent
+          ? (event) => {
+              rest.onClick?.(event);
+              if (!event.defaultPrevented) {
+                handleSelect(event.nativeEvent);
+              }
+            }
+          : rest.onClick
+      }
+    >
+      <MenuItemContent icon={icon} shortcut={shortcut} badge={badge}>
+        {children}
+      </MenuItemContent>
+    </button>
+  );
+
+  if (persistent) {
+    return item;
+  }
 
   return (
     <DropdownMenuPrimitive.Item
@@ -46,16 +76,7 @@ const DropdownMenuItem = ({
       onSelect={handleSelect}
       asChild
     >
-      <button
-        {...rest}
-        value={value}
-        className={getDropdownMenuItemClassName(className, selected)}
-        title={rest.title ?? rest["aria-label"]}
-      >
-        <MenuItemContent icon={icon} shortcut={shortcut} badge={badge}>
-          {children}
-        </MenuItemContent>
-      </button>
+      {item}
     </DropdownMenuPrimitive.Item>
   );
 };

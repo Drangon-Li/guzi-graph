@@ -6,15 +6,22 @@ import {
   waitFor,
 } from "@testing-library/react";
 
+import { Excalidraw } from "@excalidraw/excalidraw";
+
 import { App } from "./App";
 import { useWorkspace } from "./workspace";
 
 import type { CanvasDocument, Workspace } from "./workspace";
 
+vi.mock("./FilePreview", () => ({ FilePreview: () => <div /> }));
 vi.mock("./workspace", () => ({ useWorkspace: vi.fn() }));
 vi.mock("@excalidraw/excalidraw", async (original) => {
   const actual = await original<typeof import("@excalidraw/excalidraw")>();
-  return { ...actual, Excalidraw: () => null, useHandleLibrary: vi.fn() };
+  return {
+    ...actual,
+    Excalidraw: vi.fn(() => null),
+    useHandleLibrary: vi.fn(),
+  };
 });
 
 describe("desktop inline tab rename interaction", () => {
@@ -38,7 +45,15 @@ describe("desktop inline tab rename interaction", () => {
       documents: [canvas],
       activeId: canvas.id,
       projectsVisible: false,
-      settings: { theme: "dark", rootDirectory: "/drawings" },
+      settings: {
+        theme: "dark",
+        rootDirectory: "/drawings",
+        language: "zh-CN",
+        structuredExportFormat: "json",
+        includeInferredStructure: true,
+        skipRemoveConfirmation: false,
+        skipTrashConfirmation: false,
+      },
       index: {
         rootDirectory: "/drawings",
         files: [],
@@ -53,6 +68,9 @@ describe("desktop inline tab rename interaction", () => {
       activate: vi.fn(),
       newDocument: vi.fn(),
       closeDocument: vi.fn(),
+      removeFile: vi.fn().mockResolvedValue(true),
+      updateSettings: vi.fn().mockResolvedValue(null),
+      reportError: vi.fn(),
       renameDocument: vi.fn().mockImplementation(async (_id, title) => {
         canvas.title = title;
         return true;
@@ -220,5 +238,142 @@ describe("desktop inline tab rename interaction", () => {
       root.ownerDocument.removeEventListener("keydown", handler);
       root.ownerDocument.removeEventListener("keyup", handler);
     }
+  });
+  const showProject = () => {
+    workspace.projectsVisible = true;
+    const file = {
+      path: canvas.path!,
+      name: "原名称.excalidraw",
+      relativePath: "原名称.excalidraw",
+      category: "",
+      modifiedAt: 123,
+      size: 100,
+      lastOpenedAt: 123,
+    };
+    workspace.index.history = [file];
+    workspace.index.files = [file];
+    return file;
+  };
+
+  it.each(["remove", "trash"] as const)(
+    "explains %s and cancels without persisting a checked skip option",
+    (mode) => {
+      showProject();
+      const view = render(<App root={root} />);
+      fireEvent.click(
+        view.getByRole("button", { name: "原名称.excalidraw 的操作" }),
+      );
+      fireEvent.click(
+        view.getByRole("menuitem", {
+          name: mode === "remove" ? "删除" : "彻底删除",
+        }),
+      );
+      expect(view.getByRole("dialog")).toHaveAccessibleName(
+        mode === "remove" ? "删除画布？" : "彻底删除画布？",
+      );
+      expect(view.getByRole("dialog")).toHaveTextContent(
+        mode === "remove" ? "原文件会保留在当前位置" : "可从废纸篓恢复",
+      );
+      fireEvent.click(view.getByRole("checkbox", { name: "不再提示此操作" }));
+      fireEvent.click(view.getByRole("button", { name: "取消" }));
+      expect(view.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(workspace.removeFile).not.toHaveBeenCalled();
+      expect(workspace.updateSettings).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["remove", "trash"] as const)(
+    "persists only the matching skip preference after %s succeeds",
+    async (mode) => {
+      const file = showProject();
+      const view = render(<App root={root} />);
+      fireEvent.click(
+        view.getByRole("button", { name: "原名称.excalidraw 的操作" }),
+      );
+      fireEvent.click(
+        view.getByRole("menuitem", {
+          name: mode === "remove" ? "删除" : "彻底删除",
+        }),
+      );
+      fireEvent.click(view.getByRole("checkbox", { name: "不再提示此操作" }));
+      fireEvent.click(
+        view.getByRole("button", {
+          name: mode === "remove" ? "删除" : "移到废纸篓",
+        }),
+      );
+      await waitFor(() =>
+        expect(workspace.updateSettings).toHaveBeenCalledWith(
+          mode === "remove"
+            ? { skipRemoveConfirmation: true }
+            : { skipTrashConfirmation: true },
+        ),
+      );
+      expect(workspace.removeFile).toHaveBeenCalledWith(file, mode);
+    },
+  );
+
+  it("does not persist skip preferences when deletion fails or a dirty-document guard is cancelled", async () => {
+    showProject();
+    vi.mocked(workspace.removeFile).mockResolvedValue(false);
+    const view = render(<App root={root} />);
+    fireEvent.click(
+      view.getByRole("button", { name: "原名称.excalidraw 的操作" }),
+    );
+    fireEvent.click(view.getByRole("menuitem", { name: "删除" }));
+    fireEvent.click(view.getByRole("checkbox", { name: "不再提示此操作" }));
+    fireEvent.click(view.getByRole("button", { name: "删除" }));
+    await act(async () => {});
+    expect(workspace.removeFile).toHaveBeenCalledTimes(1);
+    expect(workspace.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("skips remove confirmation independently while retaining the Trash confirmation", async () => {
+    showProject();
+    workspace.settings.skipRemoveConfirmation = true;
+    const view = render(<App root={root} />);
+    fireEvent.click(
+      view.getByRole("button", { name: "原名称.excalidraw 的操作" }),
+    );
+    fireEvent.click(view.getByRole("menuitem", { name: "删除" }));
+    await waitFor(() => expect(workspace.removeFile).toHaveBeenCalledTimes(1));
+    expect(view.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.click(
+      view.getByRole("button", { name: "原名称.excalidraw 的操作" }),
+    );
+    fireEvent.click(view.getByRole("menuitem", { name: "彻底删除" }));
+    expect(view.getByRole("dialog")).toHaveAccessibleName("彻底删除画布？");
+    expect(workspace.removeFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("updates language and export defaults without changing user titles or remounting a canvas", () => {
+    showProject();
+    const view = render(<App root={root} />);
+    fireEvent.click(view.getByRole("button", { name: "设置" }));
+    fireEvent.click(view.getByRole("radio", { name: "English" }));
+    expect(workspace.updateSettings).toHaveBeenCalledWith({ language: "en" });
+    workspace.settings.language = "en";
+    view.rerender(<App root={root} />);
+    expect(view.getByRole("dialog")).toHaveAccessibleName("Desktop settings");
+    expect(view.getByRole("tab", { name: "原名称" })).toBeInTheDocument();
+    expect(vi.mocked(Excalidraw).mock.lastCall?.[0].langCode).toBe("en");
+    fireEvent.click(view.getByRole("radio", { name: "Markdown" }));
+    expect(workspace.updateSettings).toHaveBeenCalledWith({
+      structuredExportFormat: "md",
+    });
+    fireEvent.click(
+      view.getByRole("checkbox", { name: "Organize information by layout" }),
+    );
+    expect(workspace.updateSettings).toHaveBeenCalledWith({
+      includeInferredStructure: false,
+    });
+    fireEvent.click(view.getByRole("button", { name: "Done" }));
+    fireEvent.click(
+      view.getByRole("button", { name: "Actions for 原名称.excalidraw" }),
+    );
+    expect(view.getByRole("menuitem", { name: "Remove" })).toBeInTheDocument();
+    expect(
+      view.getByRole("menuitem", { name: "Move to Trash" }),
+    ).toBeInTheDocument();
+    expect(workspace.documents[0]).toBe(canvas);
   });
 });

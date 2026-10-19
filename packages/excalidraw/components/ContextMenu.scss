@@ -23,6 +23,10 @@
     color: var(--popup-text-color);
   }
 
+  .context-menu-item__icon {
+    display: none;
+  }
+
   .context-menu-item {
     position: relative;
     width: 100%;

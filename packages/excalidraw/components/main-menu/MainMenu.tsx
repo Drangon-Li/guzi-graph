@@ -13,6 +13,11 @@ import {
 import { UserList } from "../UserList";
 import DropdownMenu from "../dropdownMenu/DropdownMenu";
 import DropdownMenuSub from "../dropdownMenu/DropdownMenuSub";
+import {
+  DropdownMenuContentPropsContext,
+  PersistentMenuContext,
+} from "../dropdownMenu/common";
+import { getToolPanelDock, ToolPanelDockControls } from "../ToolPanel";
 import { withInternalFallback } from "../hoc/withInternalFallback";
 import { HamburgerMenuIcon } from "../icons";
 
@@ -36,6 +41,26 @@ const MainMenu = Object.assign(
       const appState = useUIAppState();
       const appProps = useAppProps();
       const setAppState = useExcalidrawSetAppState();
+      const toolPanel = appProps.desktopIntegration?.toolPanel;
+      const dock = getToolPanelDock(
+        toolPanel,
+        appState,
+        editorInterface.formFactor === "phone",
+      );
+
+      if (dock !== "floating") {
+        return (
+          <MainMenuTunnel.In>
+            <PersistentMenuContext.Provider value={true}>
+              <DropdownMenuContentPropsContext.Provider value={{ onSelect }}>
+                <div className="dropdown-menu main-menu tool-panel-menu">
+                  {children}
+                </div>
+              </DropdownMenuContentPropsContext.Provider>
+            </PersistentMenuContext.Provider>
+          </MainMenuTunnel.In>
+        );
+      }
 
       return (
         <MainMenuTunnel.In>
@@ -61,6 +86,18 @@ const MainMenu = Object.assign(
               className="main-menu"
               align="start"
             >
+              {toolPanel && editorInterface.formFactor !== "phone" && (
+                <div className="tool-panel-floating-header">
+                  <span>{toolPanel.labels.title}</span>
+                  <ToolPanelDockControls
+                    options={toolPanel}
+                    onChange={(next) => {
+                      toolPanel.onDockChange(next);
+                      setAppState({ openMenu: null });
+                    }}
+                  />
+                </div>
+              )}
               {children}
               {editorInterface.formFactor === "phone" &&
                 appState.collaborators.size > 0 && (
