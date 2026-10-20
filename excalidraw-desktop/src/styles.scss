@@ -25,6 +25,8 @@ body,
     --desktop-muted: var(--color-gray-50);
   }
 
+  // Keep selector wrapping stable across Prettier 2.6 and 2.8.
+  /* prettier-ignore */
   :where(
       .desktop-titlebar,
       .desktop-projects,
