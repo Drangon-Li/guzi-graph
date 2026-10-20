@@ -17,6 +17,8 @@ jobs:
           node-version: "22.x"
       - name: "Install Deps"
         run: yarn install
+      - name: "Test Electron Main Process"
+        run: node --test excalidraw-desktop/electron/*.test.cjs
       - name: "Test Coverage"
         run: yarn test:coverage
       - name: "Report Coverage"
