@@ -14,6 +14,7 @@ import {
   debounce,
   FONT_FAMILY,
   getFontFamilyString,
+  getSystemFontFamily,
 } from "@excalidraw/common";
 
 import type { ValueOf } from "@excalidraw/common/utility-types";
@@ -99,6 +100,7 @@ export const getFontFamilyLabel = (
 ) =>
   // prefer our config as the browser resolved names may be wrapped in quotes and such
   Object.entries(FONT_FAMILY).find(([, id]) => id === fontFamily)?.[0] ??
+  getSystemFontFamily(fontFamily) ??
   fontFaces[0]?.fontFace?.family ??
   "Unknown";
 
@@ -123,36 +125,29 @@ export const FontPickerList = React.memo(
 
     const [searchTerm, setSearchTerm] = useState("");
     const inputRef = useRef<HTMLInputElement>(null);
-    const allFonts = useMemo(
-      () =>
-        Array.from(Fonts.registered.entries())
-          .filter(
-            ([_, { metadata }]) => !metadata.private && !metadata.fallback,
-          )
-          .map(([familyId, { metadata, fontFaces }]) => {
-            const fontDescriptor = {
-              value: familyId,
-              icon: getFontFamilyIcon(familyId),
-              text: getFontFamilyLabel(familyId, fontFaces),
-            };
+    const registeredFonts = Fonts.registered;
+    const allFonts = Array.from(registeredFonts.entries())
+      .filter(([_, { metadata }]) => !metadata.private && !metadata.fallback)
+      .map(([familyId, { metadata, fontFaces }]) => {
+        const fontDescriptor = {
+          value: familyId,
+          icon: getFontFamilyIcon(familyId),
+          text: getFontFamilyLabel(familyId, fontFaces),
+        };
 
-            if (metadata.deprecated) {
-              Object.assign(fontDescriptor, {
-                deprecated: metadata.deprecated,
-                badge: {
-                  type: DropDownMenuItemBadgeType.RED,
-                  placeholder: t("fontList.badge.old"),
-                },
-              });
-            }
+        if (metadata.deprecated) {
+          Object.assign(fontDescriptor, {
+            deprecated: metadata.deprecated,
+            badge: {
+              type: DropDownMenuItemBadgeType.RED,
+              placeholder: t("fontList.badge.old"),
+            },
+          });
+        }
 
-            return fontDescriptor as FontDescriptor;
-          })
-          .sort((a, b) =>
-            a.text.toLowerCase() > b.text.toLowerCase() ? 1 : -1,
-          ),
-      [],
-    );
+        return fontDescriptor as FontDescriptor;
+      })
+      .sort((a, b) => (a.text.toLowerCase() > b.text.toLowerCase() ? 1 : -1));
 
     const sceneFamilies = useMemo(
       () => new Set(fonts.getSceneFamilies()),

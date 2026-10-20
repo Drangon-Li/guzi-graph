@@ -1,6 +1,7 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
+
 const { translate } = require("./i18n.cjs");
 
 const UUID =
@@ -27,6 +28,7 @@ function fileName(value, extension = "excalidraw", language = "zh-CN") {
     typeof value !== "string" ||
     !value.trim() ||
     value !== value.trim() ||
+    // eslint-disable-next-line no-control-regex -- Control characters are intentionally rejected in user-supplied names.
     /[\\/\x00-\x1f]/.test(value) ||
     value === "." ||
     value === ".."
@@ -42,17 +44,22 @@ function categoryParts(value) {
   if (
     typeof value !== "string" ||
     path.isAbsolute(value) ||
+    // eslint-disable-next-line no-control-regex -- Control characters are intentionally rejected in user-supplied names.
     /[\\\x00-\x1f]/.test(value)
-  )
+  ) {
     throw fail("分类必须是根目录内的相对路径。");
-  if (!value) return [];
+  }
+  if (!value) {
+    return [];
+  }
   const parts = value.split("/");
   if (
     parts.some(
       (part) => !part || part === "." || part === ".." || part !== part.trim(),
     )
-  )
+  ) {
     throw fail("分类路径无效。");
+  }
   return parts;
 }
 
@@ -61,8 +68,9 @@ function documentPath(value, language = "zh-CN") {
     typeof value !== "string" ||
     !path.isAbsolute(value) ||
     path.extname(value).toLowerCase() !== ".excalidraw"
-  )
+  ) {
     throw fail(translate(language, "请选择 .excalidraw 文件。"));
+  }
   return path.resolve(value);
 }
 
@@ -74,7 +82,9 @@ async function atomicWrite(target, content) {
   let handle;
   try {
     const existing = await fs.stat(target).catch((error) => {
-      if (error.code !== "ENOENT") throw error;
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
       return null;
     });
     handle = await fs.open(
@@ -90,7 +100,9 @@ async function atomicWrite(target, content) {
   } finally {
     await handle?.close();
     await fs.unlink(temporary).catch((error) => {
-      if (error.code !== "ENOENT") throw error;
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
     });
   }
 }
@@ -103,6 +115,62 @@ class DesktopStorage {
       theme: "system",
       toolPanelDock: "floating",
       toolPanelWidth: 280,
+      toolPanelPinned: false,
+      toolbarTooltips: true,
+      selectionToolbar: true,
+      stickyNoteMode: "note",
+      stylePresets: [
+        {
+          id: "solid-arrow",
+          name: "实线箭头",
+          shortcut: "Alt+1",
+          tool: "arrow",
+          strokeStyle: "solid",
+          strokeWidth: 2,
+          strokeColor: "#1e1e1e",
+          endArrowhead: "arrow",
+        },
+        {
+          id: "dashed-arrow",
+          name: "虚线箭头",
+          shortcut: "Alt+2",
+          tool: "arrow",
+          strokeStyle: "dashed",
+          strokeWidth: 2,
+          strokeColor: "#1e1e1e",
+          endArrowhead: "arrow",
+        },
+      ],
+      editorPreferences: {
+        defaultFontFamily: 5,
+        defaultBackground: "#ffffff",
+        defaultStrokeColor: "#1e1e1e",
+        defaultElementBackground: "transparent",
+        elementStrokeTopPicks: [
+          "#1e1e1e",
+          "#e03131",
+          "#2f9e44",
+          "#1971c2",
+          "#f08c00",
+        ],
+        elementBackgroundTopPicks: [
+          "transparent",
+          "#ffc9c9",
+          "#b2f2bb",
+          "#a5d8ff",
+          "#ffec99",
+        ],
+        fontSizePresets: { sm: 16, md: 20, lg: 28, xl: 36 },
+        fontTopPicks: [5, 6, 8],
+        backgroundTopPicks: [
+          "#ffffff",
+          "#f8f9fa",
+          "#f5faff",
+          "#fffce8",
+          "#fdf8f6",
+        ],
+        systemFonts: [],
+      },
       language: "zh-CN",
       structuredExportFormat: "json",
       includeInferredStructure: true,
@@ -126,8 +194,9 @@ class DesktopStorage {
           await fs.readFile(path.join(this.userData, name), "utf8"),
         );
       } catch (error) {
-        if (error.code !== "ENOENT" && !(error instanceof SyntaxError))
+        if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) {
           throw error;
+        }
         return null;
       }
     };
@@ -135,14 +204,24 @@ class DesktopStorage {
     for (const key of [
       "toolPanelDock",
       "toolPanelWidth",
+      "toolPanelPinned",
+      "toolbarTooltips",
+      "selectionToolbar",
+      "stickyNoteMode",
+      "editorPreferences",
+      "stylePresets",
       "language",
       "structuredExportFormat",
       "includeInferredStructure",
       "skipRemoveConfirmation",
       "skipTrashConfirmation",
     ]) {
-      if (this.validSetting(key, settings?.[key]))
-        this.settings[key] = settings[key];
+      if (this.validSetting(key, settings?.[key])) {
+        this.settings[key] =
+          key === "editorPreferences"
+            ? { ...this.settings.editorPreferences, ...settings[key] }
+            : settings[key];
+      }
     }
     const hidden = await readJson("hidden-files.json");
     for (const candidate of Array.isArray(hidden) ? hidden : []) {
@@ -150,21 +229,26 @@ class DesktopStorage {
         this.hiddenPaths.add(this.documentPath(candidate));
       } catch {}
     }
-    if (THEMES.has(settings?.theme)) this.settings.theme = settings.theme;
+    if (THEMES.has(settings?.theme)) {
+      this.settings.theme = settings.theme;
+    }
     if (
       typeof settings?.rootDirectory === "string" &&
       path.isAbsolute(settings.rootDirectory)
     ) {
       const root = await fs.realpath(settings.rootDirectory).catch(() => null);
-      if (root && (await fs.stat(root)).isDirectory())
+      if (root && (await fs.stat(root)).isDirectory()) {
         this.settings.rootDirectory = root;
+      }
     }
     const session = await readJson("session.json");
     if (Array.isArray(session?.paths)) {
       for (const candidate of session.paths) {
         try {
           const target = this.documentPath(candidate);
-          if (!this.hiddenPaths.has(target)) this.authorized.add(target);
+          if (!this.hiddenPaths.has(target)) {
+            this.authorized.add(target);
+          }
         } catch {
           /* Ignore a malformed persisted entry. */
         }
@@ -179,9 +263,12 @@ class DesktopStorage {
       for (const entry of recentFiles) {
         try {
           const candidate = this.documentPath(entry?.path);
-          if (this.hiddenPaths.has(candidate)) continue;
-          if (!Number.isFinite(entry.lastOpenedAt) || entry.lastOpenedAt < 0)
+          if (this.hiddenPaths.has(candidate)) {
             continue;
+          }
+          if (!Number.isFinite(entry.lastOpenedAt) || entry.lastOpenedAt < 0) {
+            continue;
+          }
           this.recentFiles.set(
             candidate,
             Math.max(this.recentFiles.get(candidate) || 0, entry.lastOpenedAt),
@@ -224,11 +311,14 @@ class DesktopStorage {
   recordOpenedFile(candidate) {
     return this.serialize(async () => {
       const target = await this.allowedPath(candidate);
-      if (!(await fs.stat(target)).isFile()) throw this.fail("目标不是文件。");
-      if (this.hiddenPaths.has(target))
+      if (!(await fs.stat(target)).isFile()) {
+        throw this.fail("目标不是文件。");
+      }
+      if (this.hiddenPaths.has(target)) {
         await this.persistHiddenPaths(
           new Set([...this.hiddenPaths].filter((item) => item !== target)),
         );
+      }
       await this.recordRecentFile(target);
     });
   }
@@ -251,17 +341,151 @@ class DesktopStorage {
   }
 
   validSetting(key, value) {
-    if (key === "toolPanelWidth")
+    if (key === "stylePresets") {
+      if (!Array.isArray(value) || value.length > 30) {
+        return false;
+      }
+      const ids = new Set();
+      const shortcuts = new Set();
+      for (const preset of value) {
+        if (
+          !preset ||
+          typeof preset.id !== "string" ||
+          !preset.id ||
+          preset.id.length > 80 ||
+          ids.has(preset.id) ||
+          typeof preset.name !== "string" ||
+          !preset.name.trim() ||
+          preset.name.length > 100 ||
+          typeof preset.shortcut !== "string" ||
+          (preset.shortcut !== "" &&
+            !/^(Ctrl\+)?(Meta\+)?(Alt\+)?(Shift\+)?([A-Z0-9]|F(?:[1-9]|1[0-2])|Arrow(?:Left|Right|Up|Down))$/.test(
+              preset.shortcut,
+            )) ||
+          (preset.shortcut &&
+            (!/^(Ctrl|Meta|Alt)\+/.test(preset.shortcut) ||
+              shortcuts.has(preset.shortcut))) ||
+          /^(Ctrl|Meta)\+(Shift\+)?(S|O|N|W|Q|Z|X|C|V|A|F|P)$/.test(
+            preset.shortcut,
+          ) ||
+          !["arrow", "line", "rectangle", "ellipse"].includes(preset.tool) ||
+          !["solid", "dashed", "dotted"].includes(preset.strokeStyle) ||
+          ![1, 2, 4].includes(preset.strokeWidth) ||
+          typeof preset.strokeColor !== "string" ||
+          !/^#[a-fA-F0-9]{6}$/.test(preset.strokeColor) ||
+          (preset.endArrowhead !== undefined &&
+            preset.endArrowhead !== null &&
+            preset.endArrowhead !== "arrow")
+        ) {
+          return false;
+        }
+        ids.add(preset.id);
+        if (preset.shortcut) {
+          shortcuts.add(preset.shortcut);
+        }
+      }
+      return true;
+    }
+    if (key === "editorPreferences") {
+      const validFamily = (family) =>
+        typeof family === "string" &&
+        family.trim().length > 0 &&
+        family.length <= 200 &&
+        // eslint-disable-next-line no-control-regex -- Control characters are intentionally rejected in user-supplied names.
+        !/[\u0000-\u001f\u007f]/.test(family);
+      const validId = (id) => Number.isSafeInteger(id) && id > 0;
+      const validColor = (color) =>
+        typeof color === "string" && /^#[a-fA-F0-9]{6}$/.test(color);
+      const validElementColor = (color) =>
+        color === "transparent" || validColor(color);
+      const validPicks = (picks) =>
+        Array.isArray(picks) &&
+        picks.length > 0 &&
+        picks.length <= 5 &&
+        picks.every(validElementColor);
+      const validFontSizes = (sizes) =>
+        sizes &&
+        typeof sizes === "object" &&
+        !Array.isArray(sizes) &&
+        ["sm", "md", "lg", "xl"].every(
+          (key, index, keys) =>
+            Number.isFinite(sizes[key]) &&
+            sizes[key] >= 1 &&
+            (!index || sizes[key] > sizes[keys[index - 1]]),
+        );
+      if (
+        !value ||
+        typeof value !== "object" ||
+        Array.isArray(value) ||
+        !Array.isArray(value.systemFonts) ||
+        value.systemFonts.length > 500
+      ) {
+        return false;
+      }
+      const ids = new Map();
+      for (const font of value.systemFonts) {
+        if (
+          !font ||
+          !validId(font.id) ||
+          font.id < 100000 ||
+          !validFamily(font.family) ||
+          ids.has(font.id)
+        ) {
+          return false;
+        }
+        ids.set(font.id, font.family);
+      }
+      const knownId = (id) =>
+        validId(id) &&
+        ([1, 2, 3, 5, 6, 7, 8, 9, 10].includes(id) || ids.has(id));
+      return (
+        knownId(value.defaultFontFamily) &&
+        (value.defaultFontName === undefined ||
+          (validFamily(value.defaultFontName) &&
+            (!ids.has(value.defaultFontFamily) ||
+              ids.get(value.defaultFontFamily) === value.defaultFontName))) &&
+        validColor(value.defaultBackground) &&
+        (value.defaultStrokeColor === undefined ||
+          validElementColor(value.defaultStrokeColor)) &&
+        (value.defaultElementBackground === undefined ||
+          validElementColor(value.defaultElementBackground)) &&
+        (value.elementStrokeTopPicks === undefined ||
+          validPicks(value.elementStrokeTopPicks)) &&
+        (value.elementBackgroundTopPicks === undefined ||
+          validPicks(value.elementBackgroundTopPicks)) &&
+        (value.fontSizePresets === undefined ||
+          validFontSizes(value.fontSizePresets)) &&
+        Array.isArray(value.fontTopPicks) &&
+        value.fontTopPicks.length > 0 &&
+        value.fontTopPicks.length <= 3 &&
+        value.fontTopPicks.every(knownId) &&
+        new Set(value.fontTopPicks).size === value.fontTopPicks.length &&
+        Array.isArray(value.backgroundTopPicks) &&
+        value.backgroundTopPicks.length > 0 &&
+        value.backgroundTopPicks.length <= 5 &&
+        value.backgroundTopPicks.every(validColor)
+      );
+    }
+    if (key === "toolPanelWidth") {
       return (
         typeof value === "number" &&
         Number.isFinite(value) &&
         value >= 260 &&
         value <= 480
       );
-    if (key === "toolPanelDock")
+    }
+    if (key === "toolPanelDock") {
       return ["floating", "left", "right"].includes(value);
-    if (key === "language") return ["zh-CN", "en"].includes(value);
-    if (key === "structuredExportFormat") return ["json", "md"].includes(value);
+    }
+    if (key === "language") {
+      return ["zh-CN", "en"].includes(value);
+    }
+    if (key === "stickyNoteMode") {
+      return ["note", "subcanvas"].includes(value);
+    }
+    if (key === "structuredExportFormat") {
+      return ["json", "md"].includes(value);
+    }
     return typeof value === "boolean";
   }
 
@@ -278,20 +502,29 @@ class DesktopStorage {
   }
 
   async updateSettings(update) {
-    if (!update || typeof update !== "object" || Array.isArray(update))
+    if (!update || typeof update !== "object" || Array.isArray(update)) {
       throw this.fail("设置无效。");
-    if ("theme" in update && !THEMES.has(update.theme))
+    }
+    if ("theme" in update && !THEMES.has(update.theme)) {
       throw this.fail("主题无效。");
+    }
     if (
       "rootDirectory" in update &&
       update.rootDirectory !== null &&
       update.rootDirectory !== this.settings.rootDirectory
-    )
+    ) {
       throw this.fail("请通过目录选择器设置项目目录。");
+    }
     const preferences = {};
     for (const key of [
       "toolPanelDock",
       "toolPanelWidth",
+      "toolPanelPinned",
+      "toolbarTooltips",
+      "selectionToolbar",
+      "stickyNoteMode",
+      "editorPreferences",
+      "stylePresets",
       "language",
       "structuredExportFormat",
       "includeInferredStructure",
@@ -299,8 +532,13 @@ class DesktopStorage {
       "skipTrashConfirmation",
     ]) {
       if (key in update) {
-        if (!this.validSetting(key, update[key])) throw this.fail("设置无效。");
-        preferences[key] = update[key];
+        if (!this.validSetting(key, update[key])) {
+          throw this.fail("设置无效。");
+        }
+        preferences[key] =
+          key === "editorPreferences"
+            ? { ...this.settings.editorPreferences, ...update[key] }
+            : update[key];
       }
     }
     return this.serialize(async () => {
@@ -323,7 +561,9 @@ class DesktopStorage {
 
   async chooseRoot(directory) {
     const root = await fs.realpath(directory);
-    if (!(await fs.stat(root)).isDirectory()) throw this.fail("项目目录无效。");
+    if (!(await fs.stat(root)).isDirectory()) {
+      throw this.fail("项目目录无效。");
+    }
     return this.serialize(async () => {
       const next = { ...this.settings, rootDirectory: root };
       await atomicWrite(
@@ -338,7 +578,9 @@ class DesktopStorage {
   async grantFile(candidate) {
     const resolved = this.documentPath(candidate);
     const real = await fs.realpath(resolved).catch(async (error) => {
-      if (error.code !== "ENOENT") throw error;
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
       return path.join(
         await fs.realpath(path.dirname(resolved)),
         path.basename(resolved),
@@ -357,13 +599,17 @@ class DesktopStorage {
     try {
       real = await fs.realpath(resolved);
     } catch (error) {
-      if (!writing || error.code !== "ENOENT") throw error;
+      if (!writing || error.code !== "ENOENT") {
+        throw error;
+      }
       real = path.join(parent, path.basename(resolved));
     }
-    if (root && inside(root, resolved) && !inside(root, real))
+    if (root && inside(root, resolved) && !inside(root, real)) {
       throw this.fail("符号链接不能越过项目根目录。", "NOT_AUTHORIZED");
-    if (!this.authorized.has(real) && !(root && inside(root, real)))
+    }
+    if (!this.authorized.has(real) && !(root && inside(root, real))) {
       throw this.fail("文件未经授权。", "NOT_AUTHORIZED");
+    }
     return this.documentPath(real);
   }
 
@@ -372,7 +618,9 @@ class DesktopStorage {
     const handle = await fs.open(target, "r");
     try {
       const stat = await handle.stat();
-      if (!stat.isFile()) throw this.fail("目标不是文件。");
+      if (!stat.isFile()) {
+        throw this.fail("目标不是文件。");
+      }
       const content = await handle.readFile("utf8");
       this.authorized.add(target);
       return {
@@ -391,10 +639,14 @@ class DesktopStorage {
     const history = [];
     for (const [candidate, lastOpenedAt] of this.recentFiles) {
       try {
-        if (this.hiddenPaths.has(candidate)) continue;
+        if (this.hiddenPaths.has(candidate)) {
+          continue;
+        }
         const target = await this.allowedPath(candidate);
         const stat = await fs.stat(target);
-        if (!stat.isFile()) continue;
+        if (!stat.isFile()) {
+          continue;
+        }
         const relativePath =
           rootDirectory && inside(rootDirectory, target)
             ? path.relative(rootDirectory, target)
@@ -418,23 +670,28 @@ class DesktopStorage {
           !["ENOENT", "ENOTDIR", "EACCES", "EPERM", "NOT_AUTHORIZED"].includes(
             error.code,
           )
-        )
+        ) {
           throw error;
+        }
       }
     }
     history.sort(
       (a, b) => b.lastOpenedAt - a.lastOpenedAt || a.path.localeCompare(b.path),
     );
-    if (!rootDirectory)
+    if (!rootDirectory) {
       return { rootDirectory: null, files: [], folders: [], history };
-    if ((await fs.realpath(rootDirectory)) !== rootDirectory)
+    }
+    if ((await fs.realpath(rootDirectory)) !== rootDirectory) {
       throw this.fail("项目根目录已变更，请重新选择。");
+    }
     const files = [];
     const folders = [];
     const visit = async (directory, category) => {
       const entries = await fs.readdir(directory, { withFileTypes: true });
       for (const entry of entries) {
-        if (entry.isSymbolicLink()) continue;
+        if (entry.isSymbolicLink()) {
+          continue;
+        }
         const absolute = path.join(directory, entry.name);
         if (entry.isDirectory()) {
           const relative = category ? `${category}/${entry.name}` : entry.name;
@@ -472,38 +729,48 @@ class DesktopStorage {
       !request ||
       !UUID.test(request.documentId) ||
       typeof request.content !== "string"
-    )
+    ) {
       throw this.fail("保存请求无效。");
+    }
     return this.serialize(async () => {
       const target = await this.allowedPath(request.path, { writing: true });
-      if (this.hiddenPaths.has(target))
+      if (this.hiddenPaths.has(target)) {
         throw this.fail(
           "画布已从项目移除，请重新打开后再保存。",
           "REMOVED_FILE",
         );
+      }
       if (request.occupiedPaths !== undefined) {
-        if (!Array.isArray(request.occupiedPaths))
+        if (!Array.isArray(request.occupiedPaths)) {
           throw this.fail("已打开文件列表无效。");
+        }
         const key = (value) =>
           process.platform === "darwin" ? value.toLowerCase() : value;
         for (const candidate of request.occupiedPaths) {
           const resolved = this.documentPath(candidate);
           const canonical = await fs.realpath(resolved).catch((error) => {
-            if (error.code !== "ENOENT") throw error;
+            if (error.code !== "ENOENT") {
+              throw error;
+            }
             return resolved;
           });
-          if (key(canonical) === key(target))
+          if (key(canonical) === key(target)) {
             throw this.fail(
               "此文件已在其他标签中打开，请选择其他保存位置。",
               "OPEN_DOCUMENT_CONFLICT",
             );
+          }
         }
       }
       const stat = await fs.stat(target).catch((error) => {
-        if (error.code !== "ENOENT") throw error;
+        if (error.code !== "ENOENT") {
+          throw error;
+        }
         return null;
       });
-      if (stat && !stat.isFile()) throw this.fail("目标不是文件。");
+      if (stat && !stat.isFile()) {
+        throw this.fail("目标不是文件。");
+      }
       const copiedVersion = this.copiedVersions.get(target);
       const unchangedCopy =
         copiedVersion &&
@@ -520,8 +787,13 @@ class DesktopStorage {
           { actualModifiedAt: stat.mtimeMs },
         );
       }
-      if (!overwrite && !stat && typeof request.expectedModifiedAt === "number")
+      if (
+        !overwrite &&
+        !stat &&
+        typeof request.expectedModifiedAt === "number"
+      ) {
         throw this.fail("文件已被移走或删除。", "EXTERNAL_MODIFICATION");
+      }
       await atomicWrite(target, request.content);
       this.copiedVersions.delete(target);
       this.authorized.add(target);
@@ -533,19 +805,26 @@ class DesktopStorage {
 
   async categoryDirectory(category, create = false) {
     const root = this.settings.rootDirectory;
-    if (!root) throw this.fail("请先选择项目目录。");
-    if ((await fs.realpath(root)) !== root)
+    if (!root) {
+      throw this.fail("请先选择项目目录。");
+    }
+    if ((await fs.realpath(root)) !== root) {
       throw this.fail("项目根目录已变更，请重新选择。");
+    }
     let current = root;
     for (const part of categoryParts(category)) {
       current = path.join(current, part);
-      if (create)
+      if (create) {
         await fs.mkdir(current).catch((error) => {
-          if (error.code !== "EEXIST") throw error;
+          if (error.code !== "EEXIST") {
+            throw error;
+          }
         });
+      }
       const real = await fs.realpath(current);
-      if (!inside(root, real) || !(await fs.stat(real)).isDirectory())
+      if (!inside(root, real) || !(await fs.stat(real)).isDirectory()) {
         throw this.fail("分类不能越过项目根目录。");
+      }
       current = real;
     }
     return current;
@@ -553,15 +832,19 @@ class DesktopStorage {
 
   async relocate(candidate, destination) {
     const source = await this.allowedPath(candidate);
-    if (source === destination) return this.readFile(source);
+    if (source === destination) {
+      return this.readFile(source);
+    }
     const parent = await fs.realpath(path.dirname(destination));
-    if (parent !== path.dirname(destination))
+    if (parent !== path.dirname(destination)) {
       throw this.fail("目标目录不能是符号链接。");
+    }
     const priorCopy = this.copiedVersions.get(source);
     let copiedTimes = null;
     await fs.link(source, destination).catch(async (error) => {
-      if (error.code === "EEXIST")
+      if (error.code === "EEXIST") {
         throw this.fail("已有同名文件，请使用其他名称。", "NAME_CONFLICT");
+      }
       if (error.code === "EXDEV") {
         copiedTimes = await fs.stat(source);
         await fs
@@ -571,11 +854,12 @@ class DesktopStorage {
             require("node:fs").constants.COPYFILE_EXCL,
           )
           .catch((copyError) => {
-            if (copyError.code === "EEXIST")
+            if (copyError.code === "EEXIST") {
               throw this.fail(
                 "已有同名文件，请使用其他名称。",
                 "NAME_CONFLICT",
               );
+            }
             throw copyError;
           });
         // Node utimes truncates to microseconds; use the midpoint to avoid losing
@@ -621,8 +905,9 @@ class DesktopStorage {
     if (
       this.session.activePath === candidate ||
       this.session.activePath === source
-    )
+    ) {
       this.session.activePath = destination;
+    }
     await atomicWrite(
       path.join(this.userData, "session.json"),
       JSON.stringify(this.session),
@@ -669,17 +954,23 @@ class DesktopStorage {
 
   removeFile(candidate, mode, trashItem) {
     return this.serialize(async () => {
-      if (!["remove", "trash"].includes(mode))
+      if (!["remove", "trash"].includes(mode)) {
         throw this.fail("移除方式无效。");
+      }
       const target = await this.allowedPath(candidate);
       if (
         path.resolve(candidate) !== target ||
         (await fs.lstat(candidate)).isSymbolicLink()
-      )
+      ) {
         throw this.fail("不能通过符号链接移除画布。", "NOT_AUTHORIZED");
-      if (!(await fs.stat(target)).isFile()) throw this.fail("目标不是文件。");
+      }
+      if (!(await fs.stat(target)).isFile()) {
+        throw this.fail("目标不是文件。");
+      }
       if (mode === "trash") {
-        if (typeof trashItem !== "function") throw this.fail("废纸篓不可用。");
+        if (typeof trashItem !== "function") {
+          throw this.fail("废纸篓不可用。");
+        }
         await trashItem(target);
       }
       await this.persistHiddenPaths(new Set([...this.hiddenPaths, target]));
@@ -720,22 +1011,30 @@ class DesktopStorage {
         !Array.isArray(session.paths) ||
         session.paths.some((item) => typeof item !== "string") ||
         (session.activePath !== null && typeof session.activePath !== "string")
-      )
+      ) {
         throw this.fail("会话无效。");
+      }
       const paths = [];
       for (const item of session.paths) {
-        if (this.hiddenPaths.has(path.resolve(item))) continue;
+        if (this.hiddenPaths.has(path.resolve(item))) {
+          continue;
+        }
         const target = await this.allowedPath(item);
-        if (!this.hiddenPaths.has(target)) paths.push(target);
+        if (!this.hiddenPaths.has(target)) {
+          paths.push(target);
+        }
       }
       let activePath =
         session.activePath === null ||
         this.hiddenPaths.has(path.resolve(session.activePath))
           ? null
           : await this.allowedPath(session.activePath);
-      if (this.hiddenPaths.has(activePath)) activePath = null;
-      if (activePath !== null && !paths.includes(activePath))
+      if (this.hiddenPaths.has(activePath)) {
+        activePath = null;
+      }
+      if (activePath !== null && !paths.includes(activePath)) {
         throw this.fail("活动文件不在会话中。");
+      }
       const next = { paths: [...new Set(paths)], activePath };
       await atomicWrite(
         path.join(this.userData, "session.json"),
@@ -746,15 +1045,18 @@ class DesktopStorage {
   }
 
   draftPath(id) {
-    if (typeof id !== "string" || !UUID.test(id))
+    if (typeof id !== "string" || !UUID.test(id)) {
       throw this.fail("恢复草稿 ID 无效。");
+    }
     return path.join(this.userData, "drafts", `${id}.json`);
   }
 
   async listDrafts() {
     const drafts = [];
     for (const name of await fs.readdir(path.join(this.userData, "drafts"))) {
-      if (!name.endsWith(".json") || !UUID.test(name.slice(0, -5))) continue;
+      if (!name.endsWith(".json") || !UUID.test(name.slice(0, -5))) {
+        continue;
+      }
       try {
         const draft = JSON.parse(
           await fs.readFile(this.draftPath(name.slice(0, -5)), "utf8"),
@@ -765,11 +1067,13 @@ class DesktopStorage {
           typeof draft.title === "string" &&
           Number.isFinite(draft.modifiedAt) &&
           (draft.path === null || typeof draft.path === "string")
-        )
+        ) {
           drafts.push(draft);
+        }
       } catch (error) {
-        if (!(error instanceof SyntaxError) && error.code !== "ENOENT")
+        if (!(error instanceof SyntaxError) && error.code !== "ENOENT") {
           throw error;
+        }
       }
     }
     return drafts.sort((a, b) => b.modifiedAt - a.modifiedAt);
@@ -782,13 +1086,16 @@ class DesktopStorage {
       typeof draft.title !== "string" ||
       !Number.isFinite(draft.modifiedAt) ||
       (draft.path !== null && typeof draft.path !== "string")
-    )
+    ) {
       throw this.fail("恢复草稿无效。");
+    }
     return this.serialize(async () => {
       let canonicalPath = draft.path;
       if (draft.path !== null) {
         canonicalPath = await this.allowedPath(draft.path, { writing: true });
-        if (this.hiddenPaths.has(canonicalPath)) return;
+        if (this.hiddenPaths.has(canonicalPath)) {
+          return;
+        }
       }
       await atomicWrite(
         destination,
@@ -807,7 +1114,9 @@ class DesktopStorage {
     const destination = this.draftPath(id);
     return this.serialize(() =>
       fs.unlink(destination).catch((error) => {
-        if (error.code !== "ENOENT") throw error;
+        if (error.code !== "ENOENT") {
+          throw error;
+        }
       }),
     );
   }

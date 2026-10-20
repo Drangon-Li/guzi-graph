@@ -87,6 +87,11 @@ export class HistoryChangedEvent {
   ) {}
 }
 
+export interface HistoryCheckpoint {
+  undo: readonly HistoryDelta[];
+  redo: readonly HistoryDelta[];
+}
+
 export class History {
   public readonly onHistoryChangedEmitter = new Emitter<
     [HistoryChangedEvent]
@@ -108,6 +113,21 @@ export class History {
   public clear() {
     this.undoStack.length = 0;
     this.redoStack.length = 0;
+  }
+
+  public checkpoint(): HistoryCheckpoint {
+    return {
+      undo: this.undoStack.slice(-200),
+      redo: this.redoStack.slice(-200),
+    };
+  }
+
+  public restoreCheckpoint(checkpoint: HistoryCheckpoint) {
+    this.undoStack.splice(0, this.undoStack.length, ...checkpoint.undo);
+    this.redoStack.splice(0, this.redoStack.length, ...checkpoint.redo);
+    this.onHistoryChangedEmitter.trigger(
+      new HistoryChangedEvent(this.isUndoStackEmpty, this.isRedoStackEmpty),
+    );
   }
 
   /**

@@ -1,3 +1,4 @@
+import { isTableRoot } from "@excalidraw/element/table";
 import { getNonDeletedElements } from "@excalidraw/element";
 
 import { newElementWith } from "@excalidraw/element";
@@ -221,7 +222,15 @@ export const actionUngroup = register({
   icon: (appState) => <UngroupIcon theme={appState.theme} />,
   trackEvent: { category: "element" },
   perform: (elements, appState, _, app) => {
-    const groupIds = getSelectedGroupIds(appState);
+    const tableGroups = new Set(
+      elements.filter(isTableRoot).map((element) => element.groupIds[0]),
+    );
+    const selectedGroupIds = Object.fromEntries(
+      Object.entries(appState.selectedGroupIds).filter(
+        ([id]) => !tableGroups.has(id),
+      ),
+    );
+    const groupIds = getSelectedGroupIds({ ...appState, selectedGroupIds });
     const elementsMap = arrayToMap(elements);
 
     if (groupIds.length === 0) {
@@ -241,7 +250,7 @@ export const actionUngroup = register({
       }
       const nextGroupIds = removeFromSelectedGroups(
         element.groupIds,
-        appState.selectedGroupIds,
+        selectedGroupIds,
       );
       if (nextGroupIds.length === element.groupIds.length) {
         return element;

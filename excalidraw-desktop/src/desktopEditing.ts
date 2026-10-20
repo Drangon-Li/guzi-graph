@@ -13,7 +13,20 @@ export const handleDesktopEditingCommand = async (
     (focused instanceof ownerWindow.HTMLElement && focused.isContentEditable)
   ) {
     if (!focused.matches(":disabled, [readonly]")) {
-      await ownerWindow.desktop.editText(command);
+      if (focused.closest(".excalidraw-rich-text")) {
+        focused.dispatchEvent(
+          new ownerWindow.KeyboardEvent("keydown", {
+            key: "z",
+            code: "KeyZ",
+            [KEYS.CTRL_OR_CMD]: true,
+            shiftKey: command === "redo",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      } else {
+        await ownerWindow.desktop.editText(command);
+      }
     }
     return;
   }
@@ -21,9 +34,13 @@ export const handleDesktopEditingCommand = async (
     return;
   }
 
-  const editor = root.querySelector<HTMLElement>(
-    ".desktop-editor-pane.is-active .excalidraw",
-  );
+  const editor =
+    root.querySelector<HTMLElement>(
+      ".desktop-editor-pane.is-active .desktop-subcanvas .excalidraw",
+    ) ??
+    root.querySelector<HTMLElement>(
+      ".desktop-editor-pane.is-active .excalidraw",
+    );
   // Dispatch in the renderer so the native accelerator cannot consume it again.
   editor?.dispatchEvent(
     new ownerWindow.KeyboardEvent("keydown", {

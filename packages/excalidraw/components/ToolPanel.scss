@@ -22,7 +22,19 @@
     transition: width var(--tool-panel-transition-duration)
         var(--tool-panel-transition-easing),
       top var(--tool-panel-transition-duration)
-        var(--tool-panel-transition-easing);
+        var(--tool-panel-transition-easing),
+      opacity 180ms ease-out,
+      transform var(--tool-panel-transition-duration)
+        var(--tool-panel-transition-easing),
+      visibility 0s;
+
+    &--hidden {
+      opacity: 0;
+      visibility: hidden;
+      transform: translateX(24px);
+      pointer-events: none;
+      transition-delay: 0s, 0s, 0s, 0s, 260ms;
+    }
 
     &[hidden] {
       display: none;
@@ -82,7 +94,7 @@
     top: 8px;
     right: 8px;
     z-index: 2;
-    width: 90px;
+    width: 121px;
     pointer-events: var(--ui-pointerEvents);
     transition: width var(--tool-panel-transition-duration)
         var(--tool-panel-transition-easing),
@@ -160,7 +172,7 @@
   .tool-panel-header {
     box-sizing: border-box;
     min-height: 44px;
-    padding: 8px 108px 8px 12px;
+    padding: 8px 139px 8px 12px;
   }
 
   .tool-panel-floating-header {
@@ -252,6 +264,15 @@
     }
     > .selected-shape-actions {
       width: 100%;
+      min-width: 0;
+
+      > * {
+        min-width: 0;
+      }
+
+      .buttonList {
+        align-items: center;
+      }
     }
 
     .tool-panel-menu {

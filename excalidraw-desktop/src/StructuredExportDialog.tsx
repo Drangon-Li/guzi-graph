@@ -6,6 +6,8 @@ import type {
   ExcalidrawImperativeAPI,
   BinaryFiles,
 } from "@excalidraw/excalidraw/types";
+
+import type { SubcanvasScenes } from "@excalidraw/excalidraw/subcanvas";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import {
@@ -16,6 +18,8 @@ import {
 import { DesktopSegmentedControl } from "./DesktopControls";
 
 import "./StructuredExportDialog.scss";
+
+import type { SceneSnapshot } from "./document";
 
 const messages = {
   "zh-CN": {
@@ -29,6 +33,7 @@ const messages = {
     connectors: "连接",
     texts: "正文",
     assets: "图片资源",
+    subcanvases: "子画布",
     inferred: "推断包含关系",
     original: "原文优先，保留所有有效元素 ID、绑定端点、箭头方向和几何信息。",
     warning: "导出说明",
@@ -61,6 +66,7 @@ const messages = {
     connectors: "connectors",
     texts: "text elements",
     assets: "image resources",
+    subcanvases: "subcanvases",
     inferred: "inferred containment relations",
     original:
       "Preserves original text, every live element ID, endpoint bindings, arrow direction and geometry.",
@@ -94,6 +100,7 @@ export const StructuredExportDialog = ({
   language,
   defaultFormat,
   includeInferredStructure,
+  getSnapshot,
   onClose,
 }: {
   root: HTMLElement;
@@ -102,6 +109,7 @@ export const StructuredExportDialog = ({
   language: "zh-CN" | "en";
   defaultFormat: "json" | "md";
   includeInferredStructure: boolean;
+  getSnapshot?: () => SceneSnapshot;
   onClose: () => void;
 }) => {
   const t = messages[language];
@@ -113,6 +121,7 @@ export const StructuredExportDialog = ({
   const [snapshot, setSnapshot] = useState<{
     elements: readonly ExcalidrawElement[];
     files: BinaryFiles;
+    subscenes: SubcanvasScenes;
   } | null>(null);
   const [format, setFormat] = useState(defaultFormat);
   const [infer, setInfer] = useState(includeInferredStructure);
@@ -121,11 +130,19 @@ export const StructuredExportDialog = ({
   const [error, setError] = useState("");
   useEffect(() => {
     api.commitEditing();
+    const current = getSnapshot?.();
     setSnapshot({
-      elements: JSON.parse(JSON.stringify(api.getSceneElements())),
-      files: JSON.parse(JSON.stringify(api.getFiles())),
+      elements: JSON.parse(
+        JSON.stringify(current?.elements ?? api.getSceneElements()),
+      ),
+      files: JSON.parse(JSON.stringify(current?.files ?? api.getFiles())),
+      subscenes: JSON.parse(
+        JSON.stringify(
+          (current?.appState ?? api.getAppState()).subscenes ?? {},
+        ),
+      ),
     });
-  }, [api]);
+  }, [api, getSnapshot]);
   useEffect(() => {
     const ownerDocument = root.ownerDocument;
     const ownerWindow = ownerDocument.defaultView!;
@@ -176,6 +193,7 @@ export const StructuredExportDialog = ({
         ? buildStructuredExport(snapshot.elements, snapshot.files, {
             title,
             includeInferredStructure: infer,
+            subscenes: snapshot.subscenes,
           })
         : null,
     [snapshot, title, infer],
@@ -298,6 +316,9 @@ export const StructuredExportDialog = ({
                       t.texts,
                     ],
                     [document.assets.length, t.assets],
+                    ...(document.subcanvases?.length
+                      ? [[document.subcanvases.length, t.subcanvases]]
+                      : []),
                   ].map(([count, label]) => (
                     <div key={label}>
                       <strong>{count}</strong>

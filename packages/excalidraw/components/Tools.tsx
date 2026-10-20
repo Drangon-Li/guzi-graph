@@ -8,6 +8,7 @@ import type { PointerType } from "@excalidraw/element/types";
 import { trackEvent } from "../analytics";
 import { t } from "../i18n";
 import { getShortcutKey } from "../shortcut";
+import { setStickyNoteCreationMode } from "../subcanvasActions";
 
 import { IconButton } from "./IconButton";
 import { ToolPopover } from "./ToolPopover";
@@ -69,7 +70,6 @@ const defineTools = <T extends Record<string, ToolConfig>>(tools: T) =>
 export const TOOLS = defineTools({
   hand: {
     icon: handIcon,
-    letterKey: KEYS.H,
     toggle: true,
   },
   selection: {
@@ -182,11 +182,14 @@ export const getToolLetter = (type: ToolbarToolType) => {
 
 /** human-readable shortcut hint, e.g. "R or 2", used in tooltips & aria */
 export const getToolShortcut = (type: ToolbarToolType) => {
+  if (type === "hand") {
+    return getShortcutKey("Space");
+  }
   const letter = getToolLetter(type);
   const { numericKey } = TOOLS[type];
   return letter && numericKey != null
     ? `${letter} ${t("helpDialog.or")} ${numericKey}`
-    : `${letter || numericKey}`;
+    : `${letter || numericKey || ""}`;
 };
 
 export const findShapeByKey = (
@@ -287,21 +290,45 @@ const createToolButton = (
         icon={config.icon}
         checked={activeTool.type === type}
         disabled={isToolButtonDisabled(app, type)}
-        title={shortcut ? `${label} — ${shortcut}` : label}
+        tooltip={shortcut ? `${label} — ${shortcut}` : label}
+        tooltipEnabled={app.props.desktopIntegration?.toolbarTooltips !== false}
         keyBindingLabel={
           hideKeyBinding || hideShortcut
             ? undefined
             : getToolLetter(shortcutType) || TOOLS[shortcutType].numericKey
         }
         aria-label={label}
-        aria-keyshortcuts={shortcut ?? undefined}
+        aria-keyshortcuts={
+          shortcutType === "hand" && !hideShortcut
+            ? "Space"
+            : shortcut ?? undefined
+        }
         data-testid={`toolbar-${type}`}
         onPointerDown={(event) => {
           // a draggable tool can be dragged out onto the canvas; a press that
           // stays put is still a click (`onSelect`)
           app.toolDrag.handleButtonPointerDown(type, event.nativeEvent);
         }}
-        onSelect={({ pointerType }) => {
+        onContextMenu={(event) => {
+          // macOS sends a context menu instead of click for Control-click.
+          if (
+            type === "stickynote" &&
+            event.ctrlKey &&
+            app.props.desktopIntegration?.subcanvas
+          ) {
+            event.preventDefault();
+            setStickyNoteCreationMode(app, "subcanvas");
+            app.setActiveTool({ type });
+          }
+        }}
+        onSelect={({ pointerType, ctrlKey }) => {
+          if (
+            type === "stickynote" &&
+            ctrlKey &&
+            app.props.desktopIntegration?.subcanvas
+          ) {
+            setStickyNoteCreationMode(app, "subcanvas");
+          }
           if (!app.state.penDetected && pointerType === "pen") {
             app.togglePenMode(true);
           }

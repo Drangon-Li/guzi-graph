@@ -49,11 +49,11 @@ export const TopPicks = ({
   const dragState = dnd?.dragState ?? null;
 
   let colors;
-  if (type === "elementStroke") {
+  if (type === "elementStroke" || type === "tableText") {
     colors = DEFAULT_ELEMENT_STROKE_PICKS;
   }
 
-  if (type === "elementBackground") {
+  if (type === "elementBackground" || type === "textHighlight") {
     colors = DEFAULT_ELEMENT_BACKGROUND_PICKS;
   }
 

@@ -19,6 +19,8 @@ import type { Radians } from "@excalidraw/math";
 
 import type { MarkOptional, Merge } from "@excalidraw/common/utility-types";
 
+import { layoutRichText, richTextFromPlainText } from "./richText";
+import { isSubcanvasPin } from "./subcanvasPin";
 import {
   getElementAbsoluteCoords,
   getResizedElementAbsoluteCoords,
@@ -207,6 +209,9 @@ export const normalizeStickyNoteGeometry = <
 >(
   element: T,
 ): T => {
+  if (isSubcanvasPin(element)) {
+    return element;
+  }
   const width = Math.max(element.width, STICKY_NOTE_MIN_SIZE);
   const baseHeight = Math.max(
     element.baseHeight || element.height || DEFAULT_STICKY_NOTE_SIZE,
@@ -335,6 +340,8 @@ const getTextElementPositionOffsets = (
 export const newTextElement = (
   opts: {
     text: string;
+    richText?: ExcalidrawTextElement["richText"];
+    paragraphSpacing?: number;
     originalText?: string;
     fontSize?: number;
     fontFamily?: FontFamilyValues;
@@ -351,11 +358,25 @@ export const newTextElement = (
   const fontSize = opts.fontSize || DEFAULT_FONT_SIZE;
   const lineHeight = opts.lineHeight || getLineHeight(fontFamily);
   const text = normalizeText(opts.text);
-  const metrics = measureText(
-    text,
-    getFontString({ fontFamily, fontSize }),
-    lineHeight,
-  );
+  const richText =
+    opts.richText ??
+    (opts.textAlign === "justify"
+      ? richTextFromPlainText(opts.originalText ?? text)
+      : undefined);
+  const metrics = richText
+    ? layoutRichText(
+        {
+          richText,
+          originalText: opts.originalText ?? text,
+          fontFamily,
+          fontSize,
+          lineHeight,
+          textAlign: opts.textAlign ?? "left",
+          paragraphSpacing: opts.paragraphSpacing,
+        },
+        opts.autoResize === false ? opts.width : Infinity,
+      )
+    : measureText(text, getFontString({ fontFamily, fontSize }), lineHeight);
   const textAlign = opts.textAlign || DEFAULT_TEXT_ALIGN;
   const verticalAlign = opts.verticalAlign || DEFAULT_VERTICAL_ALIGN;
   const offsets = getTextElementPositionOffsets(
@@ -377,6 +398,8 @@ export const newTextElement = (
     height: metrics.height,
     containerId: opts.containerId || null,
     originalText: opts.originalText ?? text,
+    richText,
+    paragraphSpacing: opts.paragraphSpacing,
     autoResize: opts.autoResize ?? true,
     lineHeight,
     labelPosition: opts.labelPosition ?? null,
@@ -546,6 +569,32 @@ export const refreshTextDimensions = (
   if (textElement.isDeleted) {
     return;
   }
+  if (textElement.richText) {
+    let width = container
+      ? getBoundTextMaxWidth(container, textElement)
+      : textElement.autoResize
+      ? Infinity
+      : textElement.width;
+    let layout = layoutRichText(textElement, width);
+    let autoResize = textElement.autoResize;
+    if (
+      !container &&
+      autoResize &&
+      maxWidth !== undefined &&
+      textElement.width <= maxWidth &&
+      layout.width > maxWidth
+    ) {
+      width = maxWidth;
+      autoResize = false;
+      layout = layoutRichText(textElement, width);
+    }
+    return {
+      text: layout.text,
+      autoResize,
+      width: autoResize ? layout.width : width,
+      height: layout.height,
+    };
+  }
   if (
     maxWidth !== undefined &&
     !container &&
@@ -677,16 +726,18 @@ export const newImageElement = (
     fileId?: ExcalidrawImageElement["fileId"];
     scale?: ExcalidrawImageElement["scale"];
     crop?: ExcalidrawImageElement["crop"];
+    imageBorder?: boolean;
   } & ElementConstructorOpts,
 ): NonDeleted<ExcalidrawImageElement> => {
   return {
     ..._newElementBase<ExcalidrawImageElement>("image", opts),
     // in the future we'll support changing stroke color for some SVG elements,
     // and `transparent` will likely mean "use original colors of the image"
-    strokeColor: "transparent",
+    strokeColor: opts.strokeColor ?? "transparent",
     status: opts.status ?? "pending",
     fileId: opts.fileId ?? null,
     scale: opts.scale ?? [1, 1],
     crop: opts.crop ?? null,
+    imageBorder: opts.imageBorder ?? false,
   };
 };

@@ -3,15 +3,18 @@ import React from "react";
 
 import "./Tooltip.scss";
 
-export const getTooltipDiv = () => {
-  const existingDiv = document.querySelector<HTMLDivElement>(
+let activeTooltipDocument: Document | null = null;
+
+export const getTooltipDiv = (ownerDocument: Document = document) => {
+  const existingDiv = ownerDocument.querySelector<HTMLDivElement>(
     ".excalidraw-tooltip",
   );
   if (existingDiv) {
     return existingDiv;
   }
-  const div = document.createElement("div");
-  document.body.appendChild(div);
+  const div = ownerDocument.createElement("div");
+  div.setAttribute("role", "tooltip");
+  ownerDocument.body.appendChild(div);
   div.classList.add("excalidraw-tooltip");
   return div;
 };
@@ -28,8 +31,9 @@ export const updateTooltipPosition = (
 ) => {
   const tooltipRect = tooltip.getBoundingClientRect();
 
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
+  const ownerWindow = tooltip.ownerDocument.defaultView!;
+  const viewportWidth = ownerWindow.innerWidth;
+  const viewportHeight = ownerWindow.innerHeight;
 
   const margin = 5;
 
@@ -77,11 +81,13 @@ let tooltipHiddenAt = 0;
 let tooltipItemObserver: MutationObserver | null = null;
 
 export const hideTooltip = () => {
-  clearTimeout(showTooltipTimer);
+  activeTooltipDocument?.defaultView?.clearTimeout(showTooltipTimer);
   tooltipItemObserver?.disconnect();
   tooltipItemObserver = null;
   // a plain query, so that hiding never creates the tooltip node
-  const tooltip = document.querySelector<HTMLDivElement>(".excalidraw-tooltip");
+  const tooltip = activeTooltipDocument?.querySelector<HTMLDivElement>(
+    ".excalidraw-tooltip",
+  );
   if (tooltip?.classList.contains("excalidraw-tooltip--visible")) {
     tooltip.classList.remove("excalidraw-tooltip--visible");
     tooltipHiddenAt = Date.now();
@@ -105,12 +111,14 @@ const updateTooltip = (
   updateTooltipPosition(tooltip, itemRect, position);
 
   tooltipItemObserver?.disconnect();
-  tooltipItemObserver = new MutationObserver(() => {
-    if (!item.isConnected) {
-      hideTooltip();
-    }
-  });
-  tooltipItemObserver.observe(document.body, {
+  tooltipItemObserver = new item.ownerDocument.defaultView!.MutationObserver(
+    () => {
+      if (!item.isConnected) {
+        hideTooltip();
+      }
+    },
+  );
+  tooltipItemObserver.observe(item.ownerDocument.body, {
     childList: true,
     subtree: true,
   });
@@ -137,12 +145,22 @@ export const showTooltip = (
   const show = () => {
     // item may have been unmounted while the delayed tooltip was pending
     if (item.isConnected) {
-      updateTooltip(item, getTooltipDiv(), label, long, position);
+      updateTooltip(
+        item,
+        getTooltipDiv(item.ownerDocument),
+        label,
+        long,
+        position,
+      );
     }
   };
-  clearTimeout(showTooltipTimer);
+  hideTooltip();
+  activeTooltipDocument = item.ownerDocument;
   if (delay && Date.now() - tooltipHiddenAt > TOOLTIP_WARM_WINDOW) {
-    showTooltipTimer = window.setTimeout(show, TOOLTIP_DELAY);
+    showTooltipTimer = item.ownerDocument.defaultView!.setTimeout(
+      show,
+      TOOLTIP_DELAY,
+    );
   } else {
     show();
   }

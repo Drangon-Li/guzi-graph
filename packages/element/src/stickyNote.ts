@@ -20,6 +20,9 @@ import {
 
 import { clamp } from "@excalidraw/math";
 
+import { layoutRichText } from "./richText";
+import { isSubcanvasPin } from "./subcanvasPin";
+
 import { updateBoundElements } from "./binding";
 import { newElementWith } from "./mutateElement";
 import { getPositionAfterHeightChange } from "./sizeHelpers";
@@ -671,6 +674,18 @@ export const getStickyNoteLayout = (
   textElement: ExcalidrawTextElement | null,
   opts: StickyNoteLayoutOpts = {},
 ): StickyNoteLayout => {
+  if (isSubcanvasPin(container)) {
+    return {
+      container: {
+        x: container.x,
+        y: container.y,
+        width: container.width,
+        height: container.height,
+        baseHeight: container.height,
+      },
+      text: null,
+    };
+  }
   const baseWidth = getStickyNoteBaseWidth(container);
   const baseHeight = Math.max(
     opts.baseHeight ?? (container.baseHeight || container.height),
@@ -702,6 +717,15 @@ export const getStickyNoteLayout = (
 
   const fit = (fontSize: number): FontFit => {
     const font = getFontString({ fontFamily, fontSize });
+    if (textElement.richText && originalText === textElement.originalText) {
+      const layout = layoutRichText({ ...textElement, fontSize }, maxWidth);
+      return {
+        text: layout.text,
+        fontSize,
+        width: layout.width,
+        height: layout.height,
+      };
+    }
     const text = wrapText(originalText, font, maxWidth);
     return { text, fontSize, ...measureText(text, font, lineHeight) };
   };

@@ -9,10 +9,16 @@ import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import type { MaybePromise } from "@excalidraw/common/utility-types";
 
+import { collectSubcanvasScenes, collectSceneFiles } from "../subcanvas";
+
 import { cleanAppStateForExport, clearAppStateForDatabase } from "../appState";
 
 import { isImageFileHandle, loadFromBlob } from "./blob";
 import { fileOpen, fileSave } from "./filesystem";
+
+// Initialize blob/viewport before table's newElement dependency reaches the element barrel.
+// eslint-disable-next-line import/order
+import { syncTableData } from "@excalidraw/element/table";
 
 import type { AppState, BinaryFiles, LibraryItems } from "../types";
 import type {
@@ -31,23 +37,6 @@ export type JSONExportData = {
 /**
  * Strips out files which are only referenced by deleted elements
  */
-const filterOutDeletedFiles = (
-  elements: readonly ExcalidrawElement[],
-  files: BinaryFiles,
-) => {
-  const nextFiles: BinaryFiles = {};
-  for (const element of elements) {
-    if (
-      !element.isDeleted &&
-      "fileId" in element &&
-      element.fileId &&
-      files[element.fileId]
-    ) {
-      nextFiles[element.fileId] = files[element.fileId];
-    }
-  }
-  return nextFiles;
-};
 
 export const serializeAsJSON = (
   elements: readonly ExcalidrawElement[],
@@ -55,6 +44,16 @@ export const serializeAsJSON = (
   files: BinaryFiles,
   type: "local" | "database",
 ): string => {
+  elements = syncTableData(elements);
+  const subscenes = Object.fromEntries(
+    Object.entries(collectSubcanvasScenes(elements, appState.subscenes)).map(
+      ([id, scene]) => [
+        id,
+        { ...scene, elements: syncTableData(scene.elements) },
+      ],
+    ),
+  );
+  const state = { ...appState, subscenes };
   const data: ExportedDataState = {
     type: EXPORT_DATA_TYPES.excalidraw,
     version: VERSIONS.excalidraw,
@@ -62,11 +61,11 @@ export const serializeAsJSON = (
     elements,
     appState:
       type === "local"
-        ? cleanAppStateForExport(appState)
-        : clearAppStateForDatabase(appState),
+        ? cleanAppStateForExport(state)
+        : clearAppStateForDatabase(state),
     files:
       type === "local"
-        ? filterOutDeletedFiles(elements, files)
+        ? collectSceneFiles(elements, files, subscenes)
         : // will be stripped from JSON
           undefined,
   };

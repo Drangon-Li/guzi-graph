@@ -1,6 +1,7 @@
 import clsx from "clsx";
 
 import { IconButton } from "./IconButton";
+import { useAppProps } from "./App";
 import { laserPointerToolIcon } from "./icons";
 
 type LaserPointerButtonProps = {
@@ -11,6 +12,7 @@ type LaserPointerButtonProps = {
 };
 
 export const LaserPointerButton = (props: LaserPointerButtonProps) => {
+  const appProps = useAppProps();
   return (
     <IconButton
       className={clsx("ToolIcon__LaserPointer", {
@@ -20,7 +22,8 @@ export const LaserPointerButton = (props: LaserPointerButtonProps) => {
       size="small"
       icon={laserPointerToolIcon}
       checked={props.checked}
-      title={`${props.title}`}
+      tooltip={`${props.title}`}
+      tooltipEnabled={appProps?.desktopIntegration?.toolbarTooltips !== false}
       aria-label={`${props.title}`}
       data-testid="toolbar-LaserPointer"
       onSelect={() => props.onChange?.()}

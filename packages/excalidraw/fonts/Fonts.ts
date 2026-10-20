@@ -5,6 +5,8 @@ import {
   WINDOWS_EMOJI_FALLBACK_FONT,
   getFontFamilyFallbacks,
   FONT_SIZES,
+  registerCustomFontRegistry,
+  getRegisteredSystemFonts,
 } from "@excalidraw/common";
 import { getContainerElement } from "@excalidraw/element";
 import { charWidth } from "@excalidraw/element";
@@ -73,7 +75,19 @@ export class Fonts {
       ]);
     }
 
+    for (const [id] of getRegisteredSystemFonts()) {
+      if (!Fonts._registered.has(id)) {
+        Fonts._registered.set(id, {
+          metadata: FONT_METADATA[id],
+          fontFaces: [],
+        });
+      }
+    }
     return Fonts._registered;
+  }
+
+  public static registerCustomFonts(registry: Record<string, string>) {
+    registerCustomFontRegistry(registry);
   }
 
   public get registered() {

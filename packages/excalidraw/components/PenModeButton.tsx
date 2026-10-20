@@ -1,6 +1,7 @@
 import clsx from "clsx";
 
 import { IconButton } from "./IconButton";
+import { useAppProps } from "./App";
 import { PenModeIcon } from "./icons";
 
 type PenModeButtonProps = {
@@ -12,6 +13,7 @@ type PenModeButtonProps = {
 };
 
 export const PenModeButton = (props: PenModeButtonProps) => {
+  const appProps = useAppProps();
   if (!props.penDetected) {
     return null;
   }
@@ -22,7 +24,8 @@ export const PenModeButton = (props: PenModeButtonProps) => {
       type="toggle"
       icon={PenModeIcon}
       checked={props.checked}
-      title={`${props.title}`}
+      tooltip={`${props.title}`}
+      tooltipEnabled={appProps?.desktopIntegration?.toolbarTooltips !== false}
       aria-label={`${props.title}`}
       onSelect={() => props.onChange?.()}
     />

@@ -46,7 +46,14 @@ import type {
   InteractiveCanvasRenderConfig,
 } from "@excalidraw/excalidraw/scene/types";
 
+import {
+  getRichTextFont,
+  getRichTextUnderline,
+  layoutRichText,
+} from "./richText";
 import { getElementAbsoluteCoords, getElementBounds } from "./bounds";
+import { drawImageBorder } from "./imageBorder";
+import { getSubcanvasPinGeometry, isSubcanvasPin } from "./subcanvasPin";
 import { getUncroppedImageElement } from "./cropElement";
 import { LinearElementEditor } from "./linearElementEditor";
 import {
@@ -436,6 +443,53 @@ const drawElementOnCanvas = (
 ) => {
   switch (element.type) {
     case "stickynote": {
+      if (isSubcanvasPin(element)) {
+        const geometry = getSubcanvasPinGeometry(element);
+        context.save();
+        const path = (points: number[][], close = false) => {
+          context.beginPath();
+          points.forEach(([x, y], index) =>
+            index ? context.lineTo(x, y) : context.moveTo(x, y),
+          );
+          if (close) {
+            context.closePath();
+          }
+        };
+        context.lineWidth = geometry.lineWidth;
+        context.lineCap = "round";
+        context.lineJoin = "round";
+        context.strokeStyle = applyDarkModeFilter(
+          element.strokeColor,
+          renderConfig.theme === THEME.DARK,
+        );
+        context.fillStyle = applyDarkModeFilter(
+          element.backgroundColor,
+          renderConfig.theme === THEME.DARK,
+        );
+        path(geometry.paper, true);
+        context.fill();
+        context.stroke();
+        path(geometry.fold);
+        context.stroke();
+        path(geometry.stem);
+        context.stroke();
+        context.beginPath();
+        context.arc(
+          geometry.center[0],
+          geometry.center[1],
+          geometry.radius,
+          0,
+          Math.PI * 2,
+        );
+        context.fillStyle = applyDarkModeFilter(
+          geometry.headColor,
+          renderConfig.theme === THEME.DARK,
+        );
+        context.fill();
+        context.stroke();
+        context.restore();
+        break;
+      }
       context.save();
       context.fillStyle = `rgba(0, 0, 0, ${STICKY_NOTE_SHADOW_OPACITY})`;
       fillStickyNoteShape(
@@ -620,10 +674,60 @@ const drawElementOnCanvas = (
         drawImagePlaceholder(element, context, renderConfig.theme);
       }
       context.restore();
+      drawImageBorder(context, element, renderConfig.theme, rc);
       break;
     }
     default: {
       if (isTextElement(element)) {
+        if (element.richText) {
+          const layout = layoutRichText(
+            element,
+            element.autoResize && !element.containerId
+              ? Infinity
+              : element.width,
+          );
+          const baseline = getVerticalOffset(
+            element.fontFamily,
+            element.fontSize,
+            element.fontSize * element.lineHeight,
+          );
+          context.save();
+          context.textAlign = "left";
+          for (const line of layout.lines) {
+            for (const run of line.runs) {
+              if (run.background) {
+                context.fillStyle = run.background;
+                context.fillRect(
+                  run.x,
+                  run.y,
+                  run.width,
+                  element.fontSize * element.lineHeight,
+                );
+              }
+              context.font = getRichTextFont(element, run);
+              context.fillStyle = applyDarkModeFilter(
+                element.strokeColor,
+                renderConfig.theme === THEME.DARK,
+              );
+              context.fillText(run.text, run.x, run.y + baseline);
+              if (run.underline) {
+                const underline = getRichTextUnderline(
+                  run,
+                  element.fontSize,
+                  baseline,
+                );
+                context.fillRect(
+                  underline.x,
+                  underline.y,
+                  underline.width,
+                  underline.height,
+                );
+              }
+            }
+          }
+          context.restore();
+          break;
+        }
         const rtl = isRTL(element.text);
         const shouldTemporarilyAttach = rtl && !context.canvas.isConnected;
         if (shouldTemporarilyAttach) {

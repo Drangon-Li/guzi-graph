@@ -15,6 +15,27 @@ export type DesktopControlOption = {
   icon?: ReactNode;
 };
 
+export const DesktopSwitch = ({
+  label,
+  checked,
+  onCheckedChange,
+}: {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) => (
+  <button
+    type="button"
+    className="desktop-switch"
+    role="switch"
+    aria-label={label}
+    aria-checked={checked}
+    onClick={() => onCheckedChange(!checked)}
+  >
+    <span />
+  </button>
+);
+
 export const DesktopSelect = ({
   root,
   label,

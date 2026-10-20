@@ -26,7 +26,7 @@ export type PointerType = "mouse" | "pen" | "touch";
 export type StrokeRoundness = "round" | "sharp";
 export type RoundnessType = ValueOf<typeof ROUNDNESS>;
 export type StrokeStyle = "solid" | "dashed" | "dotted";
-export type TextAlign = typeof TEXT_ALIGN[keyof typeof TEXT_ALIGN];
+export type TextAlign = typeof TEXT_ALIGN[keyof typeof TEXT_ALIGN] | "justify";
 
 type VerticalAlignKeys = keyof typeof VERTICAL_ALIGN;
 export type VerticalAlign = typeof VERTICAL_ALIGN[VerticalAlignKeys];
@@ -168,6 +168,7 @@ export type ExcalidrawImageElement = _ExcalidrawElementBase &
     scale: [number, number];
     /** whether an element is cropped */
     crop: ImageCrop | null;
+    imageBorder?: boolean;
   }>;
 
 export type InitializedExcalidrawImageElement = MarkNonNullable<
@@ -269,6 +270,9 @@ export type ExcalidrawTextElement = _ExcalidrawElementBase &
     verticalAlign: VerticalAlign;
     containerId: ExcalidrawTextContainer["id"] | null;
     originalText: string;
+    richText?: import("./richText").RichTextDocument;
+    /** Space between paragraphs, in em. */
+    paragraphSpacing?: number;
     /**
      * If `true` the width will fit the text. If `false`, the text will
      * wrap to fit the width.

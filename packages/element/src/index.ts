@@ -107,3 +107,5 @@ export * from "./zindex";
 export * from "./arrows/helpers";
 export * from "./arrowheads";
 export * from "./convertToShape";
+
+export * from "./richText";

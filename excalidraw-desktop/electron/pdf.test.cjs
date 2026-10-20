@@ -4,6 +4,7 @@ const { EventEmitter } = require("node:events");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+
 const { renderPdf, validatePdfRequest } = require("./pdf.cjs");
 
 const request = {
@@ -38,11 +39,15 @@ function fixture(failure) {
         },
         executeJavaScript: async (script) => {
           calls.script = script;
-          if (failure === "decode") throw new Error("decode failed");
+          if (failure === "decode") {
+            throw new Error("decode failed");
+          }
         },
         printToPDF: async (options) => {
           calls.print = options;
-          if (failure === "print") throw new Error("print failed");
+          if (failure === "print") {
+            throw new Error("print failed");
+          }
           return Buffer.from("%PDF-fixture");
         },
       });
@@ -50,8 +55,9 @@ function fixture(failure) {
     async loadFile(file) {
       calls.file = file;
       calls.html = await fs.readFile(file, "utf8");
-      if (failure === "load")
+      if (failure === "load") {
         throw new Error(`load failed: ${"data:".repeat(10000)}`);
+      }
     }
     isDestroyed() {
       return calls.destroyed > 0;
@@ -95,8 +101,9 @@ test("PDF uses one proportional page in inches, a hidden isolated sandbox and de
     "https://example.com/image.png",
     "file:///private/image.png",
     "app://local/index.html",
-  ])
+  ]) {
     calls.request({ url }, ({ cancel }) => assert.equal(cancel, true));
+  }
   calls.request({ url: "data:image/svg+xml;base64,AA==" }, ({ cancel }) =>
     assert.equal(cancel, false),
   );
@@ -111,7 +118,7 @@ test("PDF uses one proportional page in inches, a hidden isolated sandbox and de
   assert.equal(calls.open().action, "deny");
 });
 
-for (const failure of ["load", "decode", "print"])
+for (const failure of ["load", "decode", "print"]) {
   test(`PDF destroys its hidden window when ${failure} fails`, async () => {
     const { PrintWindow, calls } = fixture(failure);
     await assert.rejects(renderPdf(PrintWindow, request), {
@@ -120,6 +127,7 @@ for (const failure of ["load", "decode", "print"])
     assert.equal(calls.destroyed, 1);
     await assert.rejects(fs.stat(path.dirname(calls.file)), { code: "ENOENT" });
   });
+}
 
 test("PDF rejects invalid sizes and non-SVG data before opening a window", () => {
   for (const update of [
@@ -131,8 +139,9 @@ test("PDF rejects invalid sizes and non-SVG data before opening a window", () =>
     { svg: null },
     { name: null },
     { name: " " },
-  ])
+  ]) {
     assert.throws(() => validatePdfRequest({ ...request, ...update }), /无效/);
+  }
 });
 
 test("PDF metadata title uses the drawing name with HTML escaped characters", async () => {
@@ -160,4 +169,30 @@ test("large SVG exports load a temporary HTML file instead of a navigation data 
   assert.match(calls.file, /excalidraw-pdf-[^/]+[/]drawing.html$/);
   assert.equal(calls.destroyed, 1);
   await assert.rejects(fs.stat(path.dirname(calls.file)), { code: "ENOENT" });
+});
+
+test("PDF subcanvas pages use separate named page sizes and decode every SVG before printing", async () => {
+  const { PrintWindow, calls } = fixture();
+  await renderPdf(PrintWindow, {
+    ...request,
+    pages: [{ svg: request.svg, width: 192, height: 288 }],
+  });
+  assert.match(calls.html, /@page canvas0\{size:10in 5in;margin:0\}/);
+  assert.match(calls.html, /@page canvas1\{size:2in 3in;margin:0\}/);
+  assert.equal((calls.html.match(/<section /g) || []).length, 2);
+  assert.equal((calls.html.match(/<img /g) || []).length, 2);
+  assert.match(calls.html, /section:last-child\{break-after:auto\}/);
+  assert.equal(calls.print.preferCSSPageSize, true);
+  assert.equal(calls.destroyed, 1);
+});
+
+test("PDF validates every subcanvas page before opening the print window", () => {
+  for (const pages of [
+    null,
+    {},
+    [{ svg: request.svg, width: 0, height: 50 }],
+    [{ svg: "<html>", width: 100, height: 50 }],
+  ]) {
+    assert.throws(() => validatePdfRequest({ ...request, pages }), /无效/);
+  }
 });

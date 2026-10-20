@@ -54,37 +54,36 @@ export const isCustomColor = ({
 
 export const getMostUsedCustomColors = (
   elements: readonly ExcalidrawElement[],
-  type: "elementBackground" | "elementStroke",
+  type: Exclude<ColorPickerType, "canvasBackground">,
   palette: ColorPaletteCustom,
 ) => {
-  const elementColorTypeMap = {
-    elementBackground: "backgroundColor",
-    elementStroke: "strokeColor",
-  };
-
-  const colors = elements.filter((element) => {
-    if (element.isDeleted) {
-      return false;
-    }
-
-    const color =
-      element[elementColorTypeMap[type] as "backgroundColor" | "strokeColor"];
-
-    // fully-transparent colors are "no color", not a reusable custom color
-    // (matters for palettes that exclude `transparent`, e.g. bucket fill)
-    return !isTransparent(color) && isCustomColor({ color, palette });
-  });
-
+  const colors = elements
+    .filter((element) => !element.isDeleted)
+    .flatMap((element) => {
+      if (type === "textHighlight") {
+        return element.type === "text"
+          ? element.richText?.paragraphs.flatMap((paragraph) =>
+              paragraph.runs.flatMap((run) =>
+                run.background ? [run.background] : [],
+              ),
+            ) ?? []
+          : [];
+      }
+      if (type === "tableText" && element.type !== "text") {
+        return [];
+      }
+      return [
+        type === "elementBackground"
+          ? element.backgroundColor
+          : element.strokeColor,
+      ];
+    });
   const colorCountMap = new Map<string, number>();
-  colors.forEach((element) => {
-    const color =
-      element[elementColorTypeMap[type] as "backgroundColor" | "strokeColor"];
-    if (colorCountMap.has(color)) {
-      colorCountMap.set(color, colorCountMap.get(color)! + 1);
-    } else {
-      colorCountMap.set(color, 1);
+  for (const color of colors) {
+    if (!isTransparent(color) && isCustomColor({ color, palette })) {
+      colorCountMap.set(color, (colorCountMap.get(color) ?? 0) + 1);
     }
-  });
+  }
 
   return [...colorCountMap.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -104,4 +103,6 @@ export const activeColorPickerSectionAtom =
 export type ColorPickerType =
   | "canvasBackground"
   | "elementBackground"
-  | "elementStroke";
+  | "elementStroke"
+  | "textHighlight"
+  | "tableText";

@@ -1,6 +1,6 @@
 {
   "name": "excalidraw-local-desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "A local macOS workspace for Excalidraw drawings",
   "author": "Local",
@@ -26,7 +26,7 @@
   },
   "build": {
     "appId": "local.excalidraw.desktop",
-    "productName": "Excalidraw Local",
+    "productName": "Excalidraw-Guzi",
     "directories": {
       "output": "release",
       "buildResources": "resources"
@@ -58,7 +58,7 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "icon": "resources/icon.icns",
-      "artifactName": "Excalidraw-Local-${version}-${arch}.${ext}"
+      "artifactName": "Excalidraw-Guzi-${version}-${arch}.${ext}"
     },
     "dmg": {
       "sign": false
@@ -72,5 +72,5 @@
       }
     ]
   },
-  "productName": "Excalidraw Local"
+  "productName": "Excalidraw-Guzi"
 }

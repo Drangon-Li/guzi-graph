@@ -9,13 +9,18 @@ import { exportToCanvas } from "@excalidraw/excalidraw/scene/export";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
+import { createThumbnailCache } from "./thumbnailCache";
+
 import { translate } from "./i18n";
 
 import type { DesktopLanguage } from "./i18n";
 import type { ProjectFile } from "./shared";
 
 const MAX_THUMBNAIL_SIZE = 720;
-const thumbnails = new WeakMap<Document, Map<string, Promise<string | null>>>();
+const thumbnails = new WeakMap<
+  Document,
+  ReturnType<typeof createThumbnailCache>
+>();
 
 const loadThumbnailFonts = async (
   elements: readonly ExcalidrawElement[],
@@ -51,31 +56,37 @@ const getThumbnail = (
   const ownerWindow = ownerDocument.defaultView!;
   let cache = thumbnails.get(ownerDocument);
   if (!cache) {
-    cache = new Map();
+    cache = createThumbnailCache();
     thumbnails.set(ownerDocument, cache);
   }
   const key = JSON.stringify([file.path, file.modifiedAt, file.size, theme]);
-  let thumbnail = cache.get(key);
-  if (!thumbnail) {
-    thumbnail = (async () => {
-      const source = await ownerWindow.desktop.readFile(file.path);
-      const scene = await loadFromBlob(
-        new ownerWindow.Blob([source.content]),
-        null,
-        null,
-      );
-      const elements = getNonDeletedElements(scene.elements || []);
-      if (!elements.length) {
-        return null;
-      }
-      const appState = {
-        ...restoreAppState(scene.appState, null),
-        exportWithDarkMode: theme === "dark",
-        width: 0,
-        height: 0,
-        offsetTop: 0,
-        offsetLeft: 0,
-      };
+  return cache.acquire(key, async (cancelled) => {
+    const source = await ownerWindow.desktop.readFile(file.path);
+    if (cancelled()) {
+      return null;
+    }
+    const scene = await loadFromBlob(
+      new ownerWindow.Blob([source.content]),
+      null,
+      null,
+    );
+    if (cancelled()) {
+      return null;
+    }
+    const elements = getNonDeletedElements(scene.elements || []);
+    if (!elements.length) {
+      return null;
+    }
+    const appState = {
+      ...restoreAppState(scene.appState, null),
+      exportWithDarkMode: theme === "dark",
+      width: 0,
+      height: 0,
+      offsetTop: 0,
+      offsetLeft: 0,
+    };
+    let previewCanvas: HTMLCanvasElement | undefined;
+    try {
       const canvas = await exportToCanvas(
         elements,
         appState,
@@ -88,26 +99,29 @@ const getThumbnail = (
         (width, height) => {
           const scale = MAX_THUMBNAIL_SIZE / Math.max(width, height);
           const canvas = ownerDocument.createElement("canvas");
+          previewCanvas = canvas;
           canvas.width = Math.max(1, Math.round(width * scale));
           canvas.height = Math.max(1, Math.round(height * scale));
           return { canvas, scale };
         },
-        () => loadThumbnailFonts(elements, ownerDocument),
+        async () => {
+          await loadThumbnailFonts(elements, ownerDocument);
+          if (cancelled()) {
+            throw new ownerWindow.DOMException(
+              "Thumbnail cancelled",
+              "AbortError",
+            );
+          }
+        },
       );
-      return canvas.toDataURL("image/png");
-    })();
-    cache.set(key, thumbnail);
-    const pending = thumbnail;
-    void thumbnail.catch(() => {
-      if (cache.get(key) === pending) {
-        cache.delete(key);
+      return cancelled() ? null : canvas.toDataURL("image/png");
+    } finally {
+      if (previewCanvas) {
+        previewCanvas.width = 0;
+        previewCanvas.height = 0;
       }
-    });
-    if (cache.size > 120) {
-      cache.delete(cache.keys().next().value!);
     }
-  }
-  return thumbnail;
+  });
 };
 
 export const FilePreview = ({
@@ -130,8 +144,11 @@ export const FilePreview = ({
     setFailed(false);
     const node = container.current!;
     const ownerWindow = node.ownerDocument.defaultView!;
+    let release: (() => void) | undefined;
     const load = () => {
-      void getThumbnail(file, root, theme).then(
+      const thumbnail = getThumbnail(file, root, theme);
+      release = thumbnail.release;
+      void thumbnail.promise.then(
         (value) => !disposed && setPreview(value),
         () => !disposed && setFailed(true),
       );
@@ -149,6 +166,7 @@ export const FilePreview = ({
     return () => {
       disposed = true;
       observer.disconnect();
+      release?.();
     };
   }, [file, root, theme]);
   return (

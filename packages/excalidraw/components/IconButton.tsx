@@ -10,6 +10,7 @@ import { AbortError } from "../errors";
 import "./ToolIcon.scss";
 
 import Spinner from "./Spinner";
+import { showTooltip, hideTooltip } from "./Tooltip";
 
 import type { CSSProperties } from "react";
 
@@ -22,6 +23,8 @@ type IconButtonBaseProps = {
   "data-testid"?: string;
   label?: string;
   title?: string;
+  tooltip?: string;
+  tooltipEnabled?: boolean;
   size?: IconButtonSize;
   keyBindingLabel?: string | null;
   showAriaLabel?: boolean;
@@ -55,7 +58,11 @@ type IconButtonProps =
        * pointerType is captured on pointer-down, where it's reliable
        * (unlike the click event's own pointerType on iOS).
        */
-      onSelect?(data: { pointerType: PointerType | null }): void;
+      onSelect?(data: {
+        pointerType: PointerType | null;
+        ctrlKey: boolean;
+      }): void;
+      onContextMenu?(event: React.MouseEvent<HTMLButtonElement>): void;
       /** the press that may become a click — e.g. to arm a drag out of the toolbar */
       onPointerDown?(event: React.PointerEvent<HTMLButtonElement>): void;
     });
@@ -70,7 +77,7 @@ export const IconButton = React.forwardRef(
     }: IconButtonProps,
     ref,
   ) => {
-    const innerRef = React.useRef(null);
+    const innerRef = React.useRef<HTMLButtonElement>(null);
     React.useImperativeHandle(ref, () => innerRef.current);
     const sizeCn = `ToolIcon_size_${size}`;
 
@@ -107,6 +114,28 @@ export const IconButton = React.forwardRef(
     }, []);
 
     const lastPointerTypeRef = useRef<PointerType | null>(null);
+    useEffect(() => {
+      if (props.tooltipEnabled === false) {
+        hideTooltip();
+      }
+      return hideTooltip;
+    }, [props.tooltipEnabled]);
+    const tooltipEvents =
+      props.tooltip && props.tooltipEnabled !== false
+        ? {
+            onPointerEnter: (event: React.PointerEvent<HTMLButtonElement>) =>
+              showTooltip(event.currentTarget, props.tooltip!, { delay: true }),
+            onPointerLeave: hideTooltip,
+            onFocus: (event: React.FocusEvent<HTMLButtonElement>) =>
+              showTooltip(event.currentTarget, props.tooltip!),
+            onBlur: hideTooltip,
+            onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
+              if (event.key === "Escape") {
+                hideTooltip();
+              }
+            },
+          }
+        : {};
 
     if (props.type === "button" || props.type === "icon") {
       return (
@@ -126,8 +155,10 @@ export const IconButton = React.forwardRef(
           style={props.style}
           data-testid={props["data-testid"]}
           hidden={props.hidden}
-          title={props.title}
+          title={props.tooltip ? undefined : props.title}
+          {...tooltipEvents}
           aria-label={props["aria-label"]}
+          aria-keyshortcuts={props["aria-keyshortcuts"]}
           type="button"
           onClick={onClick}
           ref={innerRef}
@@ -165,7 +196,8 @@ export const IconButton = React.forwardRef(
         })}
         type="button"
         style={props.style}
-        title={props.title}
+        title={props.tooltip ? undefined : props.title}
+        {...tooltipEvents}
         aria-label={props["aria-label"]}
         aria-keyshortcuts={props["aria-keyshortcuts"]}
         aria-pressed={props.checked}
@@ -173,16 +205,23 @@ export const IconButton = React.forwardRef(
         disabled={!!props.disabled}
         aria-disabled={!!props.disabled}
         onPointerDown={(event) => {
+          hideTooltip();
           lastPointerTypeRef.current = event.pointerType || null;
           props.onPointerDown?.(event);
         }}
         onPointerUp={() => {
-          requestAnimationFrame(() => {
-            lastPointerTypeRef.current = null;
-          });
+          innerRef.current?.ownerDocument.defaultView?.requestAnimationFrame(
+            () => {
+              lastPointerTypeRef.current = null;
+            },
+          );
         }}
-        onClick={() => {
-          props.onSelect?.({ pointerType: lastPointerTypeRef.current });
+        onContextMenu={props.onContextMenu}
+        onClick={(event) => {
+          props.onSelect?.({
+            pointerType: lastPointerTypeRef.current,
+            ctrlKey: event.ctrlKey,
+          });
         }}
         ref={innerRef}
       >

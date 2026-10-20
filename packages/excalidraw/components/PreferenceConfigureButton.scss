@@ -1,0 +1,30 @@
+.excalidraw {
+  button.preference-configure-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--default-button-size, 2rem);
+    height: var(--default-button-size, 2rem);
+    padding: 0;
+    border: 0;
+    border-radius: var(--border-radius-lg);
+    background: transparent;
+    color: var(--text-primary-color);
+    cursor: pointer;
+    flex: 0 0 var(--default-button-size, 2rem);
+    justify-self: end;
+
+    svg {
+      width: var(--default-icon-size);
+      height: var(--default-icon-size);
+    }
+
+    &:hover {
+      background: var(--button-hover-bg, var(--color-surface-mid));
+    }
+  }
+
+  .selected-shape-actions .buttonList > .preference-configure-button {
+    margin-inline-start: auto;
+  }
+}

@@ -25,7 +25,14 @@ body,
     --desktop-muted: var(--color-gray-50);
   }
 
-  :where(.desktop-titlebar, .desktop-projects, .desktop-modal, .desktop-error-banner)
+  // Keep selector wrapping stable across Prettier 2.6 and 2.8.
+  /* prettier-ignore */
+  :where(
+      .desktop-titlebar,
+      .desktop-projects,
+      .desktop-modal,
+      .desktop-error-banner
+    )
     .excalidraw-button {
     display: inline-flex;
     align-items: center;
@@ -80,8 +87,8 @@ body,
     background: transparent;
   }
   .desktop-home-button svg {
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
   }
   .desktop-titlebar-new {
     width: 34px;
@@ -575,11 +582,6 @@ body,
     color: var(--desktop-muted);
     font-size: 13px;
   }
-  .desktop-modal-body .desktop-settings-path {
-    overflow-wrap: anywhere;
-    color: var(--text-primary-color);
-    user-select: text;
-  }
   .desktop-modal footer {
     display: flex;
     justify-content: flex-end;
@@ -587,60 +589,6 @@ body,
     padding: 16px 24px;
     border-top: 1px solid var(--default-border-color);
     flex-shrink: 0;
-  }
-  .desktop-settings-body {
-    padding-top: 0;
-    padding-bottom: 0;
-  }
-  .desktop-settings-section {
-    padding: 20px 0;
-    + .desktop-settings-section {
-      border-top: 1px solid var(--default-border-color);
-    }
-    h3 {
-      margin: 0 0 14px;
-    }
-    > .desktop-segmented-control {
-      display: flex;
-    }
-    p {
-      margin: 10px 0 0;
-      font-size: 12px;
-    }
-    .desktop-settings-help {
-      margin-top: -4px;
-      padding-inline-start: 25px;
-    }
-  }
-  .desktop-settings-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    font-size: 13px;
-    + .desktop-settings-row {
-      margin-top: 16px;
-    }
-  }
-  .desktop-settings-section
-    > .desktop-segmented-control
-    + .desktop-settings-row {
-    margin-top: 16px;
-  }
-  .desktop-settings-directory {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px;
-    border: 1px solid var(--default-border-color);
-    border-radius: 8px;
-    background: var(--color-surface-low);
-    .desktop-settings-path {
-      flex: 1;
-      min-width: 0;
-      margin: 0;
-      font-size: 12px;
-    }
   }
   .desktop-form-label {
     display: flex;

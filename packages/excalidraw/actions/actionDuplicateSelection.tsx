@@ -105,7 +105,6 @@ export const actionDuplicateSelection = register({
         arrayToMap(duplicatedElements),
       ),
       appState: {
-        ...appState,
         ...getSelectionStateForElements(
           duplicatedElements,
           getNonDeletedElements(elementsWithDuplicates),

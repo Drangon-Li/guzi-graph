@@ -1,7 +1,17 @@
 @use "../../css/variables.module" as *;
 
 .excalidraw {
+  .sidebar-transition-shell {
+    display: contents;
+  }
+
   .sidebar {
+    animation: sidebar-enter 180ms ease-out;
+
+    &--closing {
+      animation: sidebar-leave 180ms ease-in forwards;
+      pointer-events: none;
+    }
     display: flex;
     flex-direction: column;
     position: absolute;
@@ -171,5 +181,32 @@
         border: none;
       }
     }
+  }
+}
+
+@keyframes sidebar-enter {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes sidebar-leave {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .excalidraw .sidebar,
+  .excalidraw .sidebar--closing {
+    animation: none;
   }
 }

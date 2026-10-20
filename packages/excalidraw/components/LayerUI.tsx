@@ -25,6 +25,7 @@ import { UIAppStateContext } from "../context/ui-appState";
 import { useAtom, useAtomValue } from "../editor-jotai";
 
 import { t } from "../i18n";
+import { getSelectedTableRoot } from "../table";
 import { getScrollToContentState, getSelectedElements } from "../scene";
 import {
   getColorTargetAppStateUpdates,
@@ -61,7 +62,9 @@ import { JSONExportDialog } from "./JSONExportDialog";
 import { LaserPointerButton } from "./LaserPointerButton";
 import { Toast } from "./Toast";
 import { Toolbar } from "./Toolbar";
+import { SelectionToolbar } from "./SelectionToolbar";
 import { getToolPanelDock, getToolPanelWidth, ToolPanel } from "./ToolPanel";
+import { useSidebarDockContainer } from "./CanvasLayout";
 import {
   ViewportStatusBadge,
   ViewportStatusBorder,
@@ -176,6 +179,7 @@ const LayerUI = ({
   currentUserControls,
 }: LayerUIProps) => {
   const editorInterface = useEditorInterface();
+  const sidebarDockContainer = useSidebarDockContainer();
   const appProps = useAppProps();
   const stylesPanelMode = useStylesPanelMode();
   const isCompactStylesPanel = stylesPanelMode === "compact";
@@ -194,7 +198,7 @@ const LayerUI = ({
   );
   const [toolPanelCollapsed, setToolPanelCollapsed] = React.useState(false);
   const [toolPanelResizing, setToolPanelResizing] = React.useState(false);
-  const toolPanelAutoHide = React.useRef(false);
+
   const toolPanelSelectionKey = getSelectedElements(elements, appState)
     .map((element) => element.id)
     .sort()
@@ -205,20 +209,11 @@ const LayerUI = ({
     )
     .join(",");
   React.useEffect(() => {
-    // A manual collapse stays closed until the editing target changes.
-    if (toolPanelAutoHide.current) {
-      setToolPanelCollapsed(!toolPanelSelectionKey);
-    }
-  }, [toolPanelSelectionKey]);
+    setToolPanelCollapsed(!toolPanel?.pinned && !toolPanelSelectionKey);
+  }, [toolPanelSelectionKey, toolPanel?.pinned]);
   React.useEffect(() => {
     setToolPanelWidth(toolPanel?.width ?? 280);
   }, [toolPanel?.width]);
-  React.useEffect(() => {
-    if (toolPanel?.dock === "floating") {
-      toolPanelAutoHide.current = false;
-      setToolPanelCollapsed(false);
-    }
-  }, [toolPanel?.dock]);
   const panelWidth = getToolPanelWidth(toolPanelWidth, appState.width);
 
   const spacing = isCompactStylesPanel
@@ -515,11 +510,12 @@ const LayerUI = ({
     isSidebarDocked &&
     editorInterface.canFitSidebar
   );
-  const rightInset =
-    isSidebarDockedAndFits ||
-    (toolPanelDock === "right" && appState.openSidebar)
-      ? "var(--right-sidebar-width)"
-      : "0px";
+  const rightInset = sidebarDockContainer
+    ? "0px"
+    : isSidebarDockedAndFits ||
+      (toolPanelDock === "right" && appState.openSidebar)
+    ? "var(--right-sidebar-width)"
+    : "0px";
 
   const layerUIJSX = (
     <>
@@ -580,8 +576,9 @@ const LayerUI = ({
               { altKey },
             ) => {
               if (
-                colorPickerType !== "elementBackground" &&
-                colorPickerType !== "elementStroke"
+                (colorPickerType !== "elementBackground" &&
+                  colorPickerType !== "elementStroke") ||
+                getSelectedTableRoot(elements, appState.selectedElementIds)
               ) {
                 return;
               }
@@ -656,6 +653,7 @@ const LayerUI = ({
         <PasteChartDialog
           data={appState.openDialog.data}
           rawText={appState.openDialog.rawText}
+          tableData={appState.openDialog.tableData}
           onClose={() =>
             setAppState({
               openDialog: null,
@@ -687,7 +685,7 @@ const LayerUI = ({
             <ViewportStatusBorder
               border={appProps.viewportStatusFrame.border}
               style={
-                isSidebarDockedAndFits
+                isSidebarDockedAndFits && !sidebarDockContainer
                   ? {
                       // flush against the sidebar's own visible edge, not
                       // just the --right-sidebar-width column it reserves
@@ -761,7 +759,6 @@ const LayerUI = ({
               onResize={setToolPanelWidth}
               onResizingChange={setToolPanelResizing}
               onCollapsedChange={(collapsed) => {
-                toolPanelAutoHide.current = collapsed;
                 setToolPanelCollapsed(collapsed);
               }}
               appState={appState}
@@ -778,6 +775,28 @@ const LayerUI = ({
               }
             />
           )}
+          {defaultUIEnabled &&
+            appProps.desktopIntegration &&
+            appProps.desktopIntegration.selectionToolbar !== false && (
+              <SelectionToolbar
+                app={app}
+                appState={appState}
+                elements={elements}
+                actionManager={actionManager}
+                leftInset={
+                  toolPanelDock === "left" && !toolPanelCollapsed
+                    ? panelWidth + 32
+                    : 16
+                }
+                rightInset={
+                  toolPanelDock === "right" &&
+                  !toolPanelCollapsed &&
+                  !appState.openSidebar
+                    ? panelWidth + 32
+                    : 16
+                }
+              />
+            )}
           {renderSidebars()}
         </>
       )}

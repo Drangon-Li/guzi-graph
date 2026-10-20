@@ -13,6 +13,8 @@ import type { FontFamilyValues } from "@excalidraw/element/types";
 import { Fonts } from "../../fonts";
 import { t } from "../../i18n";
 import { ButtonSeparator } from "../ButtonSeparator";
+import { useAppProps } from "../App";
+import { PreferenceConfigureButton } from "../PreferenceConfigureButton";
 import {
   FontFamilyCodeIcon,
   FontFamilyNormalIcon,
@@ -222,6 +224,7 @@ export const FontPicker = React.memo(
     onPopupChange,
     compactMode = false,
   }: FontPickerProps) => {
+    const { desktopIntegration } = useAppProps();
     const onSelectCallback = useCallback(
       (value: number | false) => {
         if (value) {
@@ -255,6 +258,8 @@ export const FontPicker = React.memo(
           aria-modal="true"
           className={clsx("FontPicker__container", {
             "FontPicker__container--compact": compactMode,
+            "FontPicker__container--configurable":
+              !!desktopIntegration?.onConfigurePreferences,
           })}
         >
           {!compactMode && (
@@ -290,6 +295,9 @@ export const FontPicker = React.memo(
               />
             )}
           </Popover.Root>
+          {desktopIntegration?.onConfigurePreferences && (
+            <PreferenceConfigureButton section="fonts" />
+          )}
         </div>
       </FontPickerDnDContext.Provider>
     );

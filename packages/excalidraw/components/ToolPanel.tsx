@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import clsx from "clsx";
 
-import { PinIcon, sidebarRightIcon } from "./icons";
+import { PinIcon, sidebarRightIcon, chevronLeftIcon } from "./icons";
 
 import "./ToolPanel.scss";
 
@@ -52,26 +52,17 @@ export const ToolPanelDockControls = ({
     aria-label={options.labels.title}
   >
     {(["left", "right"] as const).map((side) => {
-      const active = options.dock === side;
-      const togglesPanel = active && !!onToggle;
-      const label = togglesPanel
-        ? collapsed
-          ? options.labels.expand
-          : options.labels.collapse
-        : side === "left"
-        ? options.labels.pinLeft
-        : options.labels.pinRight;
+      const label =
+        side === "left" ? options.labels.pinLeft : options.labels.pinRight;
       return (
         <button
           key={side}
           type="button"
           aria-label={label}
           title={label}
-          aria-pressed={active}
-          aria-expanded={togglesPanel ? !collapsed : undefined}
-          aria-controls={togglesPanel ? contentId : undefined}
-          hidden={collapsed && !active}
-          onClick={() => (togglesPanel ? onToggle() : onChange(side))}
+          aria-pressed={options.dock === side}
+          hidden={collapsed}
+          onClick={() => onChange(side)}
         >
           <span
             className={side === "left" ? "tool-panel-left-icon" : undefined}
@@ -81,15 +72,52 @@ export const ToolPanelDockControls = ({
         </button>
       );
     })}
-    {options.dock !== "floating" && (
+    <button
+      type="button"
+      aria-label={
+        options.pinned
+          ? options.labels.unpin
+          : options.labels.pin ?? options.labels.title
+      }
+      title={
+        options.pinned
+          ? options.labels.unpin
+          : options.labels.pin ?? options.labels.title
+      }
+      aria-pressed={!!options.pinned}
+      hidden={collapsed}
+      onClick={() => options.onPinnedChange?.(!options.pinned)}
+    >
+      {PinIcon}
+    </button>
+    {onToggle && (
       <button
         type="button"
-        aria-label={options.labels.unpin}
-        title={options.labels.unpin}
-        hidden={collapsed}
-        onClick={() => onChange("floating")}
+        aria-label={collapsed ? options.labels.expand : options.labels.collapse}
+        title={collapsed ? options.labels.expand : options.labels.collapse}
+        aria-expanded={!collapsed}
+        aria-controls={contentId}
+        onClick={onToggle}
       >
-        {PinIcon}
+        {collapsed ? (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            aria-hidden="true"
+          >
+            <path d="M14.5 6.5a5 5 0 0 0-6 6L3 18a2.1 2.1 0 0 0 3 3l5.5-5.5a5 5 0 0 0 6-6l-3 3-3-3 3-3Z" />
+          </svg>
+        ) : (
+          <span
+            className={
+              options.dock === "right" ? "tool-panel-left-icon" : undefined
+            }
+          >
+            {chevronLeftIcon}
+          </span>
+        )}
       </button>
     )}
   </div>
@@ -170,6 +198,7 @@ export const ToolPanel = ({
       className={clsx("tool-panel", `tool-panel--${dock}`, {
         "tool-panel--collapsed": collapsed,
         "tool-panel--resizing": resizing,
+        "tool-panel--hidden": hidden,
       })}
       style={
         {
@@ -177,11 +206,11 @@ export const ToolPanel = ({
           "--tool-panel-max-height": `${Math.max(0, appState.height - 148)}px`,
         } as CSSProperties
       }
-      hidden={hidden}
       inert={hidden}
+      aria-hidden={hidden}
       aria-label={options.labels.title}
-      data-viewport-ui={collapsed ? undefined : "side"}
-      data-viewport-ui-name={collapsed ? undefined : "toolDock"}
+      data-viewport-ui={collapsed || hidden ? undefined : "side"}
+      data-viewport-ui-name={collapsed || hidden ? undefined : "toolDock"}
     >
       <ToolPanelDockControls
         options={options}

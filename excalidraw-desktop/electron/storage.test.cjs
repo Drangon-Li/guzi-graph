@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const os = require("node:os");
 const { randomUUID } = require("node:crypto");
+
 const {
   DesktopStorage,
   atomicWrite,
@@ -48,6 +49,62 @@ test("defaults require explicit project directory selection", async (t) => {
     theme: "system",
     toolPanelDock: "floating",
     toolPanelWidth: 280,
+    toolPanelPinned: false,
+    toolbarTooltips: true,
+    selectionToolbar: true,
+    stickyNoteMode: "note",
+    stylePresets: [
+      {
+        id: "solid-arrow",
+        name: "实线箭头",
+        shortcut: "Alt+1",
+        tool: "arrow",
+        strokeStyle: "solid",
+        strokeWidth: 2,
+        strokeColor: "#1e1e1e",
+        endArrowhead: "arrow",
+      },
+      {
+        id: "dashed-arrow",
+        name: "虚线箭头",
+        shortcut: "Alt+2",
+        tool: "arrow",
+        strokeStyle: "dashed",
+        strokeWidth: 2,
+        strokeColor: "#1e1e1e",
+        endArrowhead: "arrow",
+      },
+    ],
+    editorPreferences: {
+      defaultFontFamily: 5,
+      defaultBackground: "#ffffff",
+      defaultStrokeColor: "#1e1e1e",
+      defaultElementBackground: "transparent",
+      elementStrokeTopPicks: [
+        "#1e1e1e",
+        "#e03131",
+        "#2f9e44",
+        "#1971c2",
+        "#f08c00",
+      ],
+      elementBackgroundTopPicks: [
+        "transparent",
+        "#ffc9c9",
+        "#b2f2bb",
+        "#a5d8ff",
+        "#ffec99",
+      ],
+      fontSizePresets: { sm: 16, md: 20, lg: 28, xl: 36 },
+      fontTopPicks: [5, 6, 8],
+      backgroundTopPicks: [
+        "#ffffff",
+        "#f8f9fa",
+        "#f5faff",
+        "#fffce8",
+        "#fdf8f6",
+      ],
+      systemFonts: [],
+    },
     language: "zh-CN",
     structuredExportFormat: "json",
     includeInferredStructure: true,
@@ -138,10 +195,12 @@ test("project index uses real nested folders and only drawing files", async (t) 
 test("rejects filename and category traversal", async (t) => {
   const { storage, create } = await fixture(t);
   const original = await create("a.excalidraw");
-  for (const name of ["../bad", "a/b", "a\\b", "", "..", "/tmp/pwn"])
+  for (const name of ["../bad", "a/b", "a\\b", "", "..", "/tmp/pwn"]) {
     assert.throws(() => fileName(name));
-  for (const category of ["../bad", "/tmp/bad", "a/../b", "a//b", "a\\b"])
+  }
+  for (const category of ["../bad", "/tmp/bad", "a/../b", "a//b", "a\\b"]) {
     assert.throws(() => categoryParts(category));
+  }
   assert.throws(() => storage.renameFile(original.path, "../bad"));
   await assert.rejects(storage.createFolder("../bad"));
   await assert.rejects(storage.moveFile(original.path, "/tmp"));
@@ -580,20 +639,24 @@ test("new preferences migrate old settings, persist and validate exact field typ
     includeInferredStructure: false,
     skipRemoveConfirmation: true,
     skipTrashConfirmation: true,
+    stickyNoteMode: "subcanvas",
   };
   await storage.updateSettings(update);
   const restored = await new DesktopStorage(
     path.join(base, "userData"),
   ).initialize();
-  for (const [key, value] of Object.entries(update))
+  for (const [key, value] of Object.entries(update)) {
     assert.equal(restored.getSettings()[key], value);
+  }
   for (const update of [
     { language: "fr" },
     { structuredExportFormat: "html" },
     { includeInferredStructure: 1 },
     { skipTrashConfirmation: "true" },
-  ])
+    { stickyNoteMode: "other" },
+  ]) {
     await assert.rejects(restored.updateSettings(update), /Invalid settings/);
+  }
   await fs.writeFile(
     path.join(base, "userData", "settings.json"),
     JSON.stringify({ theme: "dark" }),
@@ -606,6 +669,7 @@ test("new preferences migrate old settings, persist and validate exact field typ
   assert.equal(legacy.getSettings().language, "zh-CN");
   assert.equal(legacy.getSettings().includeInferredStructure, true);
   assert.equal(legacy.getSettings().skipRemoveConfirmation, false);
+  assert.equal(legacy.getSettings().stickyNoteMode, "note");
 });
 
 test("tool panel dock persists each valid value and ignores invalid saved values", async (t) => {
@@ -874,4 +938,90 @@ test("English storage validation includes direct non-serialized operations", asy
     () => storage.renameFile("relative.excalidraw", "../bad"),
     /valid file name/,
   );
+});
+
+test("editor preferences persist named local fonts and reject unknown ids", async (t) => {
+  const { base, storage } = await fixture(t);
+  const preferences = {
+    defaultFontFamily: 123456,
+    defaultFontName: "Songti SC",
+    defaultBackground: "#fffce8",
+    fontTopPicks: [123456, 5],
+    backgroundTopPicks: ["#ffffff", "#fffce8"],
+    systemFonts: [{ id: 123456, family: "Songti SC" }],
+  };
+  await storage.updateSettings({ editorPreferences: preferences });
+  const reopened = await new DesktopStorage(
+    path.join(base, "userData"),
+  ).initialize();
+  assert.deepEqual(reopened.getSettings().editorPreferences, {
+    ...storage.getSettings().editorPreferences,
+    ...preferences,
+  });
+  for (const invalid of [
+    { ...preferences, defaultFontFamily: 987654 },
+    { ...preferences, defaultFontName: "Different font" },
+    { ...preferences, defaultBackground: "invalid" },
+    { ...preferences, fontTopPicks: [1, 2, 3, 5] },
+    { ...preferences, systemFonts: [{ id: 5, family: "Songti SC" }] },
+  ]) {
+    await assert.rejects(
+      storage.updateSettings({ editorPreferences: invalid }),
+    );
+  }
+});
+
+test("style preset shortcuts persist and reject collisions and reserved editing keys", async (t) => {
+  const { base, storage } = await fixture(t);
+  const preset = {
+    id: "test",
+    name: "Dashed line",
+    shortcut: "Alt+3",
+    tool: "line",
+    strokeStyle: "dashed",
+    strokeWidth: 2,
+    strokeColor: "#112233",
+  };
+  await storage.updateSettings({ stylePresets: [preset] });
+  const reopened = await new DesktopStorage(
+    path.join(base, "userData"),
+  ).initialize();
+  assert.deepEqual(reopened.getSettings().stylePresets, [preset]);
+  for (const stylePresets of [
+    [preset, { ...preset, id: "another" }],
+    [{ ...preset, shortcut: "Meta+S" }],
+    [{ ...preset, shortcut: "A" }],
+    [{ ...preset, strokeWidth: 3 }],
+  ]) {
+    await assert.rejects(storage.updateSettings({ stylePresets }));
+  }
+});
+
+test("element color and font size preferences persist and reject invalid shortcuts", async (t) => {
+  const { base, storage } = await fixture(t);
+  const preferences = {
+    ...storage.getSettings().editorPreferences,
+    defaultStrokeColor: "transparent",
+    defaultElementBackground: "#123456",
+    elementStrokeTopPicks: ["transparent", "#112233"],
+    elementBackgroundTopPicks: ["#445566"],
+    fontSizePresets: { sm: 12, md: 18, lg: 24, xl: 40 },
+  };
+  await storage.updateSettings({ editorPreferences: preferences });
+  const reopened = await new DesktopStorage(
+    path.join(base, "userData"),
+  ).initialize();
+  assert.deepEqual(reopened.getSettings().editorPreferences, preferences);
+  for (const invalid of [
+    { ...preferences, defaultStrokeColor: "invalid" },
+    { ...preferences, elementStrokeTopPicks: [] },
+    { ...preferences, elementBackgroundTopPicks: ["invalid"] },
+    { ...preferences, fontSizePresets: { sm: 12, md: 12, lg: 24, xl: 40 } },
+    { ...preferences, fontSizePresets: { sm: 0, md: 18, lg: 24, xl: 40 } },
+    { ...preferences, fontSizePresets: { sm: 12, md: 18, lg: 24 } },
+  ]) {
+    await assert.rejects(
+      storage.updateSettings({ editorPreferences: invalid }),
+    );
+  }
 });

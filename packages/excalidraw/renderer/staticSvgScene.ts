@@ -16,7 +16,16 @@ import {
   STICKY_NOTE_FOOTER,
   STICKY_NOTE_SHADOW_OPACITY,
 } from "@excalidraw/common";
+import { getRichTextUnderline, layoutRichText } from "@excalidraw/element";
 import { normalizeLink, toValidURL } from "@excalidraw/common";
+import {
+  getImageBorderDrawable,
+  getImageBorderStyle,
+} from "@excalidraw/element/imageBorder";
+import {
+  getSubcanvasPinGeometry,
+  isSubcanvasPin,
+} from "@excalidraw/element/subcanvasPin";
 import { hashString } from "@excalidraw/element";
 import { getUncroppedWidthAndHeight } from "@excalidraw/element";
 import {
@@ -156,6 +165,63 @@ const renderElementToSvg = (
       throw new Error("Selection rendering is not supported for SVG");
     }
     case "stickynote": {
+      if (isSubcanvasPin(element)) {
+        const geometry = getSubcanvasPinGeometry(element);
+        const group = svgRoot.ownerDocument.createElementNS(SVG_NS, "g");
+        group.setAttribute(
+          "transform",
+          `translate(${offsetX || 0} ${
+            offsetY || 0
+          }) rotate(${degree} ${cx} ${cy})`,
+        );
+        group.setAttribute("opacity", `${opacity}`);
+        group.setAttribute(
+          "stroke",
+          applyDarkModeFilter(
+            element.strokeColor,
+            renderConfig.theme === THEME.DARK,
+          ),
+        );
+        group.setAttribute("stroke-width", `${geometry.lineWidth}`);
+        group.setAttribute("stroke-linejoin", "round");
+        group.setAttribute("stroke-linecap", "round");
+        for (const [points, fill] of [
+          [
+            geometry.paper,
+            applyDarkModeFilter(
+              element.backgroundColor,
+              renderConfig.theme === THEME.DARK,
+            ),
+          ],
+          [geometry.fold, "none"],
+          [geometry.stem, "none"],
+        ] as const) {
+          const node = svgRoot.ownerDocument.createElementNS(
+            SVG_NS,
+            fill === "none" ? "polyline" : "polygon",
+          );
+          node.setAttribute(
+            "points",
+            points.map((point) => point.join(",")).join(" "),
+          );
+          node.setAttribute("fill", fill);
+          group.appendChild(node);
+        }
+        const head = svgRoot.ownerDocument.createElementNS(SVG_NS, "circle");
+        head.setAttribute("cx", `${geometry.center[0]}`);
+        head.setAttribute("cy", `${geometry.center[1]}`);
+        head.setAttribute("r", `${geometry.radius}`);
+        head.setAttribute(
+          "fill",
+          applyDarkModeFilter(
+            geometry.headColor,
+            renderConfig.theme === THEME.DARK,
+          ),
+        );
+        group.appendChild(head);
+        addToRoot(group, element);
+        break;
+      }
       const getPathData = (commands: StickyNotePathCommand[]) =>
         commands
           .map((command) => {
@@ -725,14 +791,52 @@ const renderElementToSvg = (
           g.setAttributeNS(SVG_NS, "clip-path", `url(#${clipPath.id})`);
         }
 
+        const imageGroup = svgRoot.ownerDocument.createElementNS(SVG_NS, "g");
+        imageGroup.appendChild(g);
+        if (element.imageBorder) {
+          const drawable = getImageBorderDrawable(element, renderConfig.theme);
+          const style = getImageBorderStyle(element);
+          const border = drawable
+            ? rsvg.draw(drawable)
+            : svgRoot.ownerDocument.createElementNS(SVG_NS, "rect");
+          if (!drawable) {
+            border.setAttribute("x", `${normalizedCropX + style.inset}`);
+            border.setAttribute("y", `${normalizedCropY + style.inset}`);
+            border.setAttribute("width", `${style.width}`);
+            border.setAttribute("height", `${style.height}`);
+            border.setAttribute("rx", `${style.radius}`);
+            border.setAttribute("fill", "none");
+            border.setAttribute(
+              "stroke",
+              applyDarkModeFilter(
+                element.strokeColor,
+                renderConfig.theme === THEME.DARK,
+              ),
+            );
+            border.setAttribute("stroke-width", `${style.strokeWidth}`);
+            border.setAttribute("stroke-dasharray", style.dash.join(" "));
+          }
+          border.setAttribute("opacity", `${opacity}`);
+          border.setAttribute(
+            "transform",
+            `${g.getAttribute("transform")} ${
+              use.getAttribute("transform") ?? ""
+            }${
+              drawable
+                ? ` translate(${normalizedCropX} ${normalizedCropY})`
+                : ""
+            }`.trim(),
+          );
+          imageGroup.appendChild(border);
+        }
         const clipG = maybeWrapNodesInFrameClipPath(
           element,
           root,
-          [g],
+          [imageGroup],
           renderConfig.frameRendering,
           elementsMap,
         );
-        addToRoot(clipG || g, element);
+        addToRoot(clipG || imageGroup, element);
       }
       break;
     }
@@ -786,6 +890,84 @@ const renderElementToSvg = (
             offsetY || 0
           }) rotate(${degree} ${cx} ${cy})`,
         );
+        if (element.richText) {
+          const layout = layoutRichText(
+            element,
+            element.autoResize && !element.containerId
+              ? Infinity
+              : element.width,
+          );
+          const baseline = getVerticalOffset(
+            element.fontFamily,
+            element.fontSize,
+            element.fontSize * element.lineHeight,
+          );
+          for (const line of layout.lines) {
+            for (const run of line.runs) {
+              if (run.background) {
+                const rect = svgRoot.ownerDocument.createElementNS(
+                  SVG_NS,
+                  "rect",
+                );
+                rect.setAttribute("x", `${run.x}`);
+                rect.setAttribute("y", `${run.y}`);
+                rect.setAttribute("width", `${run.width}`);
+                rect.setAttribute(
+                  "height",
+                  `${element.fontSize * element.lineHeight}`,
+                );
+                rect.setAttribute("fill", run.background);
+                node.appendChild(rect);
+              }
+              const text = svgRoot.ownerDocument.createElementNS(
+                SVG_NS,
+                "text",
+              );
+              text.textContent = run.text;
+              text.setAttribute("x", `${run.x}`);
+              text.setAttribute("y", `${run.y + baseline}`);
+              text.setAttribute("font-family", getFontFamilyString(element));
+              text.setAttribute("font-size", `${element.fontSize}px`);
+              text.setAttribute("font-weight", run.bold ? "bold" : "normal");
+              text.setAttribute("font-style", run.italic ? "italic" : "normal");
+              text.setAttribute(
+                "fill",
+                applyDarkModeFilter(
+                  element.strokeColor,
+                  renderConfig.theme === THEME.DARK,
+                ),
+              );
+              text.setAttribute("style", "white-space: pre;");
+              node.appendChild(text);
+              if (run.underline) {
+                const underline = getRichTextUnderline(
+                  run,
+                  element.fontSize,
+                  baseline,
+                );
+                const rect = svgRoot.ownerDocument.createElementNS(
+                  SVG_NS,
+                  "rect",
+                );
+                rect.setAttribute("x", `${underline.x}`);
+                rect.setAttribute("y", `${underline.y}`);
+                rect.setAttribute("width", `${underline.width}`);
+                rect.setAttribute("height", `${underline.height}`);
+                rect.setAttribute("fill", text.getAttribute("fill")!);
+                node.appendChild(rect);
+              }
+            }
+          }
+          const clipped = maybeWrapNodesInFrameClipPath(
+            element,
+            root,
+            [node],
+            renderConfig.frameRendering,
+            elementsMap,
+          );
+          addToRoot(clipped || node, element);
+          break;
+        }
         const lines = element.text.replace(/\r\n?/g, "\n").split("\n");
         const lineHeightPx = getLineHeightInPx(
           element.fontSize,

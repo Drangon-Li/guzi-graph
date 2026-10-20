@@ -2184,6 +2184,114 @@
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
 
+"@lexical/a11y@0.52.0":
+  version "0.52.0"
+  resolved "https://registry.npmjs.org/@lexical/a11y/-/a11y-0.52.0.tgz#669cf1cb1a81544f4da4a009800c773e9b172f2c"
+  integrity sha512-FxcKnksrgeoPDxQgwHqTz81Tbv7vZnP2i09m7uU+zusNRt4g1dgbwSEq4Uee9yfLJ9qxM5P9YOGQTe0A6lAuAg==
+  dependencies:
+    "@lexical/extension" "0.52.0"
+    "@lexical/utils" "0.52.0"
+    lexical "0.52.0"
+
+"@lexical/clipboard@0.52.0":
+  version "0.52.0"
+  resolved "https://registry.npmjs.org/@lexical/clipboard/-/clipboard-0.52.0.tgz#d05e835fc0ea1abbf7c950aa7a28a39f0ef2d80b"
+  integrity sha512-SwUpKUEzTfl3dZlCXkYZN4CAU6AENzzuO3AtWCgbdtxG1HBnyUtMd6MP1XFUtYh0fhMGXw+QObzp+3+h0g3WTw==
+  dependencies:
+    "@lexical/extension" "0.52.0"
+    "@lexical/html" "0.52.0"
+    "@lexical/internal" "0.52.0"
+    "@lexical/list" "0.52.0"
+    "@lexical/selection" "0.52.0"
+    "@lexical/utils" "0.52.0"
+    "@types/trusted-types" "^2.0.7"
+    lexical "0.52.0"
+
+"@lexical/dragon@0.52.0":
+  version "0.52.0"
+  resolved "https://registry.npmjs.org/@lexical/dragon/-/dragon-0.52.0.tgz#4dbafb18a90075ea46bcb744c6652eaeb8a73e34"
+  integrity sha512-XiNrujvAoywb41GRaRYFhPc/T7jxkFMf/bR9uE8S2t4fMERUFF1xM7Mos6NQ+skdDrF3KfxnLFzLCZ+4Oc9VyA==
+  dependencies:
+    "@lexical/extension" "0.52.0"
+    lexical "0.52.0"
+
+"@lexical/extension@0.52.0":
+  version "0.52.0"
+  resolved "https://registry.npmjs.org/@lexical/extension/-/extension-0.52.0.tgz#079ec818dd08ef712ae26c1c93cb68a3fa2fc03d"
+  integrity sha512-do7uvUxg6mJK0702XlD0Z8UMCtr1Yij4/WpJ7+GY5CL2jKVercMeeYBBEE7cWc/OXQJgzVx3ClNXC7XAHI6Fvw==
+  dependencies:
+    "@lexical/internal" "0.52.0"
+    "@lexical/utils" "0.52.0"
+    "@preact/signals-core" "^1.14.4"
+    lexical "0.52.0"
+
+"@lexical/history@0.52.0":
+  version "0.52.0"
+  resolved "https://registry.npmjs.org/@lexical/history/-/history-0.52.0.tgz#de2de357ff20d72239f4cb45d838af68eff63b68"
+  integrity sha512-UJWmTcru+4KWkk8YtBSQ4dNLYuOJVCyCMFGsaCp/jVJEobwdY//jCTj9idOfE4b3H39kAixe9yQG/FNNOj4ujg==
+  dependencies:
+    "@lexical/extension" "0.52.0"
+    "@lexical/utils" "0.52.0"
+    lexical "0.52.0"
+
+"@lexical/html@0.52.0":
+  version "0.52.0"
+  resolved "https://registry.npmjs.org/@lexical/html/-/html-0.52.0.tgz#c054995609bfde42e6251e22273aed516d8ddf4c"
+  integrity sha512-lRyntwgHnISsUKZHh3T+g9qU1CwTOH5hlnc1UzWE7/RXrvtnSmJTTcJu+sfFdRCiBAlkiIhKuJBCCYu99LeI7Q==
+  dependencies:
+    "@lexical/extension" "0.52.0"
+    "@lexical/internal" "0.52.0"
+    "@lexical/selection" "0.52.0"
+    "@lexical/utils" "0.52.0"
+    lexical "0.52.0"
+
+"@lexical/internal@0.52.0":
+  version "0.52.0"
+  resolved "https://registry.npmjs.org/@lexical/internal/-/internal-0.52.0.tgz#7a257cda4715259f5a0d4a17911d5717ad7c0730"
+  integrity sha512-Y7jKqeh4Irf/FwNmAqHIk3b05HpMsHv2RyWPQ8+M7FAdEbT9N2mksjc8ZUZ3tHqDMi7FNiLkjZN/DwbdekUb1g==
+
+"@lexical/list@0.52.0":
+  version "0.52.0"
+  resolved "https://registry.npmjs.org/@lexical/list/-/list-0.52.0.tgz#e9c72ac4aeabd9505676f75503d345f6bc13c041"
+  integrity sha512-B3+CdxWsdj6jBKtXiY7v4OSkyXBwotWyiD+75Baw0lvmjvniV33mvuMDgnPEQgEpFcGpBRmiu8M8kQdclQzXmQ==
+  dependencies:
+    "@lexical/extension" "0.52.0"
+    "@lexical/html" "0.52.0"
+    "@lexical/internal" "0.52.0"
+    "@lexical/utils" "0.52.0"
+    lexical "0.52.0"
+
+"@lexical/rich-text@0.52.0":
+  version "0.52.0"
+  resolved "https://registry.npmjs.org/@lexical/rich-text/-/rich-text-0.52.0.tgz#99d029ce55c4ade6e810b7b281442da53e07eb31"
+  integrity sha512-P3Y4SM6JSCBG6uFwLpPVEZiShhfC/GCJA//lQU1ZljxPDnCb4ueVCfWSBBdw0nSejYg8KvDQsijc4Fczyjqqtw==
+  dependencies:
+    "@lexical/a11y" "0.52.0"
+    "@lexical/clipboard" "0.52.0"
+    "@lexical/dragon" "0.52.0"
+    "@lexical/extension" "0.52.0"
+    "@lexical/html" "0.52.0"
+    "@lexical/selection" "0.52.0"
+    "@lexical/utils" "0.52.0"
+    lexical "0.52.0"
+
+"@lexical/selection@0.52.0":
+  version "0.52.0"
+  resolved "https://registry.npmjs.org/@lexical/selection/-/selection-0.52.0.tgz#13a1ef0e3a6cb5b155206a424dfe975089f1dde6"
+  integrity sha512-O1hgwqUvoF/R2DxXIOJJvCqXxNM7kOWq1TBxqnbjT4TXNlDokEdpkO5EpetAWYWZj5UE2BUphfGUZAPQjvcUKQ==
+  dependencies:
+    "@lexical/internal" "0.52.0"
+    lexical "0.52.0"
+
+"@lexical/utils@0.52.0":
+  version "0.52.0"
+  resolved "https://registry.npmjs.org/@lexical/utils/-/utils-0.52.0.tgz#3690d9a8e0655c6d64cb3b83a2b14bb157aee8bf"
+  integrity sha512-3Azoh0EQckRcMd6CGOAuKue/UHDvkorrheXZFu9KpxhCBNQy+ic55jl0WQZFTOv2iO3NWReAMSuOAK0pWR2JPg==
+  dependencies:
+    "@lexical/internal" "0.52.0"
+    "@lexical/selection" "0.52.0"
+    lexical "0.52.0"
+
 "@lezer/common@^1.0.0", "@lezer/common@^1.1.0", "@lezer/common@^1.3.0", "@lezer/common@^1.5.0":
   version "1.5.1"
   resolved "https://registry.yarnpkg.com/@lezer/common/-/common-1.5.1.tgz#6e8c114ff5d36a41148e146a253734d3bb8807d3"
@@ -2452,6 +2560,11 @@
   version "1.0.0-next.28"
   resolved "https://registry.yarnpkg.com/@polka/url/-/url-1.0.0-next.28.tgz#d45e01c4a56f143ee69c54dd6b12eade9e270a73"
   integrity sha512-8LduaNlMZGwdZ6qWrKlfa+2M4gahzFkprZiAt2TF8uS0qQgBizKXpXURqvTJ4WtmupWxaLqjRb2UCTe72mu+Aw==
+
+"@preact/signals-core@^1.14.4":
+  version "1.14.4"
+  resolved "https://registry.npmjs.org/@preact/signals-core/-/signals-core-1.14.4.tgz#d3588cbda237fcb3c8a8e478f6cc370653609eb7"
+  integrity sha512-HNB6HYeYKhQbJ1aKl+YRjrS4+QWHLKX6qKoUsfS/m0vqzsVaEBiZiaKbG/e+NKk2ch5ALQr/ihWaMHxiCuuWHA==
 
 "@protobufjs/aspromise@^1.1.1", "@protobufjs/aspromise@^1.1.2":
   version "1.1.2"
@@ -4491,6 +4604,11 @@ ansi-regex@^5.0.1:
   version "5.0.1"
   resolved "https://registry.yarnpkg.com/ansi-regex/-/ansi-regex-5.0.1.tgz#082cb2c89c9fe8659a311a53bd6a4dc5301db304"
   integrity sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==
+
+ansi-regex@^6.2.2:
+  version "6.4.0"
+  resolved "https://registry.npmjs.org/ansi-regex/-/ansi-regex-6.4.0.tgz#69093d6436d30dbb9b04fe7bdcbcfe16c697d8a1"
+  integrity sha512-KzTVk2tCWAHtYrvvvaP8bJKJq2pVinhLcGEQdtLIYPbmNGNyYe8QwNaTUYQp2J7/vIsUKt5QCqAfUkYyG9DkOw==
 
 ansi-styles@^3.2.1:
   version "3.2.1"
@@ -8331,6 +8449,13 @@ levn@^0.4.1:
     prelude-ls "^1.2.1"
     type-check "~0.4.0"
 
+lexical@0.52.0:
+  version "0.52.0"
+  resolved "https://registry.npmjs.org/lexical/-/lexical-0.52.0.tgz#fe745feb1800c0b5f75caa756c1bc7fccec71ca3"
+  integrity sha512-mePejqwCDaW0GR89IoofJTTlk/EiwwlGhbs1D8qOx/Iw6ieG5D3nh7PSPLv0Csia0UC58HpuV91DilJjqeAWSw==
+  dependencies:
+    "@lexical/internal" "0.52.0"
+
 lilconfig@2.0.4:
   version "2.0.4"
   resolved "https://registry.yarnpkg.com/lilconfig/-/lilconfig-2.0.4.tgz#f4507d043d7058b380b6a8f5cb7bcd4b34cee082"
@@ -10603,12 +10728,19 @@ stringify-object@^3.3.0:
   dependencies:
     ansi-regex "^5.0.1"
 
-strip-ansi@6.0.1, strip-ansi@^6.0.0, strip-ansi@^6.0.1, strip-ansi@^7.0.1:
+strip-ansi@^6.0.0, strip-ansi@^6.0.1:
   version "6.0.1"
   resolved "https://registry.yarnpkg.com/strip-ansi/-/strip-ansi-6.0.1.tgz#9e26c63d30f53443e9489495b2105d37b67a85d9"
   integrity sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A==
   dependencies:
     ansi-regex "^5.0.1"
+
+strip-ansi@^7.0.1:
+  version "7.2.0"
+  resolved "https://registry.npmjs.org/strip-ansi/-/strip-ansi-7.2.0.tgz#d22a269522836a627af8d04b5c3fd2c7fa3e32e3"
+  integrity sha512-yDPMNjp4WyfYBkHnjIRLfca1i6KMyGCtsVgoKe/z1+6vukgaENdgGBZt+ZmKPc4gavvEZ5OgHfHdrazhgNyG7w==
+  dependencies:
+    ansi-regex "^6.2.2"
 
 strip-bom@^3.0.0:
   version "3.0.0"

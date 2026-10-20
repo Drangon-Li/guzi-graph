@@ -38,6 +38,7 @@ describe("cross-document rendering", () => {
         value: window.requestAnimationFrame.bind(window),
       },
       ResizeObserver: { value: window.ResizeObserver },
+      matchMedia: { value: window.matchMedia.bind(window) },
     });
     Object.defineProperty(ownerDocument, "defaultView", {
       value: ownerWindow,

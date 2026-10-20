@@ -1,5 +1,7 @@
 {
   "labels": {
+    "insertTable": "Insert table",
+    "tableProperties": "Table details…",
     "signUp": "Sign up",
     "signIn": "Sign in",
     "upgrade": "Upgrade",
@@ -31,6 +33,7 @@
     "pasteStyles": "Paste styles",
     "stroke": "Stroke",
     "textColor": "Text color",
+    "underline": "Underline",
     "changeStroke": "Change stroke color",
     "background": "Background",
     "changeBackground": "Change background color",
@@ -159,6 +162,7 @@
       "goToElement": "Go to target element"
     },
     "lineEditor": {
+      "addPoints": "Add anchor points",
       "edit": "Edit line",
       "editArrow": "Edit arrow"
     },

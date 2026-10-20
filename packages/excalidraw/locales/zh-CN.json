@@ -1,5 +1,7 @@
 {
   "labels": {
+    "insertTable": "插入表格",
+    "tableProperties": "表格详细设置…",
     "signUp": "",
     "signIn": "",
     "paste": "粘贴",
@@ -27,6 +29,8 @@
     "copyStyles": "拷贝样式",
     "pasteStyles": "粘贴样式",
     "stroke": "描边",
+    "textColor": "文字颜色",
+    "underline": "下划线",
     "changeStroke": "更改描边颜色",
     "background": "背景",
     "changeBackground": "更改背景颜色",
@@ -155,6 +159,7 @@
       "goToElement": "前往目标元素"
     },
     "lineEditor": {
+      "addPoints": "添加锚点",
       "edit": "编辑线条",
       "editArrow": "编辑箭头"
     },

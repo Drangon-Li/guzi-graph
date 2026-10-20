@@ -15,8 +15,17 @@ function validatePdfRequest(request) {
     !Number.isFinite(request.height) ||
     request.width <= 0 ||
     request.height <= 0
-  )
+  ) {
     throw new Error("PDF 导出数据无效。");
+  }
+  if (request.pages !== undefined) {
+    if (!Array.isArray(request.pages)) {
+      throw new Error("PDF 导出数据无效。");
+    }
+    for (const page of request.pages) {
+      validatePdfRequest({ ...page, name: request.name, pages: undefined });
+    }
+  }
 }
 
 async function renderPdf(BrowserWindow, request) {
@@ -64,7 +73,29 @@ async function renderPdf(BrowserWindow, request) {
           "'": "&#39;",
         }[character]),
     );
-    const html = `<!doctype html><title>${title}</title><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; script-src 'none'; base-uri 'none'; form-action 'none'"><style>@page{size:${pageSize.width}in ${pageSize.height}in;margin:0}html,body{margin:0;width:${pageSize.width}in;height:${pageSize.height}in;overflow:hidden}img{display:block;width:100%;height:100%;object-fit:contain}</style><img src="data:image/svg+xml;base64,${image}">`;
+    let html = `<!doctype html><title>${title}</title><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; script-src 'none'; base-uri 'none'; form-action 'none'"><style>@page{size:${pageSize.width}in ${pageSize.height}in;margin:0}html,body{margin:0;width:${pageSize.width}in;height:${pageSize.height}in;overflow:hidden}img{display:block;width:100%;height:100%;object-fit:contain}</style><img src="data:image/svg+xml;base64,${image}">`;
+    if (request.pages?.length) {
+      const pages = [request, ...request.pages];
+      const pageStyles = pages
+        .map(
+          (page, index) =>
+            `@page canvas${index}{size:${page.width / 96}in ${
+              page.height / 96
+            }in;margin:0}.canvas${index}{page:canvas${index};width:${
+              page.width / 96
+            }in;height:${page.height / 96}in}`,
+        )
+        .join("");
+      const images = pages
+        .map(
+          (page, index) =>
+            `<section class="canvas${index}"><img src="data:image/svg+xml;base64,${Buffer.from(
+              page.svg,
+            ).toString("base64")}"></section>`,
+        )
+        .join("");
+      html = `<!doctype html><title>${title}</title><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; script-src 'none'; base-uri 'none'; form-action 'none'"><style>${pageStyles}html,body{margin:0}section{break-after:page;overflow:hidden}section:last-child{break-after:auto}img{display:block;width:100%;height:100%;object-fit:contain}</style>${images}`;
+    }
     await fs.writeFile(documentPath, html, { mode: 0o600, flag: "wx" });
     await printWindow.loadFile(documentPath);
     await contents.executeJavaScript(
@@ -82,7 +113,9 @@ async function renderPdf(BrowserWindow, request) {
     throw new Error("PDF 导出失败，请重试。");
   } finally {
     try {
-      if (printWindow && !printWindow.isDestroyed()) printWindow.destroy();
+      if (printWindow && !printWindow.isDestroyed()) {
+        printWindow.destroy();
+      }
     } finally {
       await fs.rm(directory, { recursive: true, force: true });
     }

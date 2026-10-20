@@ -1,4 +1,5 @@
 export { actionDeleteSelected } from "./actionDeleteSelected";
+export { actionInsertTable, actionTableProperties } from "./actionTable";
 export {
   actionBringForward,
   actionBringToFront,
@@ -17,6 +18,9 @@ export {
   actionChangeFreedrawMode,
   actionChangeOpacity,
   actionChangeFontSize,
+  actionToggleTextBold,
+  actionToggleTextItalic,
+  actionToggleTextUnderline,
   actionChangeFontFamily,
   actionChangeTextAlign,
   actionChangeVerticalAlign,
@@ -89,7 +93,10 @@ export { actionUnbindText, actionBindText } from "./actionBoundText";
 export { actionToggleWrap } from "./actionToggleWrap";
 export { actionLink } from "./actionLink";
 export { actionToggleElementLock } from "./actionElementLock";
-export { actionToggleLinearEditor } from "./actionLinearEditor";
+export {
+  actionToggleLinearEditor,
+  actionAddLinearAnchor,
+} from "./actionLinearEditor";
 
 export { actionToggleSearchMenu } from "./actionToggleSearchMenu";
 

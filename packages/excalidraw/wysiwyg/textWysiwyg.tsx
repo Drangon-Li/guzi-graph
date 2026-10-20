@@ -16,6 +16,7 @@ import {
 import { pointFrom, pointRotateRads, type Radians } from "@excalidraw/math";
 
 import {
+  richTextFromPlainText,
   getTextFromElements,
   originalContainerCache,
   updateBoundElements,
@@ -76,6 +77,12 @@ import {
   actionZoomIn,
   actionZoomOut,
 } from "../actions/actionCanvas";
+
+import {
+  executeRichTextCommand,
+  registerRichTextEditor,
+} from "./richTextEditorBridge";
+import { richTextWysiwyg } from "./richTextWysiwyg";
 
 import type { ParsedDataTranferList } from "../clipboard";
 
@@ -281,6 +288,20 @@ export const textWysiwyg = ({
   /** range of `originalText` to select (takes precedence over the caret) */
   initialSelection?: { start: number; end: number } | null;
 }): SubmitHandler => {
+  if (element.richText) {
+    return richTextWysiwyg({
+      onChange,
+      onSubmit,
+      getViewportCoords,
+      element,
+      canvas,
+      excalidrawContainer,
+      app,
+      autoSelect,
+      initialCaretSceneCoords,
+      initialSelection,
+    });
+  }
   const ownerDocument = excalidrawContainer?.ownerDocument ?? document;
   const ownerWindow = ownerDocument.defaultView ?? window;
   // the editor's box: the part of the canvas a caret is revealed into (see
@@ -855,6 +876,23 @@ export const textWysiwyg = ({
   }
 
   editable.onkeydown = (event) => {
+    if (
+      !event.isComposing &&
+      event[KEYS.CTRL_OR_CMD] &&
+      ["b", "i", "u"].includes(event.key.toLowerCase())
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      executeRichTextCommand(ownerDocument, {
+        type:
+          event.key.toLowerCase() === "b"
+            ? "bold"
+            : event.key.toLowerCase() === "i"
+            ? "italic"
+            : "underline",
+      });
+      return;
+    }
     if (!event.shiftKey && actionZoomIn.keyTest(event)) {
       event.preventDefault();
       app.actionManager.executeAction(actionZoomIn);
@@ -1092,6 +1130,7 @@ export const textWysiwyg = ({
     ownerWindow.removeEventListener("pointerup", bindBlurEvent);
     ownerWindow.removeEventListener("blur", handleSubmit);
     ownerWindow.removeEventListener("beforeunload", handleSubmit);
+    unbindRichEditor();
     unbindUpdate();
     unsubOnChange();
     unbindOnScroll();
@@ -1227,6 +1266,39 @@ export const textWysiwyg = ({
     }
   };
 
+  const unbindRichEditor = registerRichTextEditor(ownerDocument, {
+    elementId: element.id,
+    execute: (command) => {
+      if (isDestroyed) {
+        return;
+      }
+      const selection = {
+        start: editable.selectionStart,
+        end: editable.selectionEnd,
+      };
+      const current = app.scene.getElement<ExcalidrawTextElement>(element.id);
+      if (!current) {
+        return;
+      }
+      app.scene.mutateElement(current, {
+        richText: richTextFromPlainText(editable.value),
+      });
+      isDestroyed = true;
+      cleanup();
+      queueMicrotask(() => {
+        const latest = app.scene.getNonDeletedElement(element.id);
+        if (!latest || !isTextElement(latest)) {
+          return;
+        }
+        app.text.handleTextWysiwyg(latest, {
+          isExistingElement: true,
+          initialSelection: selection,
+        });
+        executeRichTextCommand(ownerDocument, command);
+      });
+    },
+  });
+
   // FIXME after we start emitting updates from Store for appState.theme
   const unsubOnChange = app.onChangeEmitter.on((elements) => {
     if (app.state.theme !== LAST_THEME) {
@@ -1317,3 +1389,5 @@ export const textWysiwyg = ({
 
   return handleSubmit;
 };
+
+export type TextWysiwygOptions = Parameters<typeof textWysiwyg>[0];

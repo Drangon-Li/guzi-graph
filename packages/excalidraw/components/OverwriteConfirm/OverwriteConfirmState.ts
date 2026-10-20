@@ -25,14 +25,16 @@ export async function openConfirmModal({
   description,
   actionLabel,
   color,
+  store = editorJotaiStore,
 }: {
   title: string;
   description: React.ReactNode;
   actionLabel: string;
   color: "danger" | "warning";
+  store?: typeof editorJotaiStore;
 }) {
   return new Promise<boolean>((resolve) => {
-    editorJotaiStore.set(overwriteConfirmStateAtom, {
+    store.set(overwriteConfirmStateAtom, {
       active: true,
       onConfirm: () => resolve(true),
       onClose: () => resolve(false),

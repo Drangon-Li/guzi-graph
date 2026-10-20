@@ -9,6 +9,7 @@ import {
 import type { ExcalidrawStickyNoteElement } from "@excalidraw/element/types";
 
 import { Excalidraw } from "../index";
+import { getSubcanvasId } from "../subcanvas";
 
 import { API } from "./helpers/api";
 import { Keyboard, UI } from "./helpers/ui";
@@ -38,7 +39,34 @@ const liveNotes = () =>
     (element) => element.type === "stickynote" && !element.isDeleted,
   ) as ExcalidrawStickyNoteElement[];
 
+const enableSubcanvasMode = () => {
+  const open = vi.fn();
+  GlobalTestState.renderResult.rerender(
+    <Excalidraw
+      handleKeyboardGlobally
+      desktopIntegration={{
+        save: async () => true,
+        open: async () => {},
+        subcanvas: { open },
+      }}
+    />,
+  );
+  API.setAppState({ currentItemStickyNoteMode: "subcanvas" });
+  return open;
+};
+
 describe("dragging a tool out of the toolbar", () => {
+  beforeAll(() => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  });
+  afterAll(() => vi.unstubAllGlobals());
   beforeEach(async () => {
     await render(<Excalidraw handleKeyboardGlobally={true} />);
     API.setAppState({ width: 1000, height: 800 });
@@ -159,5 +187,109 @@ describe("dragging a tool out of the toolbar", () => {
     expect(h.state.activeTool.type).toBe("stickynote");
     expect(h.app.toolDrag.preview).toBeNull();
     expect(h.elements).toHaveLength(0);
+  });
+
+  it("previews the remembered pin mode without a scene and commits an independent child only on drop, with undo and redo", () => {
+    const open = enableSubcanvasMode();
+    dragOut(300, 260);
+    const preview = h.app.toolDrag.preview!;
+    expect(preview).toMatchObject({
+      x: 276,
+      y: 232,
+      width: 48,
+      height: 56,
+      baseHeight: 56,
+    });
+    expect(getSubcanvasId(preview)).toBeTruthy();
+    expect(h.elements).toHaveLength(0);
+    expect(h.state.subscenes).toEqual({});
+    expect(API.getUndoStack()).toHaveLength(0);
+    fireEvent.pointerUp(GlobalTestState.interactiveCanvas, {
+      ...POINTER,
+      button: 0,
+      clientX: 300,
+      clientY: 260,
+    });
+    const pin = liveNotes()[0];
+    const sceneId = getSubcanvasId(pin)!;
+    expect(sceneId).not.toBe(getSubcanvasId(preview));
+    expect(pin).toMatchObject({
+      id: preview.id,
+      x: 276,
+      y: 232,
+      width: 48,
+      height: 56,
+    });
+    expect(h.state.subscenes[sceneId]).toMatchObject({
+      version: 1,
+      elements: [],
+    });
+    expect(h.state.editingTextElement).toBeNull();
+    expect(h.elements).toHaveLength(1);
+    expect(h.state.selectedElementIds[pin.id]).toBe(true);
+    expect(h.state.activeTool.type).toBe("selection");
+    expect(open).not.toHaveBeenCalled();
+    expect(API.getUndoStack()).toHaveLength(1);
+    Keyboard.undo();
+    expect(liveNotes()).toHaveLength(0);
+    Keyboard.redo();
+    expect(getSubcanvasId(liveNotes()[0])).toBe(sceneId);
+    expect(h.state.subscenes[sceneId]).toMatchObject({ elements: [] });
+    dragOut(500, 360);
+    fireEvent.pointerUp(GlobalTestState.interactiveCanvas, {
+      ...POINTER,
+      button: 0,
+      clientX: 500,
+      clientY: 360,
+    });
+    expect(liveNotes()).toHaveLength(2);
+    expect(getSubcanvasId(liveNotes()[1])).not.toBe(sceneId);
+    expect(Object.keys(h.state.subscenes)).toHaveLength(2);
+  });
+
+  it.each(["escape", "pointercancel", "blur", "outside"] as const)(
+    "leaves no child scene or history after cancelling a pin drag by %s",
+    (cancel) => {
+      enableSubcanvasMode();
+      dragOut(300, 260);
+      if (cancel === "escape") {
+        fireEvent.keyDown(window, { key: KEYS.ESCAPE });
+      } else if (cancel === "pointercancel") {
+        fireEvent.pointerCancel(window, POINTER);
+      } else if (cancel === "blur") {
+        fireEvent.blur(window);
+      }
+      fireEvent.pointerUp(
+        cancel === "outside"
+          ? document.body
+          : GlobalTestState.interactiveCanvas,
+        { ...POINTER, button: 0, clientX: 300, clientY: 260 },
+      );
+      expect(h.app.toolDrag.preview).toBeNull();
+      expect(h.elements).toHaveLength(0);
+      expect(h.state.subscenes).toEqual({});
+      expect(API.getUndoStack()).toHaveLength(0);
+      expect(h.state.editingTextElement).toBeNull();
+    },
+  );
+
+  it("falls back to the ordinary note when the remembered mode is unavailable on the web", async () => {
+    API.setAppState({ currentItemStickyNoteMode: "subcanvas" });
+    dragOut(300, 260);
+    expect(h.app.toolDrag.preview).toMatchObject({
+      width: DEFAULT_STICKY_NOTE_SIZE,
+      height: DEFAULT_STICKY_NOTE_SIZE,
+    });
+    expect(getSubcanvasId(h.app.toolDrag.preview)).toBeNull();
+    fireEvent.pointerUp(GlobalTestState.interactiveCanvas, {
+      ...POINTER,
+      button: 0,
+      clientX: 300,
+      clientY: 260,
+    });
+    expect(getSubcanvasId(liveNotes()[0])).toBeNull();
+    expect(h.state.subscenes).toEqual({});
+    expect(h.state.editingTextElement).not.toBeNull();
+    Keyboard.keyPress(KEYS.ESCAPE, await getTextEditor());
   });
 });

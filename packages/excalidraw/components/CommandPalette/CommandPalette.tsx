@@ -29,7 +29,7 @@ import { getShortcutFromShortcutName } from "../../actions/shortcuts";
 import { trackEvent } from "../../analytics";
 import { useUIAppState } from "../../context/ui-appState";
 import { deburr } from "../../deburr";
-import { atom, useAtom, editorJotaiStore } from "../../editor-jotai";
+import { atom, useAtom } from "../../editor-jotai";
 import { t } from "../../i18n";
 import {
   useApp,
@@ -334,6 +334,7 @@ function CommandPaletteInner({
         actionManager.actions.zoomToFitSelectionInViewport,
         actionManager.actions.increaseFontSize,
         actionManager.actions.decreaseFontSize,
+        actionManager.actions.toggleTextUnderline,
         actionManager.actions.toggleLinearEditor,
         actionManager.actions.cropEditor,
         actionManager.actions.togglePolygon,
@@ -397,7 +398,7 @@ function CommandPaletteInner({
           keywords: ["delete", "destroy"],
           viewMode: false,
           perform: () => {
-            editorJotaiStore.set(activeConfirmDialogAtom, "clearCanvas");
+            app.editorStore.set(activeConfirmDialogAtom, "clearCanvas");
           },
         },
         {

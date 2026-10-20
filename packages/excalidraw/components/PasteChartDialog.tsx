@@ -1,6 +1,10 @@
 import React, { useLayoutEffect, useRef, useState } from "react";
 
+import { createTableElements } from "@excalidraw/element/table";
+
 import { newTextElement } from "@excalidraw/element";
+
+import type { TableData } from "@excalidraw/element/table";
 
 import type { ChartType } from "@excalidraw/element/types";
 
@@ -176,13 +180,16 @@ const PlainTextPreviewBtn = (props: {
 export const PasteChartDialog = ({
   data,
   rawText,
+  tableData,
   onClose,
 }: {
   data: Spreadsheet;
   rawText: string;
+  tableData?: TableData;
   onClose: () => void;
 }) => {
-  const { onInsertElements, focusContainer } = useApp();
+  const app = useApp();
+  const { onInsertElements, focusContainer } = app;
   const [colorSeed, setColorSeed] = useState(Math.random());
 
   const handleReshuffleColors = React.useCallback(() => {
@@ -243,6 +250,49 @@ export const PasteChartDialog = ({
       autofocus={false}
     >
       <div className={"container"}>
+        {tableData && (
+          <button
+            type="button"
+            className="ChartPreview"
+            aria-label="可编辑表格"
+            onClick={() => {
+              onInsertElements(
+                createTableElements(tableData, 0, 0, {
+                  roughness: app.state.currentItemRoughness,
+                  opacity: app.state.currentItemOpacity,
+                }).elements,
+              );
+              onClose();
+              focusContainer();
+            }}
+          >
+            <div
+              className="ChartPreview__canvas"
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${Math.min(
+                  4,
+                  tableData.columns.length,
+                )}, 1fr)`,
+                padding: 12,
+              }}
+            >
+              {tableData.cells.slice(0, 12).map((cell) => (
+                <span
+                  key={`${cell.row}:${cell.column}`}
+                  style={{
+                    border: "1px solid #adb5bd",
+                    padding: 4,
+                    overflow: "hidden",
+                  }}
+                >
+                  {cell.text.slice(0, 12) || " "}
+                </span>
+              ))}
+            </div>
+            <div className="ChartPreview__label">可编辑表格</div>
+          </button>
+        )}
         {(["bar", "line", "radar"] as const).map((chartType) => {
           if (!isSpreadsheetValidForChartType(data, chartType)) {
             return null;

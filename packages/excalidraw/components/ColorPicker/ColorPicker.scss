@@ -35,6 +35,16 @@
       max-width: 11rem;
     }
 
+    &.color-picker-container--configurable {
+      grid-template-columns: minmax(0, 1fr) 15px 1.625rem var(
+          --default-button-size,
+          2rem
+        );
+      > .preference-configure-button {
+        justify-self: end;
+      }
+    }
+
     &.color-picker-container--no-top-picks {
       display: flex;
       justify-content: center;

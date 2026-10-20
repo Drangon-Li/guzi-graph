@@ -25,7 +25,7 @@ import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import type { MaybePromise } from "@excalidraw/common/utility-types";
 
-import { atom, editorJotaiStore } from "../editor-jotai";
+import { atom } from "../editor-jotai";
 
 import { AbortError } from "../errors";
 import { libraryItemSvgsCache } from "../hooks/useLibraryItemSvg";
@@ -215,13 +215,13 @@ class Library {
 
   private notifyListeners = () => {
     if (this.updateQueue.length > 0) {
-      editorJotaiStore.set(libraryItemsAtom, (s) => ({
+      this.app.editorStore.set(libraryItemsAtom, (s) => ({
         status: "loading",
         libraryItems: this.currLibraryItems,
         isInitialized: s.isInitialized,
       }));
     } else {
-      editorJotaiStore.set(libraryItemsAtom, {
+      this.app.editorStore.set(libraryItemsAtom, {
         status: "loaded",
         libraryItems: this.currLibraryItems,
         isInitialized: true,
@@ -249,7 +249,7 @@ class Library {
   destroy = () => {
     this.updateQueue = [];
     this.currLibraryItems = [];
-    editorJotaiStore.set(libraryItemSvgsCache, new Map());
+    this.app.editorStore.set(libraryItemSvgsCache, new Map());
     // TODO uncomment after/if we make jotai store scoped to each excal instance
     // jotaiStore.set(libraryItemsAtom, {
     //   status: "loading",

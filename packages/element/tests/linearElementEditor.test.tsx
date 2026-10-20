@@ -80,6 +80,91 @@ describe("Test Linear Elements", () => {
   const delta = 50;
   const mouse = new Pointer("mouse");
 
+  it("inserts a command-click anchor at the projected position without duplicating endpoints", () => {
+    const arrow = API.createElement({
+      type: "arrow",
+      x: 100,
+      y: 100,
+      width: 200,
+      height: 0,
+      points: [pointFrom(0, 0), pointFrom(200, 0)],
+      roundness: null,
+    });
+    API.setElements([arrow]);
+    const editor = new LinearElementEditor(
+      arrow,
+      h.app.scene.getNonDeletedElementsMap(),
+    );
+    const invoke = (x: number, y: number, current = editor) =>
+      LinearElementEditor.handlePointerDown(
+        {
+          [KEYS.CTRL_OR_CMD]: true,
+        } as unknown as React.PointerEvent<HTMLElement>,
+        h.app,
+        h.app.store,
+        { x, y },
+        current,
+        h.app.scene,
+      );
+    const result = invoke(160, 104);
+    expect(result.didAddPoint).toBe(true);
+    expect(arrow.points).toEqual([
+      pointFrom(0, 0),
+      pointFrom(60, 0),
+      pointFrom(200, 0),
+    ]);
+    expect(result.linearElementEditor?.selectedPointsIndices).toEqual([1]);
+    expect(result.linearElementEditor?.pointerOffset).toEqual({ x: 0, y: 4 });
+    expect(invoke(160, 100, result.linearElementEditor!).didAddPoint).toBe(
+      false,
+    );
+    expect(invoke(100, 100).didAddPoint).toBe(false);
+    expect(arrow.points).toHaveLength(3);
+  });
+
+  it("uses fixed segments for command-clicking an elbow route", () => {
+    const arrow = API.createElement({
+      type: "arrow",
+      elbowed: true,
+      x: 100,
+      y: 100,
+      width: 200,
+      height: 100,
+      points: [
+        pointFrom(0, 0),
+        pointFrom(100, 0),
+        pointFrom(100, 100),
+        pointFrom(200, 100),
+      ],
+    });
+    API.setElements([arrow]);
+    const editor = new LinearElementEditor(
+      arrow,
+      h.app.scene.getNonDeletedElementsMap(),
+    );
+    const result = LinearElementEditor.handlePointerDown(
+      {
+        [KEYS.CTRL_OR_CMD]: true,
+      } as unknown as React.PointerEvent<HTMLElement>,
+      h.app,
+      h.app.store,
+      { x: 200, y: 150 },
+      editor,
+      h.app.scene,
+    );
+    expect(result.didAddPoint).toBe(true);
+    expect(
+      (arrow as import("../src/types").ExcalidrawElbowArrowElement)
+        .fixedSegments?.length,
+    ).toBeGreaterThan(0);
+    arrow.points.slice(1).forEach((point, index) => {
+      expect(
+        point[0] === arrow.points[index][0] ||
+          point[1] === arrow.points[index][1],
+      ).toBe(true);
+    });
+  });
+
   const createTwoPointerLinearElement = (
     type: ExcalidrawLinearElement["type"],
     roundness: ExcalidrawElement["roundness"] = null,

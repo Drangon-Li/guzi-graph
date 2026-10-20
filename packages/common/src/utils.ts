@@ -12,6 +12,8 @@ import type {
   Zoom,
 } from "@excalidraw/excalidraw/types";
 
+import { getSystemFontFamily } from "./system-fonts";
+
 import {
   DEFAULT_VERSION,
   ENV,
@@ -125,6 +127,12 @@ export const getFontFamilyString = ({
 }: {
   fontFamily: FontFamilyValues;
 }) => {
+  const systemFamily = getSystemFontFamily(fontFamily);
+  if (systemFamily) {
+    return `${JSON.stringify(
+      systemFamily,
+    )}, sans-serif, ${WINDOWS_EMOJI_FALLBACK_FONT}`;
+  }
   for (const [fontFamilyString, id] of Object.entries(FONT_FAMILY)) {
     if (id === fontFamily) {
       return `${fontFamilyString}${getFontFamilyFallbacks(id)

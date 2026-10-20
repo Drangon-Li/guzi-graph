@@ -1,12 +1,16 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
+const { statSync } = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const vm = require("node:vm");
 const { EventEmitter } = require("node:events");
 
-async function harness(t, { developmentURL, argv = [] } = {}) {
+async function harness(
+  t,
+  { developmentURL, argv = [], userDataOverride, legacySettings } = {},
+) {
   const base = await fs.realpath(
     await fs.mkdtemp(path.join(os.tmpdir(), "excalidraw-main-")),
   );
@@ -14,13 +18,32 @@ async function harness(t, { developmentURL, argv = [] } = {}) {
   await fs.mkdir(path.join(base, "dist"));
   await fs.writeFile(path.join(base, "dist", "index.html"), "<html></html>");
   const app = new EventEmitter();
-  app.name = "Excalidraw Local";
+  app.name = "Excalidraw-Guzi";
   app.isPackaged = false;
   app.requestSingleInstanceLock = () => true;
   app.isReady = () => true;
   app.whenReady = () => Promise.resolve();
-  app.getPath = () => path.join(base, "userData");
-  app.setPath = () => {};
+  const paths = {
+    appData: path.join(base, "Application Support"),
+    userData: path.join(base, "Application Support", app.name),
+  };
+  app.getPath = (name) => paths[name];
+  app.setPath = (name, value) => {
+    assert.equal(statSync(value).isDirectory(), true);
+    paths[name] = value;
+  };
+  const isolatedProfile = userDataOverride ?? path.join(base, "userData");
+  if (userDataOverride !== null && path.isAbsolute(isolatedProfile)) {
+    await fs.mkdir(isolatedProfile, { recursive: true });
+  }
+  if (legacySettings) {
+    const legacyProfile = path.join(paths.appData, "Excalidraw Local");
+    await fs.mkdir(legacyProfile, { recursive: true });
+    await fs.writeFile(
+      path.join(legacyProfile, "settings.json"),
+      JSON.stringify(legacySettings),
+    );
+  }
   app.quitCompleted = 0;
   app.quit = () => {
     const event = {
@@ -174,7 +197,11 @@ async function harness(t, { developmentURL, argv = [] } = {}) {
       __dirname: path.join(base, "electron"),
       process: {
         env: {
-          EXCALIDRAW_DESKTOP_USER_DATA: path.join(base, "userData"),
+          ...(userDataOverride === null
+            ? {}
+            : {
+                EXCALIDRAW_DESKTOP_USER_DATA: isolatedProfile,
+              }),
           ...(developmentURL
             ? { EXCALIDRAW_DESKTOP_DEV_URL: developmentURL }
             : {}),
@@ -210,6 +237,68 @@ async function harness(t, { developmentURL, argv = [] } = {}) {
     browserSession,
   };
 }
+
+test("renamed product keeps using the existing legacy profile by default", async (t) => {
+  const legacySettings = { theme: "dark", language: "en" };
+  const { app, base, invoke } = await harness(t, {
+    userDataOverride: null,
+    legacySettings,
+  });
+  const legacyProfile = path.join(
+    base,
+    "Application Support",
+    "Excalidraw Local",
+  );
+  assert.equal(app.getPath("userData"), legacyProfile);
+  assert.equal((await invoke("get-settings")).theme, "dark");
+  assert.equal((await invoke("get-settings")).language, "en");
+  assert.deepEqual(
+    JSON.parse(await fs.readFile(path.join(legacyProfile, "settings.json"))),
+    legacySettings,
+  );
+  await assert.rejects(fs.stat(path.join(app.getPath("appData"), app.name)), {
+    code: "ENOENT",
+  });
+});
+
+test("absolute isolated profile override takes priority over the legacy profile", async (t) => {
+  const { app, base, invoke } = await harness(t, {
+    legacySettings: { theme: "dark" },
+  });
+  assert.equal(app.getPath("userData"), path.join(base, "userData"));
+  assert.equal((await invoke("get-settings")).theme, "system");
+  await invoke("update-settings", { theme: "light" });
+  assert.equal(
+    JSON.parse(
+      await fs.readFile(
+        path.join(
+          base,
+          "Application Support",
+          "Excalidraw Local",
+          "settings.json",
+        ),
+      ),
+    ).theme,
+    "dark",
+  );
+});
+
+test("new installations create the stable legacy profile directory", async (t) => {
+  const { app, invoke } = await harness(t, { userDataOverride: null });
+  assert.equal(
+    app.getPath("userData"),
+    path.join(app.getPath("appData"), "Excalidraw Local"),
+  );
+  assert.equal((await fs.stat(app.getPath("userData"))).isDirectory(), true);
+  assert.equal((await invoke("get-settings")).theme, "system");
+});
+
+test("relative isolated profile overrides are rejected", async (t) => {
+  await assert.rejects(
+    harness(t, { userDataOverride: "relative-profile" }),
+    /隔离 userData 必须使用绝对路径/,
+  );
+});
 
 test("production main uses local secure scheme, sandbox and blocks network/navigation", async (t) => {
   const { calls, window } = await harness(t);
