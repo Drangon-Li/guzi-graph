@@ -64,7 +64,7 @@ PDF 导出先将整张有效画布转为 SVG，再通过 Electron 的打印接�
 
 仓库保留 Excalidraw monorepo 结构；桌面应用位于 [`excalidraw-desktop/`](./excalidraw-desktop)，画布核心位于 [`packages/`](./packages)。
 
-需要 Node.js **18 或更高版本**和 Yarn **1.22.22**。生成当前 DMG 需要 macOS；首次安装依赖与打包可能需要下载 Electron 和构建工具。
+需要 Node.js **22.12.0 或更高版本**和 Yarn **1.22.22**。生成当前 DMG 需要 macOS；首次安装依赖与打包可能需要下载 Electron 和构建工具。
 
 ```bash
 yarn install --frozen-lockfile
