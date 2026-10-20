@@ -43,6 +43,8 @@ import {
   updateBoundElements,
 } from "@excalidraw/element";
 
+import { getTableRoot, updateTableElements } from "@excalidraw/element/table";
+
 import type { ArrowEndpoint } from "@excalidraw/element";
 import type {
   ExcalidrawElement,
@@ -56,6 +58,7 @@ import { actionTextAutoResize } from "../actions/actionTextAutoResize";
 import { withBatchedUpdates } from "../reactUtils";
 import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
 import { scrollBoundsIntoView } from "../viewport";
+import { getSubcanvasId } from "../subcanvas";
 import { textWysiwyg } from "../wysiwyg/textWysiwyg";
 
 import type App from "./App";
@@ -198,9 +201,13 @@ export class AppText {
         container && isStickyNoteElement(container) ? container : null;
       // sticky notes: the fit owns both the label and the note geometry
       const stickyLayout = stickyContainer
-        ? getStickyNoteLayout(stickyContainer, latestTextElement, {
-            originalText: nextOriginalText,
-          })
+        ? getStickyNoteLayout(
+            stickyContainer,
+            { ...latestTextElement, originalText: nextOriginalText },
+            {
+              originalText: nextOriginalText,
+            },
+          )
         : null;
       // a free text stops growing at the view's width (between the side
       // panels beside its rows), or TEXT_MAX_WRAP_WIDTH, and wraps from there
@@ -299,8 +306,16 @@ export class AppText {
       onSubmit: withBatchedUpdates(({ viaKeyboard, nextOriginalText }) => {
         this.textWysiwygSubmitHandler = null;
 
-        const isDeleted = !nextOriginalText.trim();
+        const isDeleted =
+          !nextOriginalText.trim() && !element.customData?.tableCell;
         updateElement(nextOriginalText, isDeleted);
+        const sceneElements = this.app.scene.getElementsIncludingDeleted();
+        const table = getTableRoot(element, sceneElements);
+        if (table) {
+          this.app.scene.replaceAllElements(
+            updateTableElements(sceneElements, table, (data) => data),
+          );
+        }
 
         // keyboard-submit keeps focus on the edited object. For bound text, keep
         // the container selected even if the text becomes empty and is deleted.
@@ -646,6 +661,14 @@ export class AppText {
      */
     textElement?: NonDeleted<ExcalidrawTextElement> | null;
   }) => {
+    if (
+      container &&
+      getSubcanvasId(container) &&
+      this.app.props.desktopIntegration?.subcanvas
+    ) {
+      this.app.props.desktopIntegration.subcanvas.open(container.id);
+      return;
+    }
     let shouldBindToContainer = false;
 
     // Resolved here rather than by the caller so that the stroke width the

@@ -174,6 +174,7 @@ export class LinearElementEditor {
   public readonly elbowed: boolean;
   public readonly customLineAngle: number | null;
   public readonly isEditing: boolean;
+  public readonly isAddingPoints: boolean;
 
   // @deprecated renamed to initialState because the data is used during linear
   // element click creation as well (with multiple pointer down events)
@@ -222,6 +223,7 @@ export class LinearElementEditor {
     this.elbowed = isElbowArrow(element) && element.elbowed;
     this.customLineAngle = null;
     this.isEditing = isEditing;
+    this.isAddingPoints = false;
   }
 
   // ---------------------------------------------------------------------------
@@ -1078,6 +1080,108 @@ export class LinearElementEditor {
 
     if (!element) {
       return ret;
+    }
+
+    if (event[KEYS.CTRL_OR_CMD] || linearElementEditor.isAddingPoints) {
+      const existingIndex = LinearElementEditor.getPointIndexUnderCursor(
+        element,
+        elementsMap,
+        appState.zoom,
+        scenePointer.x,
+        scenePointer.y,
+      );
+      if (existingIndex < 0) {
+        const cursor = pointFrom<GlobalPoint>(scenePointer.x, scenePointer.y);
+        const segments = getLinearElementPathSegments(element, elementsMap);
+        let closest: {
+          index: number;
+          point: GlobalPoint;
+          distance: number;
+        } | null = null;
+        segments.forEach((segment, index) => {
+          const { t, distance } = pathSegmentClosestParameter(segment, cursor);
+          const projected = isCurve(segment)
+            ? bezierEquation(segment, t)
+            : lineSegmentPointAt(segment, t);
+          if (!closest || distance < closest.distance) {
+            closest = { index: index + 1, point: projected, distance };
+          }
+        });
+        // Use the same screen-space radius for both path and point handles.
+        const hit = closest as {
+          index: number;
+          point: GlobalPoint;
+          distance: number;
+        } | null;
+        const radius =
+          LinearElementEditor.POINT_HANDLE_SIZE / appState.zoom.value;
+        if (
+          hit &&
+          hit.distance <= radius &&
+          !LinearElementEditor.getPointsGlobalCoordinates(
+            element,
+            elementsMap,
+          ).some((p) => pointDistance(p, hit.point) <= radius)
+        ) {
+          store.scheduleCapture();
+          if (isElbowArrow(element)) {
+            const next = LinearElementEditor.moveFixedSegment(
+              linearElementEditor,
+              hit.index,
+              hit.point[0],
+              hit.point[1],
+              scene,
+            );
+            ret.linearElementEditor = {
+              ...linearElementEditor,
+              ...next,
+              initialState: {
+                ...next.initialState,
+                origin: cursor,
+              },
+              selectedPointsIndices: null,
+            };
+          } else {
+            const inserted = LinearElementEditor.pointFromAbsoluteCoords(
+              element,
+              hit.point,
+              elementsMap,
+            );
+            scene.mutateElement(element, {
+              points: [
+                ...element.points.slice(0, hit.index),
+                inserted,
+                ...element.points.slice(hit.index),
+              ],
+            });
+            ret.linearElementEditor = {
+              ...linearElementEditor,
+              isEditing: true,
+              isDragging: false,
+              selectedPointsIndices: [hit.index],
+              pointerOffset: {
+                x: cursor[0] - hit.point[0],
+                y: cursor[1] - hit.point[1],
+              },
+              initialState: {
+                ...linearElementEditor.initialState,
+                origin: cursor,
+                lastClickedPoint: hit.index,
+                prevSelectedPointsIndices:
+                  linearElementEditor.selectedPointsIndices,
+                segmentMidpoint: {
+                  value: hit.point,
+                  index: hit.index,
+                  added: true,
+                },
+              },
+            };
+          }
+          ret.didAddPoint = true;
+          ret.hitElement = element;
+          return ret;
+        }
+      }
     }
 
     const segmentMidpoint = LinearElementEditor.getSegmentMidpointHitCoords(

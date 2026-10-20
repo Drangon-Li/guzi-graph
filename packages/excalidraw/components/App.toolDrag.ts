@@ -15,9 +15,12 @@ import type {
 } from "@excalidraw/element/types";
 
 import { trackEvent } from "../analytics";
+import { getLanguage } from "../i18n";
+import { getSubcanvasId } from "../subcanvas";
+import { convertStickyNoteToSubcanvas } from "../subcanvasActions";
 
 import type App from "./App";
-import type { ToolType } from "../types";
+import type { AppState, ToolType } from "../types";
 
 type ScenePoint = { x: number; y: number };
 
@@ -31,6 +34,13 @@ type DraggedElement = NonDeleted<ExcalidrawNonSelectionElement>;
 type DraggableTool = {
   /** the element the drop creates, centered on the pointer */
   createElement: (app: App, center: ScenePoint) => DraggedElement;
+  prepareDrop?: (
+    app: App,
+    element: DraggedElement,
+  ) => {
+    element: DraggedElement;
+    subscenes: AppState["subscenes"];
+  };
   /** what the tool does once its element is on the canvas (e.g. start editing) */
   onDrop?: (app: App, element: DraggedElement) => void;
 };
@@ -49,12 +59,24 @@ const centered = (center: ScenePoint, width: number, height: number) => ({
 export const DRAGGABLE_TOOLS: Partial<Record<ToolType, DraggableTool>> = {
   stickynote: {
     createElement: (app, center) => {
-      const size = DEFAULT_STICKY_NOTE_SIZE;
       const { state } = app;
+      const subcanvas =
+        state.currentItemStickyNoteMode === "subcanvas" &&
+        !!app.props.desktopIntegration?.subcanvas;
+      const width = subcanvas ? 48 : DEFAULT_STICKY_NOTE_SIZE;
+      const height = subcanvas ? 56 : DEFAULT_STICKY_NOTE_SIZE;
       return newStickyNoteElement({
         type: "stickynote",
-        ...centered(center, size, size),
-        baseHeight: size,
+        ...centered(center, width, height),
+        baseHeight: height,
+        ...(subcanvas && {
+          customData: {
+            subcanvas: {
+              sceneId: "tool-drag-preview",
+              title: getLanguage().code === "en" ? "Subcanvas" : "子画布",
+            },
+          },
+        }),
         strokeColor: state.currentItemStickynoteStrokeColor,
         backgroundColor: state.currentItemStickynoteBackgroundColor,
         fillStyle: state.currentItemFillStyle,
@@ -67,8 +89,24 @@ export const DRAGGABLE_TOOLS: Partial<Record<ToolType, DraggableTool>> = {
         frameId: app.getTopLayerFrameAtSceneCoords(center)?.id ?? null,
       });
     },
+    prepareDrop: (app, element) => {
+      if (!getSubcanvasId(element)) {
+        return { element, subscenes: app.state.subscenes };
+      }
+      const { subcanvas, ...customData } = element.customData!;
+      const result = convertStickyNoteToSubcanvas(
+        [{ ...element, customData }],
+        element.id,
+        app.state.subscenes,
+        getLanguage().code === "en" ? "Subcanvas" : "子画布",
+      )!;
+      return {
+        element: result.elements[0] as DraggedElement,
+        subscenes: result.scenes,
+      };
+    },
     onDrop: (app, element) => {
-      if (isStickyNoteElement(element)) {
+      if (isStickyNoteElement(element) && !getSubcanvasId(element)) {
         app.text.startTextEditing({
           sceneX: element.x + element.width / 2,
           sceneY: element.y + element.height / 2,
@@ -179,10 +217,15 @@ export class AppToolDrag {
       return;
     }
     const { app } = this;
-    app.insertNewElement(preview);
+    const drop = tool!.prepareDrop?.(app, preview) ?? {
+      element: preview,
+      subscenes: app.state.subscenes,
+    };
+    app.insertNewElement(drop.element);
     app.store.scheduleCapture();
     app.setState({
-      selectedElementIds: { [preview.id]: true },
+      subscenes: drop.subscenes,
+      selectedElementIds: { [drop.element.id]: true },
       selectedGroupIds: {},
     });
     // the drop is a one-off placement: whatever tool was active (an arrow,
@@ -192,7 +235,7 @@ export class AppToolDrag {
       { keepSelection: true },
     );
     trackEvent("toolbar", type!, "drop");
-    tool!.onDrop?.(app, preview);
+    tool!.onDrop?.(app, drop.element);
   };
 
   private onKeyDown = (event: KeyboardEvent) => {

@@ -1,3 +1,30 @@
+import type { FontSizePresets } from "@excalidraw/common";
+
+export interface StylePreset {
+  id: string;
+  name: string;
+  shortcut: string;
+  tool: "arrow" | "line" | "rectangle" | "ellipse";
+  strokeStyle: "solid" | "dashed" | "dotted";
+  strokeWidth: 1 | 2 | 4;
+  strokeColor: string;
+  endArrowhead?: "arrow" | null;
+}
+
+export interface EditorPreferences {
+  defaultFontFamily: number;
+  defaultFontName?: string;
+  defaultBackground: string;
+  defaultStrokeColor?: string;
+  defaultElementBackground?: string;
+  elementStrokeTopPicks?: string[];
+  elementBackgroundTopPicks?: string[];
+  fontSizePresets?: FontSizePresets;
+  fontTopPicks: number[];
+  backgroundTopPicks: string[];
+  systemFonts: { id: number; family: string }[];
+}
+
 export type DesktopTheme = "light" | "dark" | "system";
 
 export interface DesktopSettings {
@@ -5,6 +32,12 @@ export interface DesktopSettings {
   theme: DesktopTheme;
   toolPanelDock: "floating" | "left" | "right";
   toolPanelWidth: number;
+  toolPanelPinned?: boolean;
+  toolbarTooltips?: boolean;
+  selectionToolbar?: boolean;
+  stickyNoteMode?: "note" | "subcanvas";
+  editorPreferences?: EditorPreferences;
+  stylePresets?: StylePreset[];
   language: "zh-CN" | "en";
   structuredExportFormat: "json" | "md";
   includeInferredStructure: boolean;
@@ -94,6 +127,7 @@ export interface DesktopAPI {
     svg: string;
     width: number;
     height: number;
+    pages?: { title?: string; svg: string; width: number; height: number }[];
   }): Promise<boolean>;
   editText(command: "undo" | "redo"): Promise<void>;
   removeFile(path: string, mode: "remove" | "trash"): Promise<void>;

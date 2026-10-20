@@ -29,6 +29,26 @@ const toggleSidebar = (
 
 describe("Sidebar", () => {
   describe("General behavior", () => {
+    it("retains a closing sidebar only for its inert exit animation", async () => {
+      const { container } = await render(
+        <Excalidraw
+          initialData={{ appState: { openSidebar: { name: "customSidebar" } } }}
+        >
+          <Sidebar name="customSidebar">
+            <div>Animated content</div>
+          </Sidebar>
+        </Excalidraw>,
+      );
+      await toggleSidebar({ name: null });
+      const closing = container.querySelector(".sidebar--closing");
+      expect(closing).not.toBeNull();
+      expect(closing?.closest("[inert]")).not.toBeNull();
+      expect(closing).not.toHaveAttribute("data-viewport-ui");
+      await waitFor(() =>
+        expect(container.querySelector(".sidebar")).toBeNull(),
+      );
+    });
+
     it("should render custom sidebar", async () => {
       const { container } = await render(
         <Excalidraw

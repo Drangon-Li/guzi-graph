@@ -8,12 +8,13 @@ import { Popover } from "radix-ui";
 import { trackEvent } from "../analytics";
 
 import { IconButton } from "./IconButton";
-import { isToolButtonDisabled } from "./Tools";
+import { getToolShortcut, isToolButtonDisabled } from "./Tools";
 
 import "./ToolPopover.scss";
 
 import { useExcalidrawContainer } from "./App";
 
+import type { ToolbarToolType } from "./Tools";
 import type { AppClassProperties } from "../types";
 
 type ToolOption = {
@@ -73,7 +74,12 @@ export const ToolPopover = ({
           disabled={options.every((option) =>
             isToolButtonDisabled(app, option.type),
           )}
-          title={capitalizeString(displayedOption.title)}
+          tooltip={`${capitalizeString(
+            displayedOption.title,
+          )} — ${getToolShortcut(displayedOption.type as ToolbarToolType)}`}
+          tooltipEnabled={
+            app.props.desktopIntegration?.toolbarTooltips !== false
+          }
           aria-label={capitalizeString(displayedOption.title)}
           data-testid={dataTestId}
           onSelect={() => {
@@ -96,7 +102,12 @@ export const ToolPopover = ({
             icon={icon}
             checked={currentType === type}
             disabled={isToolButtonDisabled(app, type)}
-            title={capitalizeString(type)}
+            tooltip={`${capitalizeString(title)} — ${getToolShortcut(
+              type as ToolbarToolType,
+            )}`}
+            tooltipEnabled={
+              app.props.desktopIntegration?.toolbarTooltips !== false
+            }
             aria-label={capitalizeString(type)}
             data-testid={`toolbar-${type}`}
             onSelect={() => {

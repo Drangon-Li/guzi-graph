@@ -106,7 +106,7 @@ describe("desktop canvas thumbnails", () => {
       ) => {
         await prepareFonts!();
         const { canvas, scale } = createCanvas!(...canvasSize);
-        rendered(canvas, scale);
+        rendered(canvas, scale, [canvas.width, canvas.height]);
         return canvas;
       },
     );
@@ -164,9 +164,10 @@ describe("desktop canvas thumbnails", () => {
       await waitFor(() =>
         expect(view.container.querySelector("img")).not.toBeNull(),
       );
-      const [canvas, scale] = rendered.mock.calls[0];
+      const [canvas, scale, dimensions] = rendered.mock.calls[0];
       expect(canvas.ownerDocument).toBe(root.ownerDocument);
-      expect([canvas.width, canvas.height, scale]).toEqual(expected);
+      expect([...dimensions, scale]).toEqual(expected);
+      expect([canvas.width, canvas.height]).toEqual([0, 0]);
       expect(view.container.querySelector("img")!.src).toMatch(
         /^data:image\/png/,
       );
@@ -253,11 +254,9 @@ describe("desktop canvas thumbnails", () => {
       expect(view.container.querySelector("img")).not.toBeNull(),
     );
     const preview = view.container.querySelector("img")!.src;
-    vi.mocked(exportToCanvas).mockRejectedValueOnce(
-      new Error("obsolete failure"),
-    );
     await act(async () => finish({ content: "old scene" }));
-    await waitFor(() => expect(exportToCanvas).toHaveBeenCalledTimes(2));
+    expect(exportToCanvas).toHaveBeenCalledTimes(1);
+    expect(loadFromBlob).toHaveBeenCalledTimes(1);
     expect(view.container.querySelector("img")!.src).toBe(preview);
     expect(view.queryByText("预览不可用")).toBeNull();
   });

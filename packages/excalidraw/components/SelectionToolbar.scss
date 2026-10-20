@@ -1,0 +1,56 @@
+.excalidraw .selection-toolbar {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  border-radius: var(--border-radius-lg);
+  background: var(--island-bg-color);
+  box-shadow: var(--shadow-island);
+  pointer-events: var(--ui-pointerEvents);
+  z-index: var(--zIndex-layerUI);
+  animation: selection-toolbar-enter 160ms ease-out;
+
+  > h3,
+  > .selection-toolbar__color > h3,
+  .color-picker-container > .color-picker__top-picks,
+  .color-picker-container > .top-picks-dnd,
+  .color-picker-container > .top-picks-dnd + div {
+    display: none;
+  }
+  .preference-configure-button {
+    display: none !important;
+  }
+  .color-picker-container {
+    display: flex;
+    width: auto;
+  }
+  .color-picker-container > button {
+    margin: 0;
+  }
+}
+
+.excalidraw .selection-toolbar-popover {
+  .buttonList {
+    flex-wrap: nowrap;
+  }
+  .preference-configure-button {
+    display: none;
+  }
+}
+
+@keyframes selection-toolbar-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .excalidraw .selection-toolbar {
+    animation: none;
+  }
+}

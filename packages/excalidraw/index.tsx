@@ -28,7 +28,11 @@ import {
   useAppStateValue as _useAppStateValue,
   useOnAppStateChange as _useOnAppStateChange,
 } from "./hooks/useAppStateValue";
-import { EditorJotaiProvider, editorJotaiStore } from "./editor-jotai";
+import {
+  EditorJotaiProvider,
+  editorJotaiStore,
+  createStore,
+} from "./editor-jotai";
 import polyfill from "./polyfill";
 
 import "./css/app.scss";
@@ -154,6 +158,9 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
       imageOptions?.maxWidthOrHeight ?? DEFAULT_IMAGE_OPTIONS.maxWidthOrHeight,
   };
 
+  const [editorStore] = useState(() =>
+    desktopIntegration ? createStore() : editorJotaiStore,
+  );
   const setExcalidrawAPI = useContext(ExcalidrawAPISetContext);
 
   const onExcalidrawAPIRef = useRef(onExcalidrawAPI);
@@ -206,9 +213,10 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
   }, [browserZoomAllowed, ownerDocument]);
 
   return (
-    <EditorJotaiProvider store={editorJotaiStore}>
+    <EditorJotaiProvider store={editorStore}>
       <InitializeApp langCode={langCode} theme={theme}>
         <App
+          editorStore={editorStore}
           onExport={onExport}
           desktopIntegration={desktopIntegration}
           className={className}

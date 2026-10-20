@@ -7,7 +7,9 @@ import { useTunnels } from "../context/tunnels";
 import { t } from "../i18n";
 
 import { useEditorInterface, useStylesPanelMode } from "./App";
+import { TableInsertButton } from "./TableInsertButton";
 import { HintViewer } from "./HintViewer";
+import { hideTooltip, showTooltip } from "./Tooltip";
 import { Island } from "./Island";
 import { LockButton } from "./LockButton";
 import { PenModeButton } from "./PenModeButton";
@@ -94,10 +96,25 @@ const ExtraToolsDropdown = ({
             (laserToolSelected && !app.props.isCollaborating),
         })}
         onToggle={() => {
+          hideTooltip();
           setIsExtraToolsMenuOpen(!isExtraToolsMenuOpen);
           setAppState({ openMenu: null, openPopup: null });
         }}
-        title={t("toolBar.extraTools")}
+        aria-label={t("toolBar.extraTools")}
+        onPointerEnter={(event) => {
+          if (app.props.desktopIntegration?.toolbarTooltips !== false) {
+            showTooltip(event.currentTarget, t("toolBar.extraTools"), {
+              delay: true,
+            });
+          }
+        }}
+        onPointerLeave={hideTooltip}
+        onFocus={(event) => {
+          if (app.props.desktopIntegration?.toolbarTooltips !== false) {
+            showTooltip(event.currentTarget, t("toolBar.extraTools"));
+          }
+        }}
+        onBlur={hideTooltip}
       >
         {imageToolSelected
           ? ImageIcon
@@ -307,6 +324,7 @@ export const Toolbar = ({
         )}
         <TextToolButton {...toolProps} />
         <StickyNoteToolButton {...toolProps} />
+        <TableInsertButton app={app} />
         <EraserToolButton {...toolProps} />
 
         <div

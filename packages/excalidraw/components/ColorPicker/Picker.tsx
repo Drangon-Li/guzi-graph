@@ -70,9 +70,9 @@ export const Picker = React.forwardRef(
     ref,
   ) => {
     const title = showTitle
-      ? type === "elementStroke"
+      ? type === "elementStroke" || type === "tableText"
         ? t("labels.stroke")
-        : type === "elementBackground"
+        : type === "elementBackground" || type === "textHighlight"
         ? t("labels.background")
         : null
       : null;
@@ -120,7 +120,7 @@ export const Picker = React.forwardRef(
 
     const [activeShade, setActiveShade] = useState(
       colorObj?.shade ??
-        (type === "elementBackground"
+        (type === "elementBackground" || type === "textHighlight"
           ? DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX
           : DEFAULT_ELEMENT_STROKE_COLOR_INDEX),
     );

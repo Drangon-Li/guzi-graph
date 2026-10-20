@@ -485,6 +485,135 @@ describe("desktop structured export", () => {
     expect(JSON.stringify(elements)).toBe(before);
   });
 
+  it("exports reachable subcanvas hierarchy once, keeps cycles as links, and attaches child image data", () => {
+    const pin = (id: string, sceneId: string) =>
+      element(id, "stickynote", { customData: { subcanvas: { sceneId } } });
+    const files = {
+      image: {
+        id: "image",
+        mimeType: "image/png",
+        dataURL: "data:image/png;base64,AQID",
+        created: 1,
+      },
+    } as unknown as BinaryFiles;
+    const subscenes = {
+      child: {
+        version: 1 as const,
+        title: "Child",
+        elements: [
+          element("child-text", "text", { originalText: "Child text" }),
+          element("child-image", "image", {
+            fileId: "image",
+            scale: [1, 1],
+            status: "saved",
+          }),
+          pin("nested-pin", "nested"),
+        ],
+        appState: {},
+      },
+      nested: {
+        version: 1 as const,
+        title: "Nested",
+        elements: [pin("back", "child")],
+        appState: {},
+      },
+      orphan: {
+        version: 1 as const,
+        title: "Orphan",
+        elements: [element("unused", "text")],
+        appState: {},
+      },
+    };
+    const result = buildStructuredExport(
+      [pin("pin", "child"), pin("same-child", "child")],
+      files,
+      { ...options, subscenes },
+    );
+    expect(result.subcanvases?.map((child) => child.id)).toEqual([
+      "child",
+      "nested",
+    ]);
+    expect(result.subcanvasLinks).toEqual([
+      { parentSceneId: null, pinElementId: "pin", sceneId: "child" },
+      { parentSceneId: "child", pinElementId: "nested-pin", sceneId: "nested" },
+      { parentSceneId: "nested", pinElementId: "back", sceneId: "child" },
+      { parentSceneId: null, pinElementId: "same-child", sceneId: "child" },
+    ]);
+    expect(result.assets).toHaveLength(1);
+    expect(result.subcanvases?.[0].document.assets[0].path).toBe(
+      result.assets[0].path,
+    );
+    const exported = prepareStructuredExport(result, files, "json");
+    expect(
+      exported.assets?.map((asset) => Array.from(new Uint8Array(asset.data))),
+    ).toEqual([[1, 2, 3]]);
+    const markdown = structuredExportToMarkdown(result);
+    expect(markdown).toContain("Subcanvas hierarchy");
+    expect(markdown).toContain("Child text");
+    expect(markdown).toContain(result.assets[0].path);
+    expect(markdown).not.toContain("Orphan");
+  });
+
+  it("adds one PDF page per reachable nonempty subcanvas when requested", async () => {
+    const { exportToSvg } = await import("@excalidraw/utils/export");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "100");
+    svg.setAttribute("height", "200");
+    vi.mocked(exportToSvg).mockResolvedValue(svg);
+    const api = {
+      commitEditing: vi.fn(),
+      getSceneElements: () => [
+        element("pin", "stickynote", {
+          customData: { subcanvas: { sceneId: "child" } },
+        }),
+      ],
+      getFiles: () => ({}),
+      getAppState: () => ({
+        subscenes: {
+          child: {
+            version: 1,
+            title: "Child",
+            elements: [element("inside", "text")],
+            appState: { viewBackgroundColor: "#eeeeee" },
+          },
+        },
+      }),
+    } as unknown as ExcalidrawImperativeAPI;
+    const savePdf = vi.fn().mockResolvedValue(true);
+    const snapshot = {
+      elements: api.getSceneElements(),
+      appState: api.getAppState(),
+      files: api.getFiles(),
+    };
+    const staleApi = {
+      ...api,
+      getSceneElements: () => [],
+    } as unknown as ExcalidrawImperativeAPI;
+    await exportCanvasPdf(
+      staleApi,
+      "Canvas",
+      { savePdf } as unknown as DesktopAPI,
+      {
+        includeSubcanvases: true,
+        snapshot,
+      },
+    );
+    expect(savePdf).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Canvas",
+        pages: [
+          { title: "Child", svg: svg.outerHTML, width: 100, height: 200 },
+        ],
+      }),
+    );
+    expect(exportToSvg).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        elements: [expect.objectContaining({ id: "inside" })],
+        appState: expect.objectContaining({ viewBackgroundColor: "#eeeeee" }),
+      }),
+    );
+  });
+
   it("commits edits before taking a PDF snapshot and saves an embedded SVG at scene dimensions", async () => {
     const { exportToSvg } = await import("@excalidraw/utils/export");
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -546,6 +675,7 @@ describe("structured export dialog", () => {
       commitEditing: vi.fn(),
       getSceneElements: () => source,
       getFiles: () => ({}),
+      getAppState: () => ({ subscenes: {} }),
     } as unknown as ExcalidrawImperativeAPI;
     const onClose = vi.fn();
     render(

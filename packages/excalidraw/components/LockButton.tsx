@@ -1,6 +1,7 @@
 import clsx from "clsx";
 
 import { IconButton } from "./IconButton";
+import { useAppProps } from "./App";
 import { LockedIcon, UnlockedIcon } from "./icons";
 
 type LockButtonProps = {
@@ -12,6 +13,7 @@ type LockButtonProps = {
 };
 
 export const LockButton = (props: LockButtonProps) => {
+  const appProps = useAppProps();
   return (
     <IconButton
       className={clsx("ToolIcon__lock", { "is-mobile": props.isMobile })}
@@ -19,7 +21,8 @@ export const LockButton = (props: LockButtonProps) => {
       icon={props.checked ? LockedIcon : UnlockedIcon}
       checked={props.checked}
       disabled={props.disabled}
-      title={`${props.title} — Q`}
+      tooltip={`${props.title} — Q`}
+      tooltipEnabled={appProps?.desktopIntegration?.toolbarTooltips !== false}
       aria-label={`${props.title}`}
       data-testid="toolbar-lock"
       onSelect={() => props.onChange?.()}

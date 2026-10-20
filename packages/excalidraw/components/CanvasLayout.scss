@@ -1,0 +1,29 @@
+.excalidraw {
+  .excalidraw-canvas-surface {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .excalidraw-sidebar-dock {
+    position: relative;
+    flex: 0 0 auto;
+    width: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--sidebar-bg-color);
+    transition: width 180ms ease-out;
+
+    &[data-open="true"] {
+      width: calc(var(--right-sidebar-width) - var(--space-factor) * 2);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .excalidraw-sidebar-dock {
+      transition: none;
+    }
+  }
+}

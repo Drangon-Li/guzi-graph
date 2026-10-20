@@ -16,6 +16,17 @@
       display: block;
       grid-template-columns: none;
     }
+
+    &--configurable {
+      grid-template-columns:
+        calc(1rem + 3 * var(--default-button-size)) 1rem
+        minmax(var(--default-button-size), 1fr) var(--default-button-size, 2rem);
+
+      &.FontPicker__container--compact {
+        display: flex;
+        gap: 0.25rem;
+      }
+    }
   }
 
   .FontPicker__top-picks-slots {

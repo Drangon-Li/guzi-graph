@@ -49,6 +49,8 @@ export type ShortcutName =
       | "toggleShortcuts"
       | "wrapSelectionInFrame"
       | "toggleWrap"
+      | "toggleTextUnderline"
+      | "insertTable"
     >
   | "saveScene"
   | "imageExport"
@@ -72,6 +74,7 @@ const shortcutMap: Record<ShortcutName, string[]> = {
   copyStyles: [getShortcutKey("CtrlOrCmd+Alt+C")],
   pasteStyles: [getShortcutKey("CtrlOrCmd+Alt+V")],
   selectAll: [getShortcutKey("CtrlOrCmd+A")],
+  toggleTextUnderline: [getShortcutKey("CtrlOrCmd+U")],
   deleteSelectedElements: [getShortcutKey("Delete")],
   duplicateSelection: [
     getShortcutKey("CtrlOrCmd+D"),
@@ -115,6 +118,7 @@ const shortcutMap: Record<ShortcutName, string[]> = {
   wrapSelectionInFrame: [],
   toggleWrap: [getShortcutKey("W")],
   toolLock: [getShortcutKey("Q")],
+  insertTable: [getShortcutKey("H")],
 };
 
 export const getShortcutFromShortcutName = (name: ShortcutName, idx = 0) => {

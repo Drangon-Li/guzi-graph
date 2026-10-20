@@ -59,6 +59,45 @@
 }
 
 .excalidraw.desktop-shell {
+  .desktop-switch {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    width: 36px;
+    height: 22px;
+    padding: 3px;
+    border: 0;
+    border-radius: 12px;
+    background: var(--color-gray-40);
+    cursor: pointer;
+    transition: background-color 120ms ease-out;
+
+    > span {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px #0002;
+      transition: transform 120ms ease-out;
+    }
+    &[aria-checked="true"] {
+      background: var(--color-primary);
+      > span {
+        transform: translateX(14px);
+      }
+    }
+    &:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 3px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      &,
+      > span {
+        transition: none;
+      }
+    }
+  }
+
   .desktop-select-trigger {
     display: inline-flex;
     align-items: center;

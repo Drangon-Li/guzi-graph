@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { loadFromBlob } from "@excalidraw/excalidraw";
+import { loadFromBlob, CaptureUpdateAction } from "@excalidraw/excalidraw";
 
 import type {
   ExcalidrawImperativeAPI,
@@ -9,6 +9,12 @@ import type {
 
 import { createSceneTracker, errorMessage, fileTitle } from "./document";
 import { handleDesktopEditingCommand } from "./desktopEditing";
+import {
+  DEFAULT_EDITOR_PREFERENCES,
+  registerPreferenceFonts,
+  resolveEditorPreferences,
+  getPreferenceColorTopPicks,
+} from "./editorPreferences";
 import { translate } from "./i18n";
 
 import type { SceneSnapshot } from "./document";
@@ -29,6 +35,9 @@ export interface CanvasDocument {
   initialData: ExcalidrawInitialDataState;
   api: ExcalidrawImperativeAPI | null;
   initialized: boolean;
+  flushEditing?: () => void;
+  getSnapshot?: () => SceneSnapshot;
+  activeEditor?: () => ExcalidrawImperativeAPI | null;
   dirty: boolean;
   revision: number;
   content: string;
@@ -67,12 +76,18 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     theme: "system",
     toolPanelDock: "floating",
     toolPanelWidth: 280,
+    toolPanelPinned: false,
+    toolbarTooltips: true,
+    selectionToolbar: true,
+    editorPreferences: DEFAULT_EDITOR_PREFERENCES,
     language: "zh-CN",
     structuredExportFormat: "json",
     includeInferredStructure: true,
     skipRemoveConfirmation: false,
     skipTrashConfirmation: false,
   });
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const [index, setIndex] = useState<ProjectIndex>({
     rootDirectory: null,
     files: [],
@@ -120,9 +135,14 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
 
   const activate = (id: string) => {
     if (activeRef.current !== id) {
-      documentsRef.current
-        .find((item) => item.id === activeRef.current)
-        ?.api?.commitEditing();
+      const previous = documentsRef.current.find(
+        (item) => item.id === activeRef.current,
+      );
+      if (previous?.flushEditing) {
+        previous.flushEditing();
+      } else {
+        previous?.api?.commitEditing();
+      }
     }
     activeRef.current = id;
     projectRef.current = false;
@@ -131,9 +151,14 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
   };
 
   const showProjects = () => {
-    documentsRef.current
-      .find((item) => item.id === activeRef.current)
-      ?.api?.commitEditing();
+    const current = documentsRef.current.find(
+      (item) => item.id === activeRef.current,
+    );
+    if (current?.flushEditing) {
+      current.flushEditing();
+    } else {
+      current?.api?.commitEditing();
+    }
     projectRef.current = true;
     refresh();
     saveSession();
@@ -157,6 +182,40 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     draft?: RecoveryDraft,
     activateOnOpen = true,
   ) => {
+    const preferences = resolveEditorPreferences(
+      settingsRef.current.editorPreferences,
+    );
+    const registry = registerPreferenceFonts(preferences);
+    if (!file && !draft) {
+      initialData = {
+        ...initialData,
+        appState: {
+          currentItemFontFamily: preferences.defaultFontFamily,
+          currentItemStrokeColor: preferences.defaultStrokeColor,
+          currentItemBackgroundColor: preferences.defaultElementBackground,
+          viewBackgroundColor: preferences.defaultBackground,
+          fontTopPicks: preferences.fontTopPicks,
+          ...initialData.appState,
+          fontRegistry: { ...registry, ...initialData.appState?.fontRegistry },
+          colorTopPicks: getPreferenceColorTopPicks(
+            preferences,
+            initialData.appState?.colorTopPicks,
+          ),
+        },
+      };
+    } else {
+      initialData = {
+        ...initialData,
+        appState: {
+          ...initialData.appState,
+          fontTopPicks: preferences.fontTopPicks,
+          colorTopPicks: getPreferenceColorTopPicks(
+            preferences,
+            initialData.appState?.colorTopPicks,
+          ),
+        },
+      };
+    }
     const document: CanvasDocument = {
       id: draft?.id || ownerWindow.crypto.randomUUID(),
       path: file?.path || null,
@@ -166,8 +225,15 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
         ? fileTitle(file.path)
         : translate(settings.language, "未命名"),
       modifiedAt: file?.modifiedAt || null,
-      initialData:
-        file || draft ? { ...initialData, scrollToContent: true } : initialData,
+      initialData: {
+        ...initialData,
+        ...(file || draft ? { scrollToContent: true } : {}),
+        appState: {
+          ...initialData.appState,
+          currentItemStickyNoteMode:
+            settingsRef.current.stickyNoteMode ?? "note",
+        },
+      },
       api: null,
       initialized: false,
       dirty: !!draft,
@@ -342,11 +408,14 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     if (!document.api || document.api.isDestroyed) {
       return;
     }
-    capture(document, {
-      elements: document.api.getSceneElementsIncludingDeleted(),
-      appState: document.api.getAppState(),
-      files: document.api.getFiles(),
-    });
+    capture(
+      document,
+      document.getSnapshot?.() ?? {
+        elements: document.api.getSceneElementsIncludingDeleted(),
+        appState: document.api.getAppState(),
+        files: document.api.getFiles(),
+      },
+    );
   };
 
   const initialize = (
@@ -460,11 +529,14 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     if (!documentsRef.current.includes(document) || document.removalPhase) {
       return Promise.resolve(false);
     }
-    return document.api?.desktopSave(saveAs) || Promise.resolve(false);
+    const editor = document.activeEditor?.() ?? document.api;
+    return editor?.desktopSave(saveAs) || Promise.resolve(false);
   };
 
   const commitText = (document: CanvasDocument) => {
-    document.api?.commitEditing();
+    document.flushEditing
+      ? document.flushEditing()
+      : document.api?.commitEditing();
     captureAPI(document);
   };
 
@@ -670,6 +742,40 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     const task = settingsQueue.current.then(async () => {
       try {
         const next = await desktop.updateSettings(update);
+        settingsRef.current = next;
+        if (update.stickyNoteMode) {
+          for (const document of documentsRef.current) {
+            for (const editor of new Set([
+              document.api,
+              document.activeEditor?.(),
+            ])) {
+              editor?.updateScene({
+                appState: { currentItemStickyNoteMode: update.stickyNoteMode },
+                captureUpdate: CaptureUpdateAction.NEVER,
+              });
+            }
+          }
+        }
+        if (update.editorPreferences) {
+          registerPreferenceFonts(update.editorPreferences);
+          for (const document of documentsRef.current) {
+            for (const editor of new Set([
+              document.api,
+              document.activeEditor?.(),
+            ])) {
+              editor?.updateScene({
+                appState: {
+                  fontTopPicks: update.editorPreferences.fontTopPicks,
+                  colorTopPicks: getPreferenceColorTopPicks(
+                    update.editorPreferences,
+                    editor?.getAppState().colorTopPicks,
+                  ),
+                },
+                captureUpdate: CaptureUpdateAction.NEVER,
+              });
+            }
+          }
+        }
         setSettings(next);
         return next;
       } catch (failure) {
@@ -780,7 +886,9 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       setError("请输入有效的画布名称，不要包含路径或特殊字符。");
       return false;
     }
-    document.api?.commitEditing();
+    document.flushEditing
+      ? document.flushEditing()
+      : document.api?.commitEditing();
     captureAPI(document);
     if (document.saving) {
       await document.saving;
@@ -899,7 +1007,9 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
         if (disposed) {
           return;
         }
-        setSettings((current) => ({ ...current, ...initialSettings }));
+        settingsRef.current = { ...settingsRef.current, ...initialSettings };
+        registerPreferenceFonts(settingsRef.current.editorPreferences);
+        setSettings(settingsRef.current);
         setIndex(initialIndex);
         setDrafts(recovery);
         const restored = await Promise.allSettled(

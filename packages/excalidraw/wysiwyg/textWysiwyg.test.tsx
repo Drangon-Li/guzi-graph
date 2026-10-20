@@ -561,6 +561,96 @@ describe("textWysiwyg", () => {
       expect(h.elements.length).toBe(1);
     });
 
+    it.each(["dblclick", "pointerup"] as const)(
+      "places the caret on the clicked line when editing existing text through %s",
+      async (entry) => {
+        const text = API.createElement({
+          type: "text",
+          text: "first\nsecond",
+          x: 100,
+          y: 100,
+          fontSize: 20,
+          fontFamily: FONT_FAMILY.Helvetica,
+        });
+        API.setElements([text]);
+        const original = Range.prototype.getBoundingClientRect;
+        Range.prototype.getBoundingClientRect = function (this: Range) {
+          return {
+            left: this.collapsed ? this.startOffset * 10 : 0,
+          } as DOMRect;
+        };
+        try {
+          const x = text.x + 32;
+          const y =
+            text.y + getLineHeightInPx(text.fontSize, text.lineHeight) * 1.5;
+          if (entry === "dblclick") {
+            mouse.doubleClickAt(x, y);
+          } else {
+            mouse.clickAt(x, y);
+            mouse.clickAt(x, y);
+            expect(h.app.lastPointerUpIsDoubleClick).toBe(true);
+          }
+          const editor = await getTextEditor();
+          await waitFor(() => {
+            expect(editor.selectionStart).toBe(9);
+            expect(editor.selectionEnd).toBe(9);
+          });
+          expect(editor.value).toBe("first\nsecond");
+          Keyboard.exitTextEditor(editor);
+        } finally {
+          Range.prototype.getBoundingClientRect = original;
+        }
+      },
+    );
+
+    it("keeps selecting the whole text when entering with Enter", async () => {
+      const text = API.createElement({ type: "text", text: "first\nsecond" });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      Keyboard.keyPress(KEYS.ENTER);
+      const editor = await getTextEditor();
+      expect(editor.selectionStart).toBe(0);
+      expect(editor.selectionEnd).toBe(text.originalText.length);
+      Keyboard.exitTextEditor(editor);
+    });
+
+    it("keeps the actual double-click point when the bound-text container recenters the editing entry", async () => {
+      const container = API.createElement({
+        type: "rectangle",
+        x: 100,
+        y: 100,
+        width: 240,
+        height: 120,
+        boundElements: [{ id: "bound-label", type: "text" }],
+      });
+      const text = API.createElement({
+        id: "bound-label",
+        type: "text",
+        text: "first second",
+        x: 140,
+        y: 145,
+        containerId: container.id,
+      });
+      API.setElements([container, text]);
+      API.setSelectedElements([container]);
+      const start = vi.spyOn(h.app.text, "handleTextWysiwyg");
+      try {
+        const point = { x: text.x + 22, y: text.y + 10 };
+        mouse.doubleClickAt(point.x, point.y);
+        const editor = await getTextEditor();
+        expect(start).toHaveBeenCalledWith(
+          expect.objectContaining({ id: text.id }),
+          expect.objectContaining({ initialCaretSceneCoords: point }),
+        );
+        await waitFor(() =>
+          expect(editor.selectionStart).toBe(editor.selectionEnd),
+        );
+        Keyboard.exitTextEditor(editor);
+      } finally {
+        start.mockRestore();
+      }
+    });
+
     it("should reselect text after exiting wysiwyg with escape", async () => {
       const text = API.createElement({
         type: "text",
@@ -784,7 +874,7 @@ describe("textWysiwyg", () => {
         toJSON: () => {},
       } as DOMRect);
     const dockSidebar = (left: number, width: number) => {
-      const root = textarea.closest<HTMLElement>(".excalidraw")!;
+      const root = textarea.closest<HTMLElement>(".excalidraw-canvas-surface")!;
       root.getBoundingClientRect = domRect(0, 800);
       const sidebar = document.createElement("div");
       sidebar.className = "sidebar sidebar--docked";

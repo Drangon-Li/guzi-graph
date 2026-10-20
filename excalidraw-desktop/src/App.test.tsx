@@ -7,6 +7,9 @@ import {
 } from "@testing-library/react";
 
 import { Excalidraw } from "@excalidraw/excalidraw";
+import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
+
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 import { App } from "./App";
 import { useWorkspace } from "./workspace";
@@ -83,6 +86,29 @@ describe("desktop inline tab rename interaction", () => {
     cleanup();
     root.remove();
     vi.clearAllMocks();
+  });
+
+  it("routes style shortcuts to the active child editor and leaves text inputs alone", () => {
+    render(<App root={root} />);
+    const api = {
+      getAppState: () => getDefaultAppState(),
+      getSceneElements: () => [],
+      updateScene: vi.fn(),
+      setActiveTool: vi.fn(),
+    } as unknown as ExcalidrawImperativeAPI;
+    canvas.activeEditor = () => api;
+    fireEvent.keyDown(root, { key: "™", code: "Digit2", altKey: true });
+    expect(api.setActiveTool).toHaveBeenCalledWith({ type: "arrow" });
+    expect(api.updateScene).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appState: expect.objectContaining({ currentItemStrokeStyle: "dashed" }),
+      }),
+    );
+    vi.mocked(api.setActiveTool).mockClear();
+    const input = document.createElement("input");
+    root.append(input);
+    fireEvent.keyDown(input, { key: "1", code: "Digit1", altKey: true });
+    expect(api.setActiveTool).not.toHaveBeenCalled();
   });
 
   it("edits in place with focus and selection, commits Enter once without a dialog", async () => {
@@ -356,12 +382,13 @@ describe("desktop inline tab rename interaction", () => {
     expect(view.getByRole("dialog")).toHaveAccessibleName("Desktop settings");
     expect(view.getByRole("tab", { name: "原名称" })).toBeInTheDocument();
     expect(vi.mocked(Excalidraw).mock.lastCall?.[0].langCode).toBe("en");
+    fireEvent.click(view.getByRole("tab", { name: "Files & export" }));
     fireEvent.click(view.getByRole("radio", { name: "Markdown" }));
     expect(workspace.updateSettings).toHaveBeenCalledWith({
       structuredExportFormat: "md",
     });
     fireEvent.click(
-      view.getByRole("checkbox", { name: "Organize information by layout" }),
+      view.getByRole("switch", { name: "Organize information by layout" }),
     );
     expect(workspace.updateSettings).toHaveBeenCalledWith({
       includeInferredStructure: false,

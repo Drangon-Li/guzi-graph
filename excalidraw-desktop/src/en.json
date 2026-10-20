@@ -139,5 +139,15 @@
   "已有同名文件": "A file with this name already exists",
   "请输入有效的文件夹名称。": "Enter a valid folder name.",
   "不能移动到默认文件夹之外。": "Cannot move outside the default folder.",
-  "文件已存在，请使用其他名称。": "A file already exists. Choose another name."
+  "文件已存在，请使用其他名称。": "A file already exists. Choose another name.",
+  "工具栏": "Toolbars",
+  "保持工具侧栏展开": "Keep the tool panel open",
+  "放到左侧": "Place on the left",
+  "放到右侧": "Place on the right",
+  "显示工具名称和快捷键提示": "Show tool names and keyboard shortcuts",
+  "显示选区悬浮工具栏": "Show the selection toolbar",
+  "新建便签": "New sticky notes",
+  "文字便签": "Text note",
+  "子画布图钉": "Subcanvas pin",
+  "沿用最近使用的类型；Control 点击顶部便签工具可直接创建子画布图钉。": "Remembers the last type. Control-click the sticky note tool to create a subcanvas pin."
 }

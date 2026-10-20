@@ -1,11 +1,18 @@
+import { registerCustomFontRegistry } from "@excalidraw/common";
 import { getElementAbsoluteCoords } from "@excalidraw/element/bounds";
 
-import type { ExcalidrawElement } from "@excalidraw/element/types";
+import type {
+  ExcalidrawElement,
+  NonDeletedExcalidrawElement,
+} from "@excalidraw/element/types";
 import type {
   BinaryFiles,
   ExcalidrawImperativeAPI,
 } from "@excalidraw/excalidraw/types";
 
+import type { SubcanvasScenes } from "@excalidraw/excalidraw/subcanvas";
+
+import type { SceneSnapshot } from "./document";
 import type { DesktopAPI } from "./shared";
 
 export type StructuredExportFormat = "json" | "md";
@@ -36,6 +43,8 @@ type ElementRecord = {
 
 export type SemanticNode = ElementRecord & {
   originalText?: string;
+  richText?: Extract<ExcalidrawElement, { type: "text" }>["richText"];
+  subcanvasId?: string;
   renderedText?: string;
   name?: string | null;
   fileId?: string | null;
@@ -111,6 +120,12 @@ export type StructuredExport = {
       }[];
     };
   };
+  subcanvases?: { id: string; title: string; document: StructuredExport }[];
+  subcanvasLinks?: {
+    parentSceneId: string | null;
+    pinElementId: string;
+    sceneId: string;
+  }[];
   diagnostics: { code: string; elementIds: string[]; message: string }[];
 };
 
@@ -406,10 +421,47 @@ const paragraphReadingOrder = (
   };
 };
 
+export const collectExportSubcanvases = (
+  elements: readonly ExcalidrawElement[],
+  subscenes: SubcanvasScenes = {},
+) => {
+  const scenes: { id: string; scene: SubcanvasScenes[string] }[] = [];
+  const links: NonNullable<StructuredExport["subcanvasLinks"]> = [];
+  const visited = new Set<string>();
+  const visit = (
+    elements: readonly ExcalidrawElement[],
+    parentSceneId: string | null,
+  ) => {
+    for (const element of elements) {
+      const sceneId =
+        element.type === "stickynote" &&
+        !element.isDeleted &&
+        element.customData?.subcanvas?.sceneId;
+      if (typeof sceneId !== "string" || !subscenes[sceneId]) {
+        continue;
+      }
+      links.push({ parentSceneId, pinElementId: element.id, sceneId });
+      if (visited.has(sceneId)) {
+        continue;
+      }
+      visited.add(sceneId);
+      const scene = subscenes[sceneId];
+      scenes.push({ id: sceneId, scene });
+      visit(scene.elements, sceneId);
+    }
+  };
+  visit(elements, null);
+  return { scenes, links };
+};
+
 export const buildStructuredExport = (
   elements: readonly ExcalidrawElement[],
   files: BinaryFiles,
-  options: { title: string; includeInferredStructure: boolean },
+  options: {
+    title: string;
+    includeInferredStructure: boolean;
+    subscenes?: SubcanvasScenes;
+  },
 ): StructuredExport => {
   const live = elements.filter((element) => !element.isDeleted);
   const liveIds = new Set(live.map((element) => element.id));
@@ -547,9 +599,14 @@ export const buildStructuredExport = (
     } else {
       nodes.push({
         ...record,
+        ...(element.type === "stickynote" &&
+        typeof element.customData?.subcanvas?.sceneId === "string"
+          ? { subcanvasId: element.customData.subcanvas.sceneId }
+          : {}),
         ...(element.type === "text"
           ? {
               originalText: element.originalText ?? element.text,
+              ...(element.richText ? { richText: element.richText } : {}),
               ...(element.originalText !== element.text
                 ? { renderedText: element.text }
                 : {}),
@@ -777,7 +834,41 @@ export const buildStructuredExport = (
         "An explicit layout relationship references a missing or deleted element.",
     });
   }
+  const graph = collectExportSubcanvases(elements, options.subscenes);
+  const subcanvases = graph.scenes.map(({ id, scene }) => ({
+    id,
+    title: scene.title,
+    document: buildStructuredExport(scene.elements, files, {
+      title: scene.title,
+      includeInferredStructure: options.includeInferredStructure,
+    }),
+  }));
+  for (const child of subcanvases) {
+    for (const asset of child.document.assets) {
+      if (!assets.some((existing) => existing.fileId === asset.fileId)) {
+        assets.push({ ...asset });
+      }
+    }
+  }
+  assets.sort((a, b) => compareId(a.fileId, b.fileId));
+  const sharedAssetDirectory = subcanvases.length
+    ? `guzi-assets-${digest(JSON.stringify({ assets, subcanvases }))}`
+    : assetDirectory;
+  for (const asset of assets) {
+    if (asset.name) {
+      asset.path = `${sharedAssetDirectory}/${asset.name}`;
+    }
+  }
+  for (const child of subcanvases) {
+    child.document.assetDirectory = sharedAssetDirectory;
+    child.document.assets.forEach((asset) => {
+      if (asset.name) {
+        asset.path = `${sharedAssetDirectory}/${asset.name}`;
+      }
+    });
+  }
   return {
+    ...(subcanvases.length ? { subcanvases, subcanvasLinks: graph.links } : {}),
     format: "guzi-graph.semantic",
     version: 1,
     title: options.title,
@@ -788,7 +879,7 @@ export const buildStructuredExport = (
     nodes,
     connectors,
     assets,
-    assetDirectory,
+    assetDirectory: sharedAssetDirectory,
     layout: {
       includeInferredStructure: options.includeInferredStructure,
       relations,
@@ -949,6 +1040,32 @@ export const structuredExportToMarkdown = (
       )} IDs: ${diagnostic.elementIds.map(escapeMarkdown).join(", ")}`,
     );
   }
+  if (document.subcanvases?.length) {
+    lines.push(
+      "",
+      "## Subcanvas hierarchy",
+      "",
+      "| Parent scene | Pin element | Subcanvas |",
+      "| --- | --- | --- |",
+    );
+    for (const link of document.subcanvasLinks ?? []) {
+      lines.push(
+        `| ${escapeMarkdown(link.parentSceneId ?? "root")} | ${escapeMarkdown(
+          link.pinElementId,
+        )} | ${escapeMarkdown(link.sceneId)} |`,
+      );
+    }
+    for (const child of document.subcanvases) {
+      lines.push(
+        "",
+        `## Subcanvas: ${escapeMarkdown(child.title)} (${escapeMarkdown(
+          child.id,
+        )})`,
+        "",
+        structuredExportToMarkdown(child.document).replace(/^#/gm, "##"),
+      );
+    }
+  }
   return `${lines.join("\n")}\n`;
 };
 
@@ -982,21 +1099,25 @@ export const exportCanvasPdf = async (
   api: ExcalidrawImperativeAPI,
   title: string,
   desktop: DesktopAPI,
+  options: { includeSubcanvases?: boolean; snapshot?: SceneSnapshot } = {},
 ): Promise<boolean> => {
   api.commitEditing();
-  const elements = api
-    .getSceneElements()
-    .filter((element) => !element.isDeleted);
+  const elements = (
+    options.snapshot?.elements ?? api.getSceneElements()
+  ).filter(
+    (element): element is NonDeletedExcalidrawElement => !element.isDeleted,
+  );
   if (!elements.length) {
     throw new Error("The canvas is empty.");
   }
   const appState = {
-    ...api.getAppState(),
+    ...(options.snapshot?.appState ?? api.getAppState()),
     exportScale: 1,
     exportEmbedScene: false,
   };
-  const files = { ...api.getFiles() };
+  const files = { ...(options.snapshot?.files ?? api.getFiles()) };
   const { exportToSvg } = await import("@excalidraw/utils/export");
+  registerCustomFontRegistry(appState.fontRegistry ?? {});
   const svg = await exportToSvg({
     elements,
     appState,
@@ -1009,5 +1130,49 @@ export const exportCanvasPdf = async (
   if (!(width > 0 && height > 0)) {
     throw new Error("The canvas has invalid PDF dimensions.");
   }
-  return desktop.savePdf({ name: title, svg: svg.outerHTML, width, height });
+  const pages: NonNullable<Parameters<DesktopAPI["savePdf"]>[0]["pages"]> = [];
+  if (options.includeSubcanvases) {
+    for (const { scene } of collectExportSubcanvases(
+      elements,
+      appState.subscenes,
+    ).scenes) {
+      const live = scene.elements.filter(
+        (element): element is NonDeletedExcalidrawElement => !element.isDeleted,
+      );
+      if (!live.length) {
+        continue;
+      }
+      registerCustomFontRegistry(scene.appState.fontRegistry ?? {});
+      const child = await exportToSvg({
+        elements: live,
+        appState: {
+          ...appState,
+          ...scene.appState,
+          exportScale: 1,
+          exportEmbedScene: false,
+        },
+        files,
+        exportPadding: 24,
+        reuseImages: true,
+      });
+      const pageWidth = Number(child.getAttribute("width"));
+      const pageHeight = Number(child.getAttribute("height"));
+      if (!(pageWidth > 0 && pageHeight > 0)) {
+        throw new Error("A subcanvas has invalid PDF dimensions.");
+      }
+      pages.push({
+        title: scene.title,
+        svg: child.outerHTML,
+        width: pageWidth,
+        height: pageHeight,
+      });
+    }
+  }
+  return desktop.savePdf({
+    name: title,
+    svg: svg.outerHTML,
+    width,
+    height,
+    ...(pages.length ? { pages } : {}),
+  });
 };

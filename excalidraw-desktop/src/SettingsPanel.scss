@@ -1,0 +1,199 @@
+.excalidraw.desktop-shell {
+  .desktop-modal.desktop-settings-dialog {
+    width: 800px;
+    height: 640px;
+
+    > header {
+      padding: 18px 24px;
+    }
+    > header h2 {
+      font-size: 18px;
+    }
+    > footer {
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      > span {
+        color: var(--desktop-muted);
+        font-size: 12px;
+      }
+    }
+  }
+  .desktop-settings-layout {
+    display: grid;
+    grid-template-columns: 164px minmax(0, 1fr);
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .desktop-settings-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px 10px;
+    border-right: 1px solid var(--default-border-color);
+    background: var(--color-surface-low);
+    overflow: auto;
+
+    > button {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 40px;
+      padding: 10px;
+      border: 0;
+      border-radius: 8px;
+      color: var(--text-primary-color);
+      background: transparent;
+      font: inherit;
+      font-size: 13px;
+      text-align: start;
+      cursor: pointer;
+
+      &:hover {
+        background: var(--button-hover-bg);
+      }
+      &[aria-selected="true"] {
+        color: var(--color-primary);
+        background: var(--color-primary-light);
+      }
+      &:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: -2px;
+      }
+    }
+  }
+  .desktop-settings-nav__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 18px;
+    width: 18px;
+    height: 18px;
+    svg {
+      width: 18px;
+      height: 18px;
+    }
+    .desktop-settings-command {
+      font-size: 20px;
+      line-height: 1;
+    }
+  }
+  .desktop-modal-body.desktop-settings-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 24px;
+    outline: none;
+
+    > * {
+      flex-shrink: 0;
+    }
+    > .desktop-segmented-control {
+      display: flex;
+      .desktop-segmented-option {
+        padding-inline: 8px;
+      }
+    }
+    .desktop-settings-heading h3 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 24px;
+    }
+    .desktop-settings-heading p {
+      margin: 4px 0 0;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+  }
+  .desktop-settings-card {
+    padding: 16px;
+    border: 1px solid var(--default-border-color);
+    border-radius: 12px;
+
+    h4 {
+      margin: 0 0 12px;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 20px;
+    }
+    > .desktop-segmented-control {
+      display: flex;
+    }
+    > .desktop-segmented-control + .desktop-settings-item {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--default-border-color);
+    }
+    .desktop-settings-note {
+      margin: 12px 0 0;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+  }
+  .desktop-settings-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    min-height: 36px;
+
+    + .desktop-settings-item {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--default-border-color);
+    }
+    .desktop-settings-item__label {
+      min-width: 0;
+      font-size: 13px;
+      line-height: 1.5;
+
+      p {
+        margin: 4px 0 0;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+    }
+    > .desktop-segmented-control {
+      flex-shrink: 0;
+    }
+  }
+  .desktop-settings-folder {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    > span {
+      flex: 1;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      user-select: text;
+      font-size: 13px;
+    }
+  }
+
+  @media (max-width: 700px) {
+    .desktop-settings-layout {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .desktop-settings-nav {
+      flex-direction: row;
+      padding: 8px;
+      border-right: 0;
+      border-bottom: 1px solid var(--default-border-color);
+      > button {
+        flex: 0 0 auto;
+        gap: 6px;
+      }
+    }
+    .desktop-modal-body.desktop-settings-content {
+      padding: 16px;
+    }
+    .desktop-settings-item,
+    .desktop-settings-folder {
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+  }
+}

@@ -11,11 +11,19 @@ import {
 import { loadFromBlob } from "@excalidraw/excalidraw";
 import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
 
+import { getSystemFontId } from "@excalidraw/common";
+import {
+  createTableData,
+  createTableElements,
+  syncTableData,
+} from "@excalidraw/element/table";
+
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 import { createSceneTracker } from "./document";
+import { DEFAULT_EDITOR_PREFERENCES } from "./editorPreferences";
 import { Projects } from "./Projects";
 import { useWorkspace } from "./workspace";
 
@@ -236,6 +244,301 @@ describe("desktop document workspace", () => {
       });
     return { document, api, edit };
   };
+
+  it("updates font and color shortcuts in root and active child editors without duplicate API updates", async () => {
+    const hook = await mount();
+    const { document, api } = addDocument(hook);
+    api.updateScene = vi.fn();
+    const child = {
+      updateScene: vi.fn(),
+      getAppState: () => ({
+        ...getDefaultAppState(),
+        colorTopPicks: {
+          ...getDefaultAppState().colorTopPicks,
+          bucketFill: ["#abcdef"],
+        },
+      }),
+    } as unknown as ExcalidrawImperativeAPI;
+    document.activeEditor = () => child;
+    const editorPreferences = {
+      ...DEFAULT_EDITOR_PREFERENCES,
+      fontTopPicks: [2, 3],
+      elementStrokeTopPicks: ["transparent", "#112233"],
+      elementBackgroundTopPicks: ["#445566"],
+    };
+    vi.mocked(desktop.updateSettings).mockResolvedValue({
+      ...settings,
+      editorPreferences,
+    });
+    await act(async () => {
+      await hook.result.current.updateSettings({ editorPreferences });
+    });
+    expect(api.updateScene).toHaveBeenCalledTimes(1);
+    expect(child.updateScene).toHaveBeenCalledTimes(1);
+    expect(api.updateScene).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appState: expect.objectContaining({
+          fontTopPicks: [2, 3],
+          colorTopPicks: expect.objectContaining({
+            elementStroke: ["transparent", "#112233"],
+            elementBackground: ["#445566"],
+          }),
+        }),
+      }),
+    );
+    expect(child.updateScene).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appState: expect.objectContaining({
+          fontTopPicks: [2, 3],
+          colorTopPicks: expect.objectContaining({
+            elementStroke: ["transparent", "#112233"],
+            elementBackground: ["#445566"],
+          }),
+        }),
+      }),
+    );
+    expect(child.updateScene).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appState: expect.objectContaining({
+          colorTopPicks: expect.objectContaining({ bucketFill: ["#abcdef"] }),
+        }),
+      }),
+    );
+    vi.mocked(api.updateScene).mockClear();
+    vi.mocked(child.updateScene).mockClear();
+    document.activeEditor = () => api;
+    await act(async () => {
+      await hook.result.current.updateSettings({ editorPreferences });
+    });
+    expect(api.updateScene).toHaveBeenCalledTimes(1);
+    expect(child.updateScene).not.toHaveBeenCalled();
+  });
+
+  it("remembers sticky mode in new drawings and synchronizes open root and child editors", async () => {
+    vi.mocked(desktop.getSettings).mockResolvedValue({
+      ...settings,
+      stickyNoteMode: "subcanvas",
+    });
+    const hook = await mount();
+    const { document, api } = addDocument(hook);
+    expect(document.initialData?.appState?.currentItemStickyNoteMode).toBe(
+      "subcanvas",
+    );
+    api.updateScene = vi.fn();
+    const child = {
+      updateScene: vi.fn(),
+    } as unknown as ExcalidrawImperativeAPI;
+    document.activeEditor = () => child;
+    vi.mocked(desktop.updateSettings).mockResolvedValue({
+      ...settings,
+      stickyNoteMode: "note",
+    });
+    await act(async () => {
+      await hook.result.current.updateSettings({ stickyNoteMode: "note" });
+    });
+    for (const editor of [api, child]) {
+      expect(editor.updateScene).toHaveBeenCalledTimes(1);
+      expect(editor.updateScene).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appState: { currentItemStickyNoteMode: "note" },
+        }),
+      );
+    }
+    let next!: CanvasDocument;
+    act(() => {
+      next = hook.result.current.newDocument();
+    });
+    expect(next.initialData?.appState?.currentItemStickyNoteMode).toBe("note");
+  });
+
+  it("loads named default fonts and background preferences into new drawings", async () => {
+    const family = "Workspace installed font";
+    const id = getSystemFontId(family);
+    vi.mocked(desktop.getSettings).mockResolvedValue({
+      ...settings,
+      editorPreferences: {
+        ...DEFAULT_EDITOR_PREFERENCES,
+        defaultFontFamily: id,
+        defaultFontName: family,
+        defaultBackground: "#ddeeff",
+        defaultStrokeColor: "#123456",
+        defaultElementBackground: "transparent",
+        elementStrokeTopPicks: ["#123456"],
+        elementBackgroundTopPicks: ["transparent", "#abcdef"],
+        systemFonts: [{ id, family }],
+        fontTopPicks: [id, 5],
+      },
+    });
+    const hook = await mount();
+    let document!: CanvasDocument;
+    act(() => {
+      document = hook.result.current.newDocument();
+    });
+    expect(document.initialData.appState).toMatchObject({
+      currentItemFontFamily: id,
+      viewBackgroundColor: "#ddeeff",
+      currentItemStrokeColor: "#123456",
+      currentItemBackgroundColor: "transparent",
+      colorTopPicks: {
+        elementStroke: ["#123456"],
+        elementBackground: ["transparent", "#abcdef"],
+      },
+      fontTopPicks: [id, 5],
+      fontRegistry: { [id]: family },
+    });
+  });
+
+  it("flushes the active editor and captures its aggregate snapshot when renaming", async () => {
+    const hook = await mount();
+    const { document, api } = addDocument(hook);
+    const aggregate = snapshot(7);
+    document.flushEditing = vi.fn();
+    document.getSnapshot = () => aggregate;
+    await act(async () => {
+      await hook.result.current.renameDocument(document.id, "Renamed");
+    });
+    expect(document.flushEditing).toHaveBeenCalledTimes(1);
+    expect(api.commitEditing).not.toHaveBeenCalled();
+    expect(JSON.parse(document.content).elements[0].x).toBe(7);
+  });
+
+  it("saves the active child editor and persists its latest aggregate snapshot", async () => {
+    const hook = await mount();
+    const { document, api } = addDocument(hook);
+    const aggregate = snapshot(4);
+    aggregate.elements = [
+      {
+        ...aggregate.elements[0],
+        type: "stickynote",
+        customData: { subcanvas: { sceneId: "child" } },
+      } as ExcalidrawElement,
+    ];
+    aggregate.appState.subscenes = {
+      child: {
+        version: 1,
+        title: "Nested",
+        elements: [{ ...snapshot(7).elements[0], id: "latest-child-shape" }],
+        appState: {},
+      },
+    };
+    document.getSnapshot = () => aggregate;
+    const childSave = vi.fn((saveAs: boolean) =>
+      hook.result.current.editorSave(document, document.getSnapshot!(), saveAs),
+    );
+    document.activeEditor = () =>
+      ({ desktopSave: childSave } as unknown as ExcalidrawImperativeAPI);
+    vi.spyOn(api, "desktopSave");
+    vi.mocked(desktop.saveFile).mockImplementation(async (request) =>
+      disk("/drawings/nested.excalidraw", request.content),
+    );
+    await act(async () => {
+      expect(await hook.result.current.requestSave(document)).toBe(true);
+    });
+    expect(childSave).toHaveBeenCalledWith(false);
+    expect(api.desktopSave).not.toHaveBeenCalled();
+    const saved = JSON.parse(
+      vi.mocked(desktop.saveFile).mock.calls[0][0].content,
+    );
+    expect(saved.appState.subscenes.child.elements[0]).toMatchObject({
+      id: "latest-child-shape",
+      x: 7,
+    });
+  });
+
+  it("stays clean after saving native table edits and closes without another save prompt", async () => {
+    const hook = await mount();
+    const { document, api } = addDocument(hook);
+    const table = createTableElements(createTableData(1, 1), 0, 0);
+    const scene: SceneSnapshot = {
+      ...snapshot(),
+      elements: table.elements.map((element) =>
+        element.type === "text"
+          ? {
+              ...element,
+              text: "Saved table cell",
+              originalText: "Saved table cell",
+              version: element.version + 1,
+            }
+          : element,
+      ),
+    };
+    api.getSceneElementsIncludingDeleted = () =>
+      scene.elements as ReturnType<
+        ExcalidrawImperativeAPI["getSceneElementsIncludingDeleted"]
+      >;
+    api.getAppState = () => scene.appState;
+    api.desktopSave = (saveAs = false) =>
+      hook.result.current.editorSave(document, scene, saveAs);
+    vi.mocked(desktop.saveFile).mockImplementation(async (request) => {
+      hook.result.current.capture(document, {
+        ...scene,
+        elements: syncTableData(scene.elements),
+      });
+      return disk("/drawings/table.excalidraw", request.content);
+    });
+    await act(async () => {
+      expect(await hook.result.current.requestSave(document)).toBe(true);
+    });
+    expect(document.dirty).toBe(false);
+    act(() =>
+      hook.result.current.capture(document, {
+        ...scene,
+        elements: syncTableData(scene.elements),
+      }),
+    );
+    expect(document.dirty).toBe(false);
+    expect(document.content).toBe(document.savedContent);
+    expect(document.content).toContain("Saved table cell");
+    await act(async () => {
+      expect(await hook.result.current.closeDocument(document.id)).toBe(true);
+    });
+    expect(hook.result.current.closePrompt).toBeNull();
+    expect(hook.result.current.documents).toHaveLength(0);
+  });
+
+  it("discards native table edits once when closing the window without reopening the prompt", async () => {
+    const hook = await mount();
+    const { document, api } = addDocument(hook);
+    const table = createTableElements(createTableData(1, 1), 0, 0);
+    const scene: SceneSnapshot = {
+      ...snapshot(),
+      elements: table.elements.map((element) =>
+        element.type === "text"
+          ? {
+              ...element,
+              text: "Discarded cell edit",
+              originalText: "Discarded cell edit",
+              version: element.version + 1,
+            }
+          : element,
+      ),
+    };
+    api.getSceneElementsIncludingDeleted = () =>
+      scene.elements as ReturnType<
+        ExcalidrawImperativeAPI["getSceneElementsIncludingDeleted"]
+      >;
+    api.getAppState = () => scene.appState;
+    vi.mocked(api.commitEditing).mockImplementation(() =>
+      hook.result.current.capture(document, {
+        ...scene,
+        elements: syncTableData(scene.elements),
+      }),
+    );
+    act(() =>
+      hook.result.current.capture(document, {
+        ...scene,
+        elements: syncTableData(scene.elements),
+      }),
+    );
+    act(() => command("close-window"));
+    await waitFor(() => expect(hook.result.current.closePrompt).not.toBeNull());
+    const revision = document.revision;
+    act(() => hook.result.current.closePrompt!.resolve("discard"));
+    await waitFor(() => expect(desktop.confirmClose).toHaveBeenCalledTimes(1));
+    expect(hook.result.current.closePrompt).toBeNull();
+    expect(document.revision).toBe(revision);
+    expect(desktop.saveFile).not.toHaveBeenCalled();
+  });
 
   it("binds an async save to its original document and preserves edits made during save", async () => {
     const hook = await mount();

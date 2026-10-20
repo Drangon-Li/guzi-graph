@@ -1,6 +1,6 @@
 import { Popover } from "radix-ui";
 import clsx from "clsx";
-import { memo, useRef, useEffect } from "react";
+import { memo, useRef, useEffect, useId } from "react";
 
 import {
   applyDarkModeFilter,
@@ -9,17 +9,24 @@ import {
   DEFAULT_ELEMENT_BACKGROUND_PICKS,
   DEFAULT_ELEMENT_STROKE_PICKS,
   isColorDark,
+  isTransparent,
   isWritableElement,
   THEME,
 } from "@excalidraw/common";
 
-import type { ColorTuple, ColorPaletteCustom } from "@excalidraw/common";
+import type { ColorPaletteCustom } from "@excalidraw/common";
 
 import type { ExcalidrawElement, Theme } from "@excalidraw/element/types";
 
-import { useAtom } from "../../editor-jotai";
+import { atom, useAtom, useStore } from "../../editor-jotai";
 import { t } from "../../i18n";
-import { useApp, useExcalidrawContainer, useStylesPanelMode } from "../App";
+import {
+  useApp,
+  useAppProps,
+  useExcalidrawContainer,
+  useStylesPanelMode,
+} from "../App";
+import { PreferenceConfigureButton } from "../PreferenceConfigureButton";
 import { ButtonSeparator } from "../ButtonSeparator";
 import { activeEyeDropperAtom } from "../EyeDropper";
 import { PropertiesPopover } from "../PropertiesPopover";
@@ -47,6 +54,11 @@ import type { ColorPickerType } from "./colorPickerUtils";
 
 import type { AppState, UIAppState } from "../../types";
 
+const activeColorPickerAtom = atom<{
+  id: string;
+  type: ColorPickerType;
+} | null>(null);
+
 interface ColorPickerProps {
   type: ColorPickerType;
   /**
@@ -59,7 +71,7 @@ interface ColorPickerProps {
   elements: readonly ExcalidrawElement[];
   appState: UIAppState;
   palette?: ColorPaletteCustom | null;
-  topPicks?: ColorTuple;
+  topPicks?: readonly string[];
   updateData: (formData?: any) => void;
   /** palette colors to hide from the popup, keeping hotkey positions */
   excludedColors?: readonly string[];
@@ -78,6 +90,8 @@ const ColorPickerPopupContent = ({
   palette = COLOR_PALETTE,
   updateData,
   getOpenPopup,
+  ownsPopup,
+  releasePopup,
   appState,
   excludedColors,
   onResetTopPicks,
@@ -94,6 +108,8 @@ const ColorPickerPopupContent = ({
   | "excludedColors"
 > & {
   getOpenPopup: () => AppState["openPopup"];
+  ownsPopup: () => boolean;
+  releasePopup: () => void;
   /** present only while the top picks are customized */
   onResetTopPicks?: () => void;
 }) => {
@@ -173,10 +189,14 @@ const ColorPickerPopupContent = ({
         }
       }}
       onClose={() => {
-        // only clear if we're still the active popup (avoid racing with switch)
+        // A closing instance must not dismiss the picker opened elsewhere.
+        if (!ownsPopup()) {
+          return;
+        }
         if (getOpenPopup() === type) {
           updateData({ openPopup: null });
         }
+        releasePopup();
         setActiveColorPickerSection(null);
 
         // Refocus text editor when popover closes if we were editing text
@@ -262,7 +282,9 @@ const isColorPickerPopup = (
 ): popup is ColorPickerType =>
   popup === "elementStroke" ||
   popup === "elementBackground" ||
-  popup === "canvasBackground";
+  popup === "canvasBackground" ||
+  popup === "textHighlight" ||
+  popup === "tableText";
 
 const ColorPickerTrigger = ({
   label,
@@ -315,7 +337,7 @@ const ColorPickerTrigger = ({
       aria-label={label}
       style={displayColor ? { "--swatch-color": displayColor } : undefined}
       title={
-        type === "elementStroke"
+        type === "elementStroke" || type === "tableText"
           ? t("labels.showStroke")
           : t("labels.showBackground")
       }
@@ -360,10 +382,47 @@ const ColorPickerComponent = ({
   excludedColors,
   customizableTopPicks,
 }: ColorPickerProps) => {
-  const openRef = useRef(appState.openPopup);
+  const app = useApp();
+  const pickerId = useId();
+  const store = useStore();
+  const [activePicker, setActivePicker] = useAtom(activeColorPickerAtom);
+  const { desktopIntegration } = useAppProps();
+  const configurationSection = desktopIntegration?.onConfigurePreferences
+    ? type === "canvasBackground"
+      ? "background"
+      : customizableTopPicks === "elementStroke" ||
+        customizableTopPicks === "elementBackground"
+      ? customizableTopPicks
+      : customizableTopPicks === "stickyNoteStroke"
+      ? "elementStroke"
+      : customizableTopPicks === "stickyNoteBackground"
+      ? "elementBackground"
+      : null
+    : null;
   useEffect(() => {
-    openRef.current = appState.openPopup;
-  }, [appState.openPopup]);
+    // Keyboard shortcuts have no trigger instance; the first mounted picker
+    // for that color type claims the popup.
+    if (
+      appState.openPopup === type &&
+      store.get(activeColorPickerAtom)?.type !== type
+    ) {
+      setActivePicker({ id: pickerId, type });
+    }
+  }, [appState.openPopup, pickerId, setActivePicker, store, type]);
+  useEffect(
+    () => () => {
+      if (store.get(activeColorPickerAtom)?.id === pickerId) {
+        store.set(activeColorPickerAtom, null);
+        app.setAppState({ openPopup: null });
+      }
+    },
+    [app, pickerId, store],
+  );
+  const isOpen = appState.openPopup === type && activePicker?.id === pickerId;
+  const openPopup = () => {
+    setActivePicker({ id: pickerId, type });
+    updateData({ openPopup: type });
+  };
   const stylesPanelMode = useStylesPanelMode();
   const isCompactMode = stylesPanelMode !== "full";
 
@@ -377,10 +436,38 @@ const ColorPickerComponent = ({
 
   // fully-resolved picks currently displayed in the strip — the baseline the
   // drag & drop customization starts from
+  const preferenceTopPicks =
+    type === "elementStroke" || type === "tableText"
+      ? appState.colorTopPicks?.elementStroke
+      : type === "elementBackground" || type === "textHighlight"
+      ? appState.colorTopPicks?.elementBackground
+      : null;
+  const isStickyColor =
+    customizableTopPicks === "stickyNoteStroke" ||
+    customizableTopPicks === "stickyNoteBackground";
+  const defaultPreferencePicks =
+    type === "elementStroke"
+      ? DEFAULT_ELEMENT_STROKE_PICKS
+      : DEFAULT_ELEMENT_BACKGROUND_PICKS;
+  // Desktop seeds regular defaults before customization; retain the note palette until these change.
+  const sharedStickyTopPicks =
+    isStickyColor &&
+    preferenceTopPicks &&
+    (preferenceTopPicks.length !== defaultPreferencePicks.length ||
+      preferenceTopPicks.some(
+        (color, index) => color !== defaultPreferencePicks[index],
+      ))
+      ? preferenceTopPicks.filter((color) => !isTransparent(color))
+      : null;
   const effectiveTopPicks = customTopPicks?.length
     ? customTopPicks
-    : topPicks ??
-      (type === "elementStroke"
+    : (type === "canvasBackground"
+        ? desktopIntegration?.backgroundTopPicks
+        : undefined) ??
+      (sharedStickyTopPicks?.length ? sharedStickyTopPicks : undefined) ??
+      topPicks ??
+      preferenceTopPicks ??
+      (type === "elementStroke" || type === "tableText"
         ? DEFAULT_ELEMENT_STROKE_PICKS
         : DEFAULT_ELEMENT_BACKGROUND_PICKS);
 
@@ -421,6 +508,7 @@ const ColorPickerComponent = ({
         aria-modal="true"
         className={clsx("color-picker-container", {
           "color-picker-container--no-top-picks": isCompactMode,
+          "color-picker-container--configurable": !!configurationSection,
         })}
       >
         {!isCompactMode && (
@@ -431,28 +519,25 @@ const ColorPickerComponent = ({
               onChange(pickedColor);
               // if another color-picker popup is open, follow the user's
               // focus over to this picker (same as clicking its trigger)
-              if (
-                isColorPickerPopup(appState.openPopup) &&
-                appState.openPopup !== type
-              ) {
+              if (isColorPickerPopup(appState.openPopup) && !isOpen) {
                 // deferred: each updateData spreads the full pre-commit
                 // appState, so issuing this in the same task would clobber
                 // the color change committed by `onChange` above
-                setTimeout(() => updateData({ openPopup: type }), 0);
+                app.ownerWindow.setTimeout(openPopup, 0);
               }
             }}
             type={type}
-            topPicks={customTopPicks?.length ? customTopPicks : topPicks}
+            topPicks={effectiveTopPicks}
             isCustomized={!!customTopPicks?.length}
             onReset={resetTopPicks}
           />
         )}
         {!isCompactMode && <ButtonSeparator />}
         <Popover.Root
-          open={appState.openPopup === type}
+          open={isOpen}
           onOpenChange={(open) => {
             if (open) {
-              updateData({ openPopup: type });
+              openPopup();
             }
           }}
         >
@@ -462,23 +547,22 @@ const ColorPickerComponent = ({
             label={label}
             type={type}
             theme={appState.theme}
-            mode={type === "elementStroke" ? "stroke" : "background"}
+            mode={
+              type === "elementStroke" || type === "tableText"
+                ? "stroke"
+                : "background"
+            }
             editingTextElement={!!appState.editingTextElement}
             onToggle={() => {
-              // atomic switch: if another popup is open, close it first, then open this one next tick
-              if (appState.openPopup === type) {
-                // toggle off on same trigger
+              if (isOpen) {
                 updateData({ openPopup: null });
-              } else if (appState.openPopup) {
-                updateData({ openPopup: type });
               } else {
-                // open this one
-                updateData({ openPopup: type });
+                openPopup();
               }
             }}
           />
           {/* popup content */}
-          {appState.openPopup === type && (
+          {isOpen && (
             <ColorPickerPopupContent
               type={type}
               color={color}
@@ -488,7 +572,11 @@ const ColorPickerComponent = ({
               palette={palette}
               excludedColors={excludedColors}
               updateData={updateData}
-              getOpenPopup={() => openRef.current}
+              getOpenPopup={() => app.state.openPopup}
+              ownsPopup={() =>
+                store.get(activeColorPickerAtom)?.id === pickerId
+              }
+              releasePopup={() => setActivePicker(null)}
               appState={appState}
               onResetTopPicks={
                 customTopPicks?.length ? resetTopPicks : undefined
@@ -496,6 +584,9 @@ const ColorPickerComponent = ({
             />
           )}
         </Popover.Root>
+        {configurationSection && (
+          <PreferenceConfigureButton section={configurationSection} />
+        )}
       </div>
     </ColorPickerDnDContext.Provider>
   );

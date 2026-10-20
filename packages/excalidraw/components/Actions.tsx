@@ -25,6 +25,13 @@ import { actionToggleViewMode } from "../actions/actionToggleViewMode";
 
 import "./Actions.scss";
 
+import { TableActions, getSelectedTableRoot } from "./TableActions";
+import { SubcanvasActions } from "./SubcanvasActions";
+import {
+  RichTextControls,
+  RichTextHighlightControls,
+} from "./RichTextControls";
+import { ImageBorderActions } from "./ImageBorderActions";
 import { useExcalidrawContainer } from "./App";
 import Stack from "./Stack";
 import { Tooltip } from "./Tooltip";
@@ -58,6 +65,64 @@ const PROPERTIES_CLASSES = clsx([
   CLASSES.SHAPE_ACTIONS_THEME_SCOPE,
   "properties-content",
 ]);
+
+const SelectedTableActions = ({
+  app,
+  appState,
+  renderAction,
+  compact = false,
+}: {
+  app: AppClassProperties;
+  appState: UIAppState;
+  renderAction: ActionManager["renderAction"];
+  compact?: boolean;
+}) => {
+  const { container } = useExcalidrawContainer();
+  const content = (
+    <div className="selected-shape-actions">
+      <TableActions app={app} appState={appState} renderAction={renderAction} />
+      <fieldset>
+        <legend>{t("labels.actions")}</legend>
+        <div className="buttonList">
+          {renderAction("duplicateSelection")}
+          {renderAction("deleteSelectedElements")}
+        </div>
+      </fieldset>
+    </div>
+  );
+
+  if (!compact) {
+    return content;
+  }
+  return (
+    <div className="compact-action-item">
+      <Popover.Root>
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            className="compact-action-button properties-trigger"
+            aria-label={t("labels.tableProperties")}
+            title={t("labels.tableProperties")}
+          >
+            {adjustmentsIcon}
+          </button>
+        </Popover.Trigger>
+        <PropertiesPopover
+          container={container}
+          className={PROPERTIES_CLASSES}
+          style={{
+            width: "15rem",
+            maxHeight: "70vh",
+            overflowY: "auto",
+          }}
+          onClose={() => app.focusContainer()}
+        >
+          {content}
+        </PropertiesPopover>
+      </Popover.Root>
+    </div>
+  );
+};
 
 /**
  * The "arrange" (z-order) fieldset, identical across every styles-panel layout.
@@ -157,12 +222,40 @@ export const SelectedShapeActions = ({
     );
   }
 
+  if (getSelectedTableRoot(app, appState)) {
+    return (
+      <SelectedTableActions
+        app={app}
+        appState={appState}
+        renderAction={renderAction}
+      />
+    );
+  }
+
   return (
     <div className="selected-shape-actions">
       <div>{predicates.strokeColor && renderAction("changeStrokeColor")}</div>
+      {predicates.text && (
+        <RichTextHighlightControls app={app} appState={appState} />
+      )}
       {predicates.backgroundColor && (
         <div>{renderAction("changeBackgroundColor")}</div>
       )}
+      <ImageBorderActions
+        app={app}
+        appState={appState}
+        renderAction={renderAction}
+      />
+      {predicates.text && (
+        <>
+          <fieldset>{renderAction("changeFontFamily")}</fieldset>
+          {renderAction("changeFontSize")}
+          <RichTextControls app={app} appState={appState} />
+          {predicates.textAlign && renderAction("changeTextAlign")}
+        </>
+      )}
+
+      {predicates.verticalAlign && renderAction("changeVerticalAlign")}
       {predicates.fill && renderAction("changeFillStyle")}
 
       {predicates.strokeWidth && renderAction("changeStrokeWidth")}
@@ -177,16 +270,9 @@ export const SelectedShapeActions = ({
 
       {predicates.arrowType && <>{renderAction("changeArrowType")}</>}
 
-      {predicates.text && (
-        <>
-          <fieldset>{renderAction("changeFontFamily")}</fieldset>
-          {renderAction("changeFontSize")}
-          {predicates.textAlign && renderAction("changeTextAlign")}
-        </>
-      )}
-
-      {predicates.verticalAlign && renderAction("changeVerticalAlign")}
       {predicates.arrowheads && <>{renderAction("changeArrowhead")}</>}
+
+      <SubcanvasActions app={app} appState={app.state} />
 
       {predicates.opacity && renderAction("changeOpacity")}
 
@@ -401,12 +487,14 @@ const CombinedArrowProperties = ({
 };
 
 const CombinedTextProperties = ({
+  app,
   appState,
   renderAction,
   setAppState,
   predicates,
   container,
 }: {
+  app: AppClassProperties;
   appState: UIAppState;
   renderAction: ActionManager["renderAction"];
   setAppState: React.Component<any, AppState>["setState"];
@@ -475,7 +563,11 @@ const CombinedTextProperties = ({
             }}
           >
             <div className="selected-shape-actions">
+              {predicates.text && (
+                <RichTextHighlightControls app={app} appState={appState} />
+              )}
               {predicates.text && renderAction("changeFontSize")}
+              <RichTextControls app={app} appState={appState} />
               {predicates.textAlign && renderAction("changeTextAlign")}
               {predicates.verticalAlign && renderAction("changeVerticalAlign")}
             </div>
@@ -624,6 +716,19 @@ export const CompactShapeActions = ({
   );
   const { container } = useExcalidrawContainer();
 
+  if (getSelectedTableRoot(app, appState)) {
+    return (
+      <div className="compact-shape-actions">
+        <SelectedTableActions
+          app={app}
+          appState={appState}
+          renderAction={renderAction}
+          compact
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="compact-shape-actions">
       {/* Stroke Color */}
@@ -651,6 +756,12 @@ export const CompactShapeActions = ({
         </div>
       )}
 
+      <ImageBorderActions
+        app={app}
+        appState={appState}
+        renderAction={renderAction}
+      />
+      <SubcanvasActions app={app} appState={app.state} />
       <CombinedShapeProperties
         appState={appState}
         renderAction={renderAction}
@@ -682,6 +793,7 @@ export const CompactShapeActions = ({
             {renderAction("changeFontFamily")}
           </div>
           <CombinedTextProperties
+            app={app}
             appState={appState}
             renderAction={renderAction}
             setAppState={setAppState}
@@ -761,6 +873,19 @@ export const MobileShapeActions = ({
   const showDuplicateOutside =
     ACTIONS_WIDTH >= MIN_WIDTH + 2 * ADDITIONAL_WIDTH;
 
+  if (getSelectedTableRoot(app, appState)) {
+    return (
+      <div className="compact-shape-actions mobile-shape-actions">
+        <SelectedTableActions
+          app={app}
+          appState={appState}
+          renderAction={renderAction}
+          compact
+        />
+      </div>
+    );
+  }
+
   return (
     <Island
       className="compact-shape-actions mobile-shape-actions"
@@ -801,6 +926,12 @@ export const MobileShapeActions = ({
             )}
           </div>
         )}
+        <ImageBorderActions
+          app={app}
+          appState={appState}
+          renderAction={renderAction}
+        />
+        <SubcanvasActions app={app} appState={app.state} />
         <CombinedShapeProperties
           appState={appState}
           renderAction={renderAction}
@@ -830,6 +961,7 @@ export const MobileShapeActions = ({
               {renderAction("changeFontFamily")}
             </div>
             <CombinedTextProperties
+              app={app}
               appState={appState}
               renderAction={renderAction}
               setAppState={setAppState}

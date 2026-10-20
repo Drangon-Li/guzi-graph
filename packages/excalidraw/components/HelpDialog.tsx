@@ -147,7 +147,7 @@ export const HelpDialog = ({ onClose }: { onClose?: () => void }) => {
             className="HelpDialog__island--tools"
             caption={t("helpDialog.tools")}
           >
-            <Shortcut label={t("toolBar.hand")} shortcuts={[KEYS.H]} />
+            <Shortcut label={t("labels.insertTable")} shortcuts={[KEYS.H]} />
             <Shortcut
               label={t("toolBar.selection")}
               shortcuts={[KEYS.V, KEYS["1"]]}
@@ -200,6 +200,10 @@ export const HelpDialog = ({ onClose }: { onClose?: () => void }) => {
             <Shortcut
               label={t("helpDialog.editText")}
               shortcuts={[getShortcutKey("Enter")]}
+            />
+            <Shortcut
+              label={t("labels.underline")}
+              shortcuts={[getShortcutKey("CtrlOrCmd+U")]}
             />
             <Shortcut
               label={t("helpDialog.textNewLine")}

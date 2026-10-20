@@ -4,13 +4,25 @@ import { useState, useCallback } from "react";
 export type CaretPosition = {
   start: number;
   end: number;
+  range?: Range;
 };
 
 // Utility function to get text editor element
-const getTextEditor = (ownerDocument: Document): HTMLTextAreaElement | null => {
-  return ownerDocument.querySelector(
-    ".excalidraw-wysiwyg",
-  ) as HTMLTextAreaElement;
+const getTextEditor = (ownerDocument: Document): HTMLElement | null =>
+  ownerDocument.querySelector(".excalidraw-wysiwyg");
+
+const restoreSelection = (editor: HTMLElement, position: CaretPosition) => {
+  const ownerWindow = editor.ownerDocument.defaultView;
+  if (ownerWindow && editor instanceof ownerWindow.HTMLTextAreaElement) {
+    editor.setSelectionRange(position.start, position.end);
+  } else if (
+    position.range &&
+    editor.contains(position.range.commonAncestorContainer)
+  ) {
+    const selection = ownerWindow?.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(position.range);
+  }
 };
 
 // Utility functions for caret position management
@@ -19,10 +31,14 @@ export const saveCaretPosition = (
 ): CaretPosition | null => {
   const textEditor = getTextEditor(ownerDocument);
   if (textEditor) {
-    return {
-      start: textEditor.selectionStart,
-      end: textEditor.selectionEnd,
-    };
+    const ownerWindow = ownerDocument.defaultView;
+    if (ownerWindow && textEditor instanceof ownerWindow.HTMLTextAreaElement) {
+      return { start: textEditor.selectionStart, end: textEditor.selectionEnd };
+    }
+    const selection = ownerWindow?.getSelection();
+    if (selection?.rangeCount && textEditor.contains(selection.anchorNode)) {
+      return { start: 0, end: 0, range: selection.getRangeAt(0).cloneRange() };
+    }
   }
   return null;
 };
@@ -37,8 +53,7 @@ export const restoreCaretPosition = (
     if (textEditor) {
       textEditor.focus();
       if (position) {
-        textEditor.selectionStart = position.start;
-        textEditor.selectionEnd = position.end;
+        restoreSelection(textEditor, position);
       }
     }
   }, 0);
@@ -86,8 +101,7 @@ export const useTextEditorFocus = (ownerDocument: Document = document) => {
       if (textEditor) {
         textEditor.focus();
         if (savedCaretPosition) {
-          textEditor.selectionStart = savedCaretPosition.start;
-          textEditor.selectionEnd = savedCaretPosition.end;
+          restoreSelection(textEditor, savedCaretPosition);
           setSavedCaretPosition(null);
         }
       }

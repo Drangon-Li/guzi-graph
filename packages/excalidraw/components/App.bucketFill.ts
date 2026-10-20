@@ -24,7 +24,6 @@ import type {
 } from "@excalidraw/element/types";
 
 import { actionChangeBucketFillBackgroundColor } from "../actions";
-import { editorJotaiStore } from "../editor-jotai";
 import { t } from "../i18n";
 
 import { activeEyeDropperAtom, type EyeDropperProperties } from "./EyeDropper";
@@ -95,7 +94,7 @@ export class AppBucketFill {
   };
 
   openTemporaryEyeDropper = () => {
-    if (editorJotaiStore.get(activeEyeDropperAtom)) {
+    if (this.app.editorStore.get(activeEyeDropperAtom)) {
       return;
     }
 
@@ -119,7 +118,7 @@ export class AppBucketFill {
     this.temporaryEyeDropper = null;
     if (
       eyeDropper &&
-      editorJotaiStore.get(activeEyeDropperAtom) === eyeDropper
+      this.app.editorStore.get(activeEyeDropperAtom) === eyeDropper
     ) {
       this.app.updateEditorAtom(activeEyeDropperAtom, null);
     }

@@ -111,6 +111,36 @@ export class AppSelectionTool {
       }
 
       const elementsMap = this.app.scene.getNonDeletedElementsMap();
+      if (event[KEYS.CTRL_OR_CMD] && !event.altKey) {
+        const hit = this.app.getElementAtPosition(
+          pointerDownState.origin.x,
+          pointerDownState.origin.y,
+        );
+        if (hit && !hit.locked && isLinearElement(hit)) {
+          const editor =
+            this.app.state.selectedLinearElement?.elementId === hit.id
+              ? this.app.state.selectedLinearElement
+              : new LinearElementEditor(hit, elementsMap);
+          const ret = LinearElementEditor.handlePointerDown(
+            event,
+            this.app,
+            this.app.store,
+            pointerDownState.origin,
+            editor,
+            this.app.scene,
+          );
+          if (ret.hitElement && ret.linearElementEditor) {
+            this.app.selection.select(hit, { deep: true });
+            this.app.setState({
+              selectedLinearElement: ret.linearElementEditor,
+            });
+            pointerDownState.hit.element = hit;
+            pointerDownState.hit.arrowLabel = ret.hitBoundText;
+            // Continue to App's pointer listeners so the new anchor can be dragged immediately.
+            return false;
+          }
+        }
+      }
       const selectedElements = this.app.scene.getSelectedElements(
         this.app.state,
       );
@@ -183,7 +213,7 @@ export class AppSelectionTool {
             });
           }
           if (ret.didAddPoint) {
-            return true;
+            return !linearElementEditor.isAddingPoints;
           }
 
           // Also check at current pointer position if focus point is being hovered

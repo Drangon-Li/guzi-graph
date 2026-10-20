@@ -1,4 +1,5 @@
 import {
+  LinearElementEditor,
   isElbowArrow,
   isLinearElement,
   isLineElement,
@@ -67,6 +68,7 @@ export const actionToggleLinearEditor = register({
     const selectedLinearElement = {
       ...appState.selectedLinearElement,
       isEditing: !appState.selectedLinearElement.isEditing,
+      isAddingPoints: false,
     };
 
     return {
@@ -208,5 +210,36 @@ export const actionTogglePolygon = register({
         style={{ marginLeft: "auto" }}
       />
     );
+  },
+});
+
+export const actionAddLinearAnchor = register({
+  name: "addLinearAnchor",
+  category: DEFAULT_CATEGORIES.elements,
+  label: "labels.lineEditor.addPoints",
+  icon: lineEditorIcon,
+  trackEvent: { category: "element" },
+  predicate: (elements, appState, _, app) => {
+    const selected = app.scene.getSelectedElements(appState);
+    return selected.length === 1 && isLinearElement(selected[0]);
+  },
+  perform(elements, appState, _, app) {
+    const selected = app.scene.getSelectedElements(appState)[0];
+    if (!isLinearElement(selected)) {
+      return false;
+    }
+    const editor =
+      appState.selectedLinearElement ??
+      new LinearElementEditor(selected, app.scene.getNonDeletedElementsMap());
+    return {
+      appState: {
+        selectedLinearElement: {
+          ...editor,
+          isEditing: true,
+          isAddingPoints: true,
+        },
+      },
+      captureUpdate: CaptureUpdateAction.EVENTUALLY,
+    };
   },
 });

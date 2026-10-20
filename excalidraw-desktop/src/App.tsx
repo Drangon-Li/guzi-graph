@@ -1,36 +1,39 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  Button,
-  Excalidraw,
-  MainMenu,
-  useHandleLibrary,
-} from "@excalidraw/excalidraw";
+import { Button, MainMenu, useHandleLibrary } from "@excalidraw/excalidraw";
 import { TextField } from "@excalidraw/excalidraw/components/TextField";
 import {
   CloseIcon,
-  DeviceDesktopIcon,
   ExcalLogo,
   ExportIcon,
   exportToFileIcon,
   LoadIcon,
-  MoonIcon,
   PlusIcon,
   saveAs,
   settingsIcon,
-  SunIcon,
 } from "@excalidraw/excalidraw/components/icons";
+
+import type { PreferenceSection } from "@excalidraw/excalidraw/types";
 
 import type { LibraryPersistenceAdapter } from "@excalidraw/excalidraw/data/library";
 
 import { fileTitle } from "./document";
 import { translate } from "./i18n";
-import { DesktopSegmentedControl, DesktopSelect } from "./DesktopControls";
+import { DesktopSelect } from "./DesktopControls";
 import { StructuredExportDialog } from "./StructuredExportDialog";
 import { exportCanvasPdf } from "./structuredExport";
 import { InlineTabTitle } from "./InlineTabTitle";
 import { Projects } from "./Projects";
 import { useWorkspace } from "./workspace";
+import { PreferencePanel } from "./PreferencePanel";
+import { resolveEditorPreferences } from "./editorPreferences";
+import { SubcanvasEditor } from "./SubcanvasEditor";
+import { SettingsPanel } from "./SettingsPanel";
+import {
+  DEFAULT_STYLE_PRESETS,
+  applyStylePreset,
+  getStyleShortcut,
+} from "./stylePresets";
 
 import "./styles.scss";
 
@@ -46,12 +49,14 @@ const Modal = ({
   language,
   children,
   onClose,
+  className = "",
 }: {
   root: HTMLElement;
   title: string;
   language: DesktopLanguage;
   children: ReactNode;
   onClose: () => void;
+  className?: string;
 }) => {
   const t = (message: string) => translate(language, message);
   const container = useRef<HTMLDivElement>(null);
@@ -110,7 +115,7 @@ const Modal = ({
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div
-        className="desktop-modal"
+        className={`desktop-modal ${className}`}
         ref={container}
         role="dialog"
         aria-modal="true"
@@ -259,6 +264,7 @@ const Editor = ({
   root,
   workspace,
   onSettings,
+  onPreferences,
   onStructuredExport,
 }: {
   document: CanvasDocument;
@@ -268,6 +274,7 @@ const Editor = ({
   root: HTMLElement;
   workspace: Workspace;
   onSettings: () => void;
+  onPreferences: (section: PreferenceSection) => void;
   onStructuredExport: () => void;
 }) => {
   const t = (message: string) =>
@@ -279,7 +286,8 @@ const Editor = ({
       aria-hidden={!active}
       inert={!active || blocked}
     >
-      <Excalidraw
+      <SubcanvasEditor
+        document={document}
         ownerDocument={root.ownerDocument}
         initialData={document.initialData}
         onExcalidrawAPI={(api) => {
@@ -291,8 +299,22 @@ const Editor = ({
         }
         desktopIntegration={{
           localOnly: true,
+          onConfigurePreferences: onPreferences,
+          backgroundTopPicks:
+            workspace.settings.editorPreferences?.backgroundTopPicks,
+          fontSizePresets: resolveEditorPreferences(
+            workspace.settings.editorPreferences,
+          ).fontSizePresets,
+          toolbarTooltips: workspace.settings.toolbarTooltips ?? true,
+          selectionToolbar: workspace.settings.selectionToolbar ?? true,
+          onStickyNoteModeChange: (stickyNoteMode) =>
+            void workspace.updateSettings({ stickyNoteMode }),
           toolPanel: {
-            dock: workspace.settings.toolPanelDock ?? "floating",
+            dock:
+              workspace.settings.toolPanelDock === "right" ? "right" : "left",
+            pinned: workspace.settings.toolPanelPinned ?? false,
+            onPinnedChange: (pinned) =>
+              void workspace.updateSettings({ toolPanelPinned: pinned }),
             width: workspace.settings.toolPanelWidth ?? 280,
             onWidthChange: (width) =>
               void workspace.updateSettings({ toolPanelWidth: width }),
@@ -302,8 +324,9 @@ const Editor = ({
               title: t("工具侧栏"),
               canvas: t("画布"),
               properties: t("元素"),
-              pinLeft: t("固定到左侧"),
-              pinRight: t("固定到右侧"),
+              pin: t("保持工具侧栏展开"),
+              pinLeft: t("放到左侧"),
+              pinRight: t("放到右侧"),
               unpin: t("取消固定"),
               collapse: t("收起工具侧栏"),
               expand: t("展开工具侧栏"),
@@ -353,15 +376,35 @@ const Editor = ({
             icon={ExportIcon}
             onSelect={() => {
               if (document.api) {
+                document.flushEditing?.();
                 void exportCanvasPdf(
                   document.api,
                   document.title,
                   root.ownerDocument.defaultView!.desktop,
+                  { snapshot: document.getSnapshot?.() },
                 ).catch(workspace.reportError);
               }
             }}
           >
             {t("导出 PDF…")}
+          </MainMenu.Item>
+          <MainMenu.Item
+            icon={ExportIcon}
+            onSelect={() => {
+              if (document.api) {
+                document.flushEditing?.();
+                void exportCanvasPdf(
+                  document.api,
+                  document.title,
+                  root.ownerDocument.defaultView!.desktop,
+                  { includeSubcanvases: true },
+                ).catch(workspace.reportError);
+              }
+            }}
+          >
+            {workspace.settings.language === "en"
+              ? "Export PDF with subcanvases…"
+              : "导出 PDF（包含子画布）…"}
           </MainMenu.Item>
           <MainMenu.Separator />
           <MainMenu.DefaultItems.SearchMenu />
@@ -377,7 +420,7 @@ const Editor = ({
             {t("桌面设置")}
           </MainMenu.Item>
         </MainMenu>
-      </Excalidraw>
+      </SubcanvasEditor>
     </section>
   );
 };
@@ -444,6 +487,8 @@ const RemoveConfirmation = ({
 
 export const App = ({ root }: { root: HTMLElement }) => {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [preferencesSection, setPreferencesSection] =
+    useState<PreferenceSection | null>(null);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [edit, setEdit] = useState<ProjectEdit | null>(null);
   const [removal, setRemoval] = useState<{
@@ -454,7 +499,12 @@ export const App = ({ root }: { root: HTMLElement }) => {
     useState<CanvasDocument | null>(null);
   const workspace = useWorkspace(
     root,
-    settingsOpen || recoveryOpen || !!edit || !!removal || !!structuredExport,
+    settingsOpen ||
+      !!preferencesSection ||
+      recoveryOpen ||
+      !!edit ||
+      !!removal ||
+      !!structuredExport,
   );
   const t = (message: string, params?: Record<string, string | number>) =>
     translate(workspace.settings.language, message, params);
@@ -502,6 +552,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
   );
   const modalOpen =
     settingsOpen ||
+    !!preferencesSection ||
     recoveryOpen ||
     !!edit ||
     !!removal ||
@@ -552,6 +603,51 @@ export const App = ({ root }: { root: HTMLElement }) => {
     return () => root.ownerDocument.removeEventListener("keydown", onKeyDown);
   }, [root, projectsVisible, modalOpen, closing, openFiles]);
 
+  useEffect(() => {
+    if (projectsVisible || modalOpen || closing || !active) {
+      return;
+    }
+    const ownerDocument = root.ownerDocument;
+    const ownerWindow = ownerDocument.defaultView!;
+    const handlePreset = (event: KeyboardEvent) => {
+      if (event.isComposing || event.repeat) {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof ownerWindow.Element &&
+        target.closest(
+          "input, textarea, select, [contenteditable='true'], [role='textbox']",
+        )
+      ) {
+        return;
+      }
+      const shortcut = getStyleShortcut(event);
+      const preset = (
+        workspace.settings.stylePresets ?? DEFAULT_STYLE_PRESETS
+      ).find(
+        (candidate) => candidate.shortcut && candidate.shortcut === shortcut,
+      );
+      const api = active.activeEditor?.() ?? active.api;
+      if (!preset || !api) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      applyStylePreset(api, preset);
+    };
+    ownerDocument.addEventListener("keydown", handlePreset, true);
+    return () =>
+      ownerDocument.removeEventListener("keydown", handlePreset, true);
+  }, [
+    root,
+    projectsVisible,
+    modalOpen,
+    closing,
+    active,
+    workspace.settings.stylePresets,
+  ]);
+
   return (
     <div
       className={`excalidraw desktop-shell${
@@ -571,7 +667,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
           aria-label={t("返回项目页")}
         >
           {ExcalLogo}
-          <span>{t("项目")}</span>
+          <span>Excalidraw-Guzi</span>
         </Button>
         <nav
           className="desktop-tabs"
@@ -677,7 +773,11 @@ export const App = ({ root }: { root: HTMLElement }) => {
                   document.id === workspace.activeId
                 }
                 onSettings={() => setSettingsOpen(true)}
-                onStructuredExport={() => setStructuredExport(document)}
+                onPreferences={setPreferencesSection}
+                onStructuredExport={() => {
+                  document.flushEditing?.();
+                  setStructuredExport(document);
+                }}
               />
             ))}
           </>
@@ -688,103 +788,80 @@ export const App = ({ root }: { root: HTMLElement }) => {
           root={root}
           language={workspace.settings.language}
           title={t("桌面设置")}
+          className="desktop-settings-dialog"
           onClose={() => setSettingsOpen(false)}
         >
-          <div className="desktop-modal-body desktop-settings-body">
-            <section className="desktop-settings-section">
-              <h3>{t("外观")}</h3>
-              <DesktopSegmentedControl
-                label={t("外观")}
-                value={workspace.settings.theme}
-                options={[
-                  { value: "light", label: t("浅色"), icon: SunIcon },
-                  { value: "dark", label: t("深色"), icon: MoonIcon },
-                  {
-                    value: "system",
-                    label: t("跟随系统"),
-                    icon: DeviceDesktopIcon,
-                  },
-                ]}
-                onValueChange={(value) =>
-                  void workspace.changeTheme(
-                    value as "light" | "dark" | "system",
-                  )
-                }
-              />
-              <div className="desktop-settings-row">
-                <span>{t("语言")}</span>
-                <DesktopSegmentedControl
-                  label={t("语言")}
-                  value={workspace.settings.language}
-                  options={[
-                    { value: "zh-CN", label: "中文" },
-                    { value: "en", label: "English" },
-                  ]}
-                  onValueChange={(value) =>
-                    void workspace.updateSettings({
-                      language: value as DesktopLanguage,
-                    })
-                  }
-                />
-              </div>
-            </section>
-            <section className="desktop-settings-section">
-              <h3>{t("结构化导出")}</h3>
-              <div className="desktop-settings-row">
-                <span>{t("默认格式")}</span>
-                <DesktopSegmentedControl
-                  label={t("默认格式")}
-                  value={workspace.settings.structuredExportFormat}
-                  options={[
-                    { value: "json", label: "JSON" },
-                    { value: "md", label: "Markdown" },
-                  ]}
-                  onValueChange={(value) =>
-                    void workspace.updateSettings({
-                      structuredExportFormat: value as "json" | "md",
-                    })
-                  }
-                />
-              </div>
-              <label className="desktop-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={workspace.settings.includeInferredStructure}
-                  onChange={(event) =>
-                    void workspace.updateSettings({
-                      includeInferredStructure: event.target.checked,
-                    })
-                  }
-                />
-                {t("按布局组织信息")}
-              </label>
-              <p className="desktop-settings-help">
-                {t("根据分组、容器和位置推断章节与层级。")}
-              </p>
-            </section>
-            <section className="desktop-settings-section">
-              <h3>{t("默认文件夹")}</h3>
-              <div className="desktop-settings-directory">
-                <p
-                  className="desktop-settings-path"
-                  title={workspace.settings.rootDirectory || undefined}
-                >
-                  {workspace.settings.rootDirectory || t("尚未设置")}
-                </p>
-                <Button onSelect={workspace.changeDirectory}>
-                  {t("选择文件夹…")}
-                </Button>
-              </div>
-              <p>
-                {t("这里的 .excalidraw 文件显示在项目页，子文件夹对应分类。")}
-              </p>
-            </section>
-          </div>
+          <SettingsPanel
+            root={root}
+            settings={workspace.settings}
+            onChange={workspace.updateSettings}
+            onChangeDirectory={workspace.changeDirectory}
+          />
           <footer>
+            <span>
+              {workspace.settings.language === "en"
+                ? "Settings are saved on this device"
+                : "设置保存在此设备"}
+            </span>
             <Button
               className="desktop-primary"
               onSelect={() => setSettingsOpen(false)}
             >
+              {t("完成")}
+            </Button>
+          </footer>
+        </Modal>
+      )}
+      {preferencesSection && (
+        <Modal
+          root={root}
+          language={workspace.settings.language}
+          title={
+            {
+              fonts:
+                workspace.settings.language === "en"
+                  ? "Fonts and shortcuts"
+                  : "字体与快捷项",
+              background:
+                workspace.settings.language === "en"
+                  ? "Canvas backgrounds"
+                  : "画布背景",
+              elementStroke:
+                workspace.settings.language === "en"
+                  ? "Stroke colors"
+                  : "描边颜色",
+              elementBackground:
+                workspace.settings.language === "en"
+                  ? "Fill colors"
+                  : "填充颜色",
+              fontSizes:
+                workspace.settings.language === "en"
+                  ? "Font sizes"
+                  : "字号快捷项",
+            }[preferencesSection]
+          }
+          onClose={() => setPreferencesSection(null)}
+        >
+          <div className="desktop-modal-body">
+            <PreferencePanel
+              root={root}
+              preferences={workspace.settings.editorPreferences}
+              section={preferencesSection}
+              language={workspace.settings.language}
+              onChange={async (editorPreferences) => {
+                if (!(await workspace.updateSettings({ editorPreferences }))) {
+                  throw new Error(
+                    workspace.error ||
+                      (workspace.settings.language === "en"
+                        ? "Unable to save preferences"
+                        : "偏好保存失败"),
+                  );
+                }
+              }}
+            />
+          </div>
+          <footer>
+            <Button onSelect={() => setPreferencesSection(null)}>
               {t("完成")}
             </Button>
           </footer>
@@ -867,6 +944,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
         <StructuredExportDialog
           root={root}
           api={structuredExport.api}
+          getSnapshot={structuredExport.getSnapshot}
           title={structuredExport.title}
           language={workspace.settings.language}
           defaultFormat={workspace.settings.structuredExportFormat}

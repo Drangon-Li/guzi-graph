@@ -6,7 +6,6 @@ import {
   getConversionTypeFromElements,
   convertElementTypePopupAtom,
 } from "../components/ConvertElementTypePopup";
-import { editorJotaiStore } from "../editor-jotai";
 
 import { register } from "./register";
 
@@ -21,7 +20,7 @@ export const actionToggleShapeSwitch = register({
   },
   keywords: ["change", "switch", "swap"],
   perform(elements, appState, _, app) {
-    editorJotaiStore.set(convertElementTypePopupAtom, {
+    app.editorStore.set(convertElementTypePopupAtom, {
       type: "panel",
     });
 

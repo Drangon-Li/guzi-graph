@@ -16,6 +16,8 @@ import { pointFrom, pointRotateRads, type Radians } from "@excalidraw/math";
 
 import type { ExtractSetType } from "@excalidraw/common/utility-types";
 
+import { layoutRichText } from "./richText";
+
 import {
   resetOriginalContainerCache,
   updateOriginalContainerCache,
@@ -98,11 +100,16 @@ export const redrawTextBoundingBox = (
     );
   }
 
-  const metrics = measureText(
-    boundTextUpdates.text,
-    getFontString(textElement),
-    textElement.lineHeight,
-  );
+  const metrics = textElement.richText
+    ? layoutRichText(textElement, maxWidth)
+    : measureText(
+        boundTextUpdates.text,
+        getFontString(textElement),
+        textElement.lineHeight,
+      );
+  if (textElement.richText) {
+    boundTextUpdates.text = (metrics as ReturnType<typeof layoutRichText>).text;
+  }
 
   // Note: only update width for unwrapped text and bound texts (which always have autoResize set to true)
   if (textElement.autoResize) {
@@ -195,11 +202,12 @@ export const handleBindTextResize = (
           maxWidth,
         );
       }
-      const metrics = measureText(
-        text,
-        getFontString(textElement),
-        textElement.lineHeight,
-      );
+      const metrics = textElement.richText
+        ? layoutRichText(textElement, maxWidth)
+        : measureText(text, getFontString(textElement), textElement.lineHeight);
+      if (textElement.richText) {
+        text = (metrics as ReturnType<typeof layoutRichText>).text;
+      }
       nextHeight = metrics.height;
       nextWidth = metrics.width;
     }
@@ -285,7 +293,10 @@ export const computeBoundTextPosition = (
       containerCoords.y +
       (maxContainerHeight / 2 - boundTextElement.height / 2);
   }
-  if (boundTextElement.textAlign === TEXT_ALIGN.LEFT) {
+  if (
+    boundTextElement.textAlign === TEXT_ALIGN.LEFT ||
+    boundTextElement.textAlign === "justify"
+  ) {
     x = containerCoords.x;
   } else if (boundTextElement.textAlign === TEXT_ALIGN.RIGHT) {
     x = containerCoords.x + (maxContainerWidth - boundTextElement.width);

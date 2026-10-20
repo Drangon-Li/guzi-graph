@@ -9,7 +9,8 @@ import { createIsolation } from "jotai-scope";
 
 const jotai = createIsolation();
 
-export { atom, PrimitiveAtom, WritableAtom };
+export { atom, createStore, PrimitiveAtom, WritableAtom };
+export type EditorStore = ReturnType<typeof createStore>;
 export const { useAtom, useSetAtom, useAtomValue, useStore } = jotai;
 export const EditorJotaiProvider: ReturnType<
   typeof createIsolation

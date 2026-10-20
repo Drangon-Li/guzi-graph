@@ -76,5 +76,7 @@
   "最小化": "Minimize",
   "缩放": "Zoom",
   "切换全屏": "Toggle full screen",
-  "PDF 导出失败，请重试。": "PDF export failed. Try again."
+  "PDF 导出失败，请重试。": "PDF export failed. Try again.",
+  "实线箭头": "Solid arrow",
+  "虚线箭头": "Dashed arrow"
 }

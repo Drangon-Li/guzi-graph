@@ -253,3 +253,39 @@ describe("element locking", () => {
     });
   });
 });
+
+describe("desktop font size presets", () => {
+  it("uses configured values for the selected text and for new text defaults", async () => {
+    const onConfigurePreferences = vi.fn();
+    await render(
+      <Excalidraw
+        desktopIntegration={{
+          save: async () => true,
+          open: async () => {},
+          selectionToolbar: false,
+          fontSizePresets: { sm: 12, md: 18, lg: 24, xl: 40 },
+          onConfigurePreferences,
+        }}
+      />,
+    );
+    UI.clickTool("text");
+    fireEvent.click(queryByTestId(document.body, "fontSize-small")!);
+    expect(window.h.state.currentItemFontSize).toBe(12);
+    const text = API.createElement({
+      type: "text",
+      text: "Size preset",
+      fontSize: 24,
+    });
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+    expect(queryByTestId(document.body, "fontSize-large")).toBeChecked();
+    fireEvent.click(queryByTestId(document.body, "fontSize-veryLarge")!);
+    expect(API.getSelectedElements()[0]).toMatchObject({ fontSize: 40 });
+    fireEvent.click(
+      document.querySelector<HTMLButtonElement>(
+        '.preference-configure-button[aria-label="Configure font sizes"]',
+      )!,
+    );
+    expect(onConfigurePreferences).toHaveBeenCalledWith("fontSizes");
+  });
+});

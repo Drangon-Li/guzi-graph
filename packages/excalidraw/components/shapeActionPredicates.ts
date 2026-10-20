@@ -13,6 +13,8 @@ import {
   toolIsArrow,
 } from "@excalidraw/element";
 
+import { isSubcanvasPin } from "@excalidraw/element/subcanvasPin";
+
 import type {
   ElementsMap,
   ExcalidrawElement,
@@ -99,7 +101,9 @@ export const getShapeActionPredicates = (
     predicate: (type: ElementOrToolType) => boolean,
   ) =>
     predicate(activeToolType) ||
-    targetElements.some((element) => predicate(element.type));
+    targetElements.some(
+      (element) => !isSubcanvasPin(element) && predicate(element.type),
+    );
 
   const singleSelected = targetElements.length === 1;
 

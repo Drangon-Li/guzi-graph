@@ -41,6 +41,7 @@ export const getDefaultAppState = (): Omit<
     currentItemStrokeColor: DEFAULT_ELEMENT_PROPS.strokeColor,
     currentItemStickynoteStrokeColor: DEFAULT_ELEMENT_PROPS.strokeColor,
     currentItemStickynoteBackgroundColor: DEFAULT_STICKY_NOTE_BG,
+    currentItemStickyNoteMode: "note",
     currentItemRoundness: isTestEnv() ? "sharp" : "round",
     currentItemArrowType: ARROW_TYPE.round,
     currentItemStrokeStyle: DEFAULT_ELEMENT_PROPS.strokeStyle,
@@ -143,6 +144,8 @@ export const getDefaultAppState = (): Omit<
       stickyNoteBackground: null,
     },
     fontTopPicks: null,
+    fontRegistry: {},
+    subscenes: {},
   };
 };
 
@@ -200,6 +203,7 @@ const APP_STATE_STORAGE_CONF = (<
     server: false,
   },
   currentItemStrokeStyle: { browser: true, export: false, server: false },
+  currentItemStickyNoteMode: { browser: true, export: false, server: false },
   currentItemStrokeWidthKey: { browser: true, export: false, server: false },
   currentItemTextAlign: { browser: true, export: false, server: false },
   currentHoveredFontFamily: { browser: false, export: false, server: false },
@@ -288,6 +292,8 @@ const APP_STATE_STORAGE_CONF = (<
   bindMode: { browser: true, export: false, server: false },
   colorTopPicks: { browser: true, export: false, server: false },
   fontTopPicks: { browser: true, export: false, server: false },
+  fontRegistry: { browser: true, export: true, server: true },
+  subscenes: { browser: true, export: true, server: true },
 });
 
 const _clearAppStateForStorage = <

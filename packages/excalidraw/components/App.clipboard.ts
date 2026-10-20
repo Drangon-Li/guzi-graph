@@ -26,6 +26,12 @@ import {
   wrapText,
 } from "@excalidraw/element";
 
+import {
+  createTableElements,
+  tableDataFromHTML,
+  tableDataFromTSV,
+} from "@excalidraw/element/table";
+
 import type { ExcalidrawElementSkeleton } from "@excalidraw/element";
 import type {
   ExcalidrawElement,
@@ -33,6 +39,12 @@ import type {
   ExcalidrawTextElement,
   NonDeleted,
 } from "@excalidraw/element/types";
+
+import { getTableDefaults } from "../table";
+
+import { restoreSubcanvasScenes } from "../subcanvas";
+import { cloneSubcanvasScenes } from "../subcanvasActions";
+import { restoreElements } from "../data/restore";
 
 import { actionCopy, actionCut } from "../actions";
 import { tryParseSpreadsheet } from "../charts";
@@ -128,6 +140,40 @@ export class AppClipboard {
       return;
     }
 
+    const tableData =
+      !isPlainPaste && !data.elements
+        ? (data.html &&
+            tableDataFromHTML(
+              data.html,
+              this.app.ownerDocument,
+              getTableDefaults(this.app.state),
+            )) ||
+          (data.text &&
+            tableDataFromTSV(data.text, getTableDefaults(this.app.state))) ||
+          null
+        : null;
+    if (tableData) {
+      const chart = data.text ? tryParseSpreadsheet(data.text) : null;
+      if (chart?.ok) {
+        this.app.setState({
+          openDialog: {
+            name: "charts",
+            data: chart.data,
+            rawText: data.text!,
+            tableData,
+          },
+        });
+      } else {
+        this.app.onInsertElements(
+          createTableElements(tableData, 0, 0, {
+            roughness: this.app.state.currentItemRoughness,
+            opacity: this.app.state.currentItemOpacity,
+          }).elements,
+        );
+      }
+      return;
+    }
+
     // ------------------- Mixed content with no files -------------------
     if (dataTransferFiles.length === 0 && !isPlainPaste && data.mixedContent) {
       await this.addElementsFromMixedContentPaste(data.mixedContent, {
@@ -177,13 +223,25 @@ export class AppClipboard {
 
     // ------------------- Elements -------------------
     if (data.elements) {
-      const elements = (
+      let elements = (
         data.programmaticAPI
           ? convertToExcalidrawElements(
               data.elements as ExcalidrawElementSkeleton[],
             )
           : data.elements
       ) as readonly ExcalidrawElement[];
+      if (data.subscenes) {
+        const restored = restoreSubcanvasScenes(data.subscenes, (elements) =>
+          restoreElements(elements, null),
+        );
+        const cloned = cloneSubcanvasScenes(elements, restored);
+        elements = cloned.elements;
+        flushSync(() =>
+          this.app.setState((state) => ({
+            subscenes: { ...state.subscenes, ...cloned.scenes },
+          })),
+        );
+      }
       // TODO: remove formatting from elements if isPlainPaste
       this.app.addElementsFromPasteOrLibrary({
         elements,

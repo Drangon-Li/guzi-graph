@@ -181,6 +181,13 @@ exports[`contextMenu element > right-clicking on a group should select whole gro
         },
         "viewMode": true,
       },
+      {
+        "label": "labels.tableProperties",
+        "name": "tableProperties",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": false,
+      },
       "separator",
       {
         "icon": <svg
@@ -750,6 +757,47 @@ exports[`contextMenu element > right-clicking on a group should select whole gro
           "category": "element",
         },
       },
+      {
+        "category": "Elements",
+        "icon": <svg
+          aria-hidden="true"
+          className=""
+          fill="none"
+          focusable="false"
+          role="img"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          viewBox="0 0 24 24"
+        >
+          <g
+            strokeWidth={"1.50000"}
+          >
+            <path
+              d="M0 0h24v24H0z"
+              fill="none"
+              stroke="none"
+            />
+            <path
+              d="M17 3m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"
+            />
+            <path
+              d="M3 17m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"
+            />
+            <path
+              d="M17 5c-6.627 0 -12 5.373 -12 12"
+            />
+          </g>
+        </svg>,
+        "label": "labels.lineEditor.addPoints",
+        "name": "addLinearAnchor",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "PanelComponent": [Function],
@@ -909,6 +957,7 @@ exports[`contextMenu element > right-clicking on a group should select whole gro
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -928,6 +977,7 @@ exports[`contextMenu element > right-clicking on a group should select whole gro
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -996,6 +1046,7 @@ exports[`contextMenu element > right-clicking on a group should select whole gro
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -1123,6 +1174,7 @@ exports[`contextMenu element > selecting 'Add to library' in context menu adds e
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -1142,6 +1194,7 @@ exports[`contextMenu element > selecting 'Add to library' in context menu adds e
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -1204,6 +1257,7 @@ exports[`contextMenu element > selecting 'Add to library' in context menu adds e
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -1352,6 +1406,7 @@ exports[`contextMenu element > selecting 'Bring forward' in context menu brings 
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -1371,6 +1426,7 @@ exports[`contextMenu element > selecting 'Bring forward' in context menu brings 
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -1433,6 +1489,7 @@ exports[`contextMenu element > selecting 'Bring forward' in context menu brings 
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -1700,6 +1757,7 @@ exports[`contextMenu element > selecting 'Bring to front' in context menu brings
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -1719,6 +1777,7 @@ exports[`contextMenu element > selecting 'Bring to front' in context menu brings
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -1781,6 +1840,7 @@ exports[`contextMenu element > selecting 'Bring to front' in context menu brings
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -2048,6 +2108,7 @@ exports[`contextMenu element > selecting 'Copy styles' in context menu copies st
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -2067,6 +2128,7 @@ exports[`contextMenu element > selecting 'Copy styles' in context menu copies st
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -2129,6 +2191,7 @@ exports[`contextMenu element > selecting 'Copy styles' in context menu copies st
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -2277,6 +2340,7 @@ exports[`contextMenu element > selecting 'Delete' in context menu deletes elemen
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -2296,6 +2360,7 @@ exports[`contextMenu element > selecting 'Delete' in context menu deletes elemen
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -2356,6 +2421,7 @@ exports[`contextMenu element > selecting 'Delete' in context menu deletes elemen
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -2533,6 +2599,7 @@ exports[`contextMenu element > selecting 'Duplicate' in context menu duplicates 
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -2552,6 +2619,7 @@ exports[`contextMenu element > selecting 'Duplicate' in context menu duplicates 
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -2614,6 +2682,7 @@ exports[`contextMenu element > selecting 'Duplicate' in context menu duplicates 
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -2848,6 +2917,7 @@ exports[`contextMenu element > selecting 'Group selection' in context menu group
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -2867,6 +2937,7 @@ exports[`contextMenu element > selecting 'Group selection' in context menu group
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -2934,6 +3005,7 @@ exports[`contextMenu element > selecting 'Group selection' in context menu group
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -3237,6 +3309,7 @@ exports[`contextMenu element > selecting 'Paste styles' in context menu pastes s
   "currentItemRoughness": 2,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#e03131",
@@ -3256,6 +3329,7 @@ exports[`contextMenu element > selecting 'Paste styles' in context menu pastes s
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -3318,6 +3392,7 @@ exports[`contextMenu element > selecting 'Paste styles' in context menu pastes s
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -3774,6 +3849,7 @@ exports[`contextMenu element > selecting 'Send backward' in context menu sends e
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -3793,6 +3869,7 @@ exports[`contextMenu element > selecting 'Send backward' in context menu sends e
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -3855,6 +3932,7 @@ exports[`contextMenu element > selecting 'Send backward' in context menu sends e
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -4114,6 +4192,7 @@ exports[`contextMenu element > selecting 'Send to back' in context menu sends el
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -4133,6 +4212,7 @@ exports[`contextMenu element > selecting 'Send to back' in context menu sends el
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -4195,6 +4275,7 @@ exports[`contextMenu element > selecting 'Send to back' in context menu sends el
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -4454,6 +4535,7 @@ exports[`contextMenu element > selecting 'Ungroup selection' in context menu ung
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -4473,6 +4555,7 @@ exports[`contextMenu element > selecting 'Ungroup selection' in context menu ung
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -4538,6 +4621,7 @@ exports[`contextMenu element > selecting 'Ungroup selection' in context menu ung
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -5028,6 +5112,13 @@ exports[`contextMenu element > shows 'Group selection' in context menu for multi
         },
         "viewMode": true,
       },
+      {
+        "label": "labels.tableProperties",
+        "name": "tableProperties",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": false,
+      },
       "separator",
       {
         "icon": <svg
@@ -5597,6 +5688,47 @@ exports[`contextMenu element > shows 'Group selection' in context menu for multi
           "category": "element",
         },
       },
+      {
+        "category": "Elements",
+        "icon": <svg
+          aria-hidden="true"
+          className=""
+          fill="none"
+          focusable="false"
+          role="img"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          viewBox="0 0 24 24"
+        >
+          <g
+            strokeWidth={"1.50000"}
+          >
+            <path
+              d="M0 0h24v24H0z"
+              fill="none"
+              stroke="none"
+            />
+            <path
+              d="M17 3m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"
+            />
+            <path
+              d="M3 17m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"
+            />
+            <path
+              d="M17 5c-6.627 0 -12 5.373 -12 12"
+            />
+          </g>
+        </svg>,
+        "label": "labels.lineEditor.addPoints",
+        "name": "addLinearAnchor",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "PanelComponent": [Function],
@@ -5756,6 +5888,7 @@ exports[`contextMenu element > shows 'Group selection' in context menu for multi
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -5775,6 +5908,7 @@ exports[`contextMenu element > shows 'Group selection' in context menu for multi
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -5840,6 +5974,7 @@ exports[`contextMenu element > shows 'Group selection' in context menu for multi
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -6262,6 +6397,13 @@ exports[`contextMenu element > shows 'Ungroup selection' in context menu for gro
         },
         "viewMode": true,
       },
+      {
+        "label": "labels.tableProperties",
+        "name": "tableProperties",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": false,
+      },
       "separator",
       {
         "icon": <svg
@@ -6831,6 +6973,47 @@ exports[`contextMenu element > shows 'Ungroup selection' in context menu for gro
           "category": "element",
         },
       },
+      {
+        "category": "Elements",
+        "icon": <svg
+          aria-hidden="true"
+          className=""
+          fill="none"
+          focusable="false"
+          role="img"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          viewBox="0 0 24 24"
+        >
+          <g
+            strokeWidth={"1.50000"}
+          >
+            <path
+              d="M0 0h24v24H0z"
+              fill="none"
+              stroke="none"
+            />
+            <path
+              d="M17 3m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"
+            />
+            <path
+              d="M3 17m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"
+            />
+            <path
+              d="M17 5c-6.627 0 -12 5.373 -12 12"
+            />
+          </g>
+        </svg>,
+        "label": "labels.lineEditor.addPoints",
+        "name": "addLinearAnchor",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "PanelComponent": [Function],
@@ -6990,6 +7173,7 @@ exports[`contextMenu element > shows 'Ungroup selection' in context menu for gro
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -7009,6 +7193,7 @@ exports[`contextMenu element > shows 'Ungroup selection' in context menu for gro
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -7076,6 +7261,7 @@ exports[`contextMenu element > shows 'Ungroup selection' in context menu for gro
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -7964,6 +8150,7 @@ exports[`contextMenu element > shows context menu for canvas > [end of test] app
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -7983,6 +8170,7 @@ exports[`contextMenu element > shows context menu for canvas > [end of test] app
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -8046,6 +8234,7 @@ exports[`contextMenu element > shows context menu for canvas > [end of test] app
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -8249,6 +8438,13 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
         },
         "viewMode": true,
       },
+      {
+        "label": "labels.tableProperties",
+        "name": "tableProperties",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": false,
+      },
       "separator",
       {
         "icon": <svg
@@ -8818,6 +9014,47 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
           "category": "element",
         },
       },
+      {
+        "category": "Elements",
+        "icon": <svg
+          aria-hidden="true"
+          className=""
+          fill="none"
+          focusable="false"
+          role="img"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          viewBox="0 0 24 24"
+        >
+          <g
+            strokeWidth={"1.50000"}
+          >
+            <path
+              d="M0 0h24v24H0z"
+              fill="none"
+              stroke="none"
+            />
+            <path
+              d="M17 3m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"
+            />
+            <path
+              d="M3 17m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"
+            />
+            <path
+              d="M17 5c-6.627 0 -12 5.373 -12 12"
+            />
+          </g>
+        </svg>,
+        "label": "labels.lineEditor.addPoints",
+        "name": "addLinearAnchor",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "PanelComponent": [Function],
@@ -8977,6 +9214,7 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -8996,6 +9234,7 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -9058,6 +9297,7 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",
@@ -9253,6 +9493,13 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
         },
         "viewMode": true,
       },
+      {
+        "label": "labels.tableProperties",
+        "name": "tableProperties",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": false,
+      },
       "separator",
       {
         "icon": <svg
@@ -9822,6 +10069,47 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
           "category": "element",
         },
       },
+      {
+        "category": "Elements",
+        "icon": <svg
+          aria-hidden="true"
+          className=""
+          fill="none"
+          focusable="false"
+          role="img"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          viewBox="0 0 24 24"
+        >
+          <g
+            strokeWidth={"1.50000"}
+          >
+            <path
+              d="M0 0h24v24H0z"
+              fill="none"
+              stroke="none"
+            />
+            <path
+              d="M17 3m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"
+            />
+            <path
+              d="M3 17m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"
+            />
+            <path
+              d="M17 5c-6.627 0 -12 5.373 -12 12"
+            />
+          </g>
+        </svg>,
+        "label": "labels.lineEditor.addPoints",
+        "name": "addLinearAnchor",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "PanelComponent": [Function],
@@ -9981,6 +10269,7 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
   "currentItemRoughness": 1,
   "currentItemRoundness": "sharp",
   "currentItemStartArrowhead": null,
+  "currentItemStickyNoteMode": "note",
   "currentItemStickynoteBackgroundColor": "#ffdf6b",
   "currentItemStickynoteStrokeColor": "#1e1e1e",
   "currentItemStrokeColor": "#1e1e1e",
@@ -10000,6 +10289,7 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
   "exportScale": 1,
   "exportWithDarkMode": false,
   "fileHandle": null,
+  "fontRegistry": {},
   "fontTopPicks": null,
   "frameRendering": {
     "clip": true,
@@ -10065,6 +10355,7 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
     "open": false,
     "panels": 3,
   },
+  "subscenes": {},
   "suggestedBinding": null,
   "textToolHover": null,
   "theme": "light",

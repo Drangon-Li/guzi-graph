@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 
 import {
+  registerCustomFontRegistry,
   IMAGE_MIME_TYPES,
   MIME_TYPES,
   bytesToHexString,
@@ -158,6 +159,7 @@ export const loadSceneOrLibraryFromBlob = async (
       throw error;
     }
     if (isValidExcalidrawData(data)) {
+      registerCustomFontRegistry(data.appState?.fontRegistry ?? {});
       const elements = restoreElements(data.elements, localElements, {
         repairBindings: true,
         deleteInvisibleElements: true,

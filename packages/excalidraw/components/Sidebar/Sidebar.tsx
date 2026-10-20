@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { createPortal } from "react-dom";
 import React, {
   useEffect,
   useLayoutEffect,
@@ -20,8 +21,9 @@ import {
 import { useUIAppState } from "../../context/ui-appState";
 import { atom, useSetAtom } from "../../editor-jotai";
 import { useOutsideClick } from "../../hooks/useOutsideClick";
-import { useEditorInterface, useExcalidrawSetAppState } from "../App";
+import { useApp, useEditorInterface, useExcalidrawSetAppState } from "../App";
 import { Island } from "../Island";
+import { useSidebarDockContainer } from "../CanvasLayout";
 
 import { SidebarHeader } from "./SidebarHeader";
 import { SidebarTabTrigger } from "./SidebarTabTrigger";
@@ -53,8 +55,12 @@ export const SidebarInner = forwardRef(
       onDock,
       docked,
       className,
+      closing = false,
       ...rest
-    }: SidebarProps & Omit<React.RefAttributes<HTMLDivElement>, "onSelect">,
+    }: SidebarProps & { closing?: boolean } & Omit<
+        React.RefAttributes<HTMLDivElement>,
+        "onSelect"
+      >,
     ref: React.ForwardedRef<HTMLDivElement>,
   ) => {
     if (isDevEnv() && onDock && docked == null) {
@@ -64,30 +70,34 @@ export const SidebarInner = forwardRef(
     }
 
     const setAppState = useExcalidrawSetAppState();
+    const app = useApp();
+    const layoutDock = useSidebarDockContainer();
+    const effectiveDocked = !!layoutDock || docked;
 
     const setIsSidebarDockedAtom = useSetAtom(isSidebarDockedAtom);
 
     useLayoutEffect(() => {
-      setIsSidebarDockedAtom(!!docked);
+      setIsSidebarDockedAtom(!!effectiveDocked && !closing);
       return () => {
         setIsSidebarDockedAtom(false);
       };
-    }, [setIsSidebarDockedAtom, docked]);
+    }, [setIsSidebarDockedAtom, effectiveDocked, closing]);
 
     const headerPropsRef = useRef<SidebarPropsContextValue>(
       {} as SidebarPropsContextValue,
     );
     headerPropsRef.current.onCloseRequest = () => {
       setAppState({ openSidebar: null });
+      app.focusContainer();
     };
     headerPropsRef.current.onDock = (isDocked) => onDock?.(isDocked);
     // renew the ref object if the following props change since we want to
     // rerender. We can't pass down as component props manually because
     // the <Sidebar.Header/> can be rendered upstream.
     headerPropsRef.current = updateObject(headerPropsRef.current, {
-      docked,
+      docked: effectiveDocked,
       // explicit prop to rerender on update
-      shouldRenderDockButton: !!onDock && docked != null,
+      shouldRenderDockButton: !layoutDock && !!onDock && docked != null,
     });
 
     const islandRef = useRef<HTMLDivElement>(null);
@@ -99,14 +109,14 @@ export const SidebarInner = forwardRef(
     const editorInterface = useEditorInterface();
 
     const closeLibrary = useCallback(() => {
-      const isDialogOpen = !!document.querySelector(".Dialog");
+      const isDialogOpen = !!app.ownerDocument.querySelector(".Dialog");
 
       // Prevent closing if any dialog is open
       if (isDialogOpen) {
         return;
       }
       setAppState({ openSidebar: null });
-    }, [setAppState]);
+    }, [setAppState, app]);
 
     useOutsideClick(
       islandRef,
@@ -114,47 +124,73 @@ export const SidebarInner = forwardRef(
         (event) => {
           // If click on the library icon, do nothing so that LibraryButton
           // can toggle library menu
-          if ((event.target as Element).closest(".sidebar-trigger")) {
+          if (
+            closing ||
+            (event.target as Element).closest(".sidebar-trigger")
+          ) {
             return;
           }
-          if (!docked || !editorInterface.canFitSidebar) {
+          if (
+            !effectiveDocked ||
+            (!layoutDock && !editorInterface.canFitSidebar)
+          ) {
             closeLibrary();
           }
         },
-        [closeLibrary, docked, editorInterface.canFitSidebar],
+        [
+          closeLibrary,
+          effectiveDocked,
+          layoutDock,
+          editorInterface.canFitSidebar,
+          closing,
+        ],
       ),
     );
 
     useEffect(() => {
+      if (closing) {
+        return;
+      }
       const handleKeyDown = (event: KeyboardEvent) => {
         if (
           event.key === KEYS.ESCAPE &&
-          (!docked || !editorInterface.canFitSidebar)
+          (!effectiveDocked || (!layoutDock && !editorInterface.canFitSidebar))
         ) {
           closeLibrary();
         }
       };
-      document.addEventListener(EVENT.KEYDOWN, handleKeyDown);
+      app.ownerDocument.addEventListener(EVENT.KEYDOWN, handleKeyDown);
       return () => {
-        document.removeEventListener(EVENT.KEYDOWN, handleKeyDown);
+        app.ownerDocument.removeEventListener(EVENT.KEYDOWN, handleKeyDown);
       };
-    }, [closeLibrary, docked, editorInterface.canFitSidebar]);
+    }, [
+      closeLibrary,
+      effectiveDocked,
+      layoutDock,
+      editorInterface.canFitSidebar,
+      app,
+      closing,
+    ]);
 
     return (
       <Island
         {...rest}
         className={clsx(
           CLASSES.SIDEBAR,
-          { "sidebar--docked": docked },
+          { "sidebar--docked": effectiveDocked, "sidebar--closing": closing },
           className,
         )}
         // on mobile the sidebar shouldn't push the viewport around even
         // when opened (it's treated as a temporary overlay)
         data-viewport-ui={
-          editorInterface.formFactor !== "phone" ? "side" : undefined
+          !closing && !layoutDock && editorInterface.formFactor !== "phone"
+            ? "side"
+            : undefined
         }
         data-viewport-ui-name={
-          editorInterface.formFactor !== "phone" ? "sidebar" : undefined
+          !closing && !layoutDock && editorInterface.formFactor !== "phone"
+            ? "sidebar"
+            : undefined
         }
         ref={islandRef}
       >
@@ -170,6 +206,25 @@ SidebarInner.displayName = "SidebarInner";
 export const Sidebar = Object.assign(
   forwardRef((props: SidebarProps, ref: React.ForwardedRef<HTMLDivElement>) => {
     const appState = useUIAppState();
+    const app = useApp();
+    const layoutDock = useSidebarDockContainer();
+    const isOpen = appState.openSidebar?.name === props.name;
+    const [retained, setRetained] = useState(isOpen);
+    useLayoutEffect(() => {
+      if (isOpen) {
+        setRetained(true);
+        return;
+      }
+      if (
+        appState.openSidebar ||
+        app.ownerWindow.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        setRetained(false);
+        return;
+      }
+      const timer = app.ownerWindow.setTimeout(() => setRetained(false), 180);
+      return () => app.ownerWindow.clearTimeout(timer);
+    }, [isOpen, appState.openSidebar, app]);
 
     const { onStateChange } = props;
 
@@ -213,13 +268,23 @@ export const Sidebar = Object.assign(
     // Alternative, and more general solution would be to namespace the fallback
     // HoC so that state is not shared between subcomponents when the wrapping
     // component is of the same type (e.g. Sidebar -> SidebarHeader).
-    const shouldRender = mounted && appState.openSidebar?.name === props.name;
+    const closing = !isOpen && !appState.openSidebar && retained;
+    const shouldRender = mounted && (isOpen || closing);
 
     if (!shouldRender) {
       return null;
     }
 
-    return <SidebarInner {...props} ref={ref} key={props.name} />;
+    const content = (
+      <div
+        className="sidebar-transition-shell"
+        inert={closing}
+        aria-hidden={closing || undefined}
+      >
+        <SidebarInner {...props} ref={ref} key={props.name} closing={closing} />
+      </div>
+    );
+    return layoutDock ? createPortal(content, layoutDock) : content;
   }),
   {
     Header: SidebarHeader,

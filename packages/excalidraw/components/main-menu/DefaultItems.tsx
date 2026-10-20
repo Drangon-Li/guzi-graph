@@ -72,7 +72,7 @@ export const LoadScene = () => {
   const { t } = useI18n();
   const actionManager = useExcalidrawActionManager();
   const elements = useExcalidrawElements();
-  const { desktopIntegration } = useAppProps();
+  const { desktopIntegration, editorStore } = useAppProps();
 
   if (!actionManager.isActionEnabled(actionLoadScene)) {
     return null;
@@ -83,6 +83,7 @@ export const LoadScene = () => {
       desktopIntegration ||
       !elements.length ||
       (await openConfirmModal({
+        store: editorStore,
         title: t("overwriteConfirm.modal.loadFromFile.title"),
         actionLabel: t("overwriteConfirm.modal.loadFromFile.button"),
         color: "warning",

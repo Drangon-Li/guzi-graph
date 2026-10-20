@@ -5,6 +5,7 @@ import type {
   MIME_TYPES,
   EditorInterface,
   StrokeWidthKey,
+  FontSizePresets,
 } from "@excalidraw/common";
 
 import type { LinearElementEditor } from "@excalidraw/element";
@@ -72,6 +73,13 @@ import type React from "react";
 import type { JSX } from "react";
 
 export type { App };
+
+export type PreferenceSection =
+  | "fonts"
+  | "background"
+  | "elementStroke"
+  | "elementBackground"
+  | "fontSizes";
 
 export type SocketId = string & { _brand: "SocketId" };
 
@@ -450,6 +458,7 @@ export interface AppState {
   currentItemStrokeColor: string;
   currentItemStickynoteStrokeColor: string;
   currentItemStickynoteBackgroundColor: string;
+  currentItemStickyNoteMode: "note" | "subcanvas";
   currentItemBackgroundColor: string;
   currentItemFillStyle: ExcalidrawElement["fillStyle"];
   currentItemStrokeWidthKey: StrokeWidthKey;
@@ -480,6 +489,8 @@ export interface AppState {
     | "canvasBackground"
     | "elementBackground"
     | "elementStroke"
+    | "textHighlight"
+    | "tableText"
     | "fontFamily"
     | "compactTextProperties"
     | "compactStrokeStyles"
@@ -493,8 +504,14 @@ export interface AppState {
     | { name: "ttd"; tab: "text-to-diagram" | "mermaid" }
     | { name: "commandPalette" }
     | { name: "settings" }
+    | { name: "table"; elementId: ExcalidrawElement["id"] }
     | { name: "elementLinkSelector"; sourceElementId: ExcalidrawElement["id"] }
-    | { name: "charts"; data: Spreadsheet; rawText: string };
+    | {
+        name: "charts";
+        data: Spreadsheet;
+        rawText: string;
+        tableData?: import("@excalidraw/element/table").TableData;
+      };
   /**
    * Reflects user preference for whether the default sidebar should be docked.
    *
@@ -587,6 +604,8 @@ export interface AppState {
   /** user-customized font-picker top picks (pinned via drag & drop from the
    * font picker popup). `null` means no customization (defaults are used) */
   fontTopPicks: readonly FontFamilyValues[] | null;
+  fontRegistry: Record<string, string>;
+  subscenes: import("./subcanvas").SubcanvasScenes;
 }
 
 export type SearchMatch = {
@@ -852,7 +871,18 @@ export interface ExcalidrawProps {
     open: () => Promise<void>;
     /** Hide online services while retaining local tools and shortcut help. */
     localOnly?: boolean;
+    subcanvas?: { open: (elementId: string) => void };
+    onStickyNoteModeChange?: (
+      mode: AppState["currentItemStickyNoteMode"],
+    ) => void;
+    onConfigurePreferences?: (section: PreferenceSection) => void;
+    fontSizePresets?: FontSizePresets;
+    backgroundTopPicks?: readonly string[];
+    toolbarTooltips?: boolean;
+    selectionToolbar?: boolean;
     toolPanel?: {
+      pinned?: boolean;
+      onPinnedChange?: (pinned: boolean) => void;
       dock: "floating" | "left" | "right";
       onDockChange: (dock: "floating" | "left" | "right") => void;
       width?: number;
@@ -861,6 +891,7 @@ export interface ExcalidrawProps {
         title: string;
         canvas: string;
         properties: string;
+        pin?: string;
         pinLeft: string;
         pinRight: string;
         unpin: string;
@@ -1196,6 +1227,7 @@ export type AppProps = Merge<
         canvasActions: Required<CanvasActions> & { export: ExportOpts };
       }
     >;
+    editorStore: import("./editor-jotai").EditorStore;
     imageOptions: Required<ImageOptions>;
     detectScroll: boolean;
     handleKeyboardGlobally: boolean;
@@ -1210,6 +1242,7 @@ export type AppProps = Merge<
 export type AppClassProperties = {
   props: AppProps;
   state: AppState;
+  readonly editorStore: App["editorStore"];
   readonly ownerDocument: Document;
   readonly ownerWindow: Window & typeof globalThis;
   api: App["api"];
@@ -1411,6 +1444,10 @@ export interface ExcalidrawImperativeAPI {
   >["getSceneElementsMapIncludingDeleted"];
   history: {
     clear: InstanceType<typeof App>["resetHistory"];
+    checkpoint?: () => import("./history").HistoryCheckpoint;
+    restoreCheckpoint?: (
+      checkpoint: import("./history").HistoryCheckpoint,
+    ) => void;
   };
   /**
    * Selects elements (or their ids — one or many), adds them to or removes

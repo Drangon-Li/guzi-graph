@@ -17,16 +17,18 @@ import {
   randomInteger,
   arrayToMap,
   getFontFamilyString,
+  getSystemFontFamily,
   getLineHeight,
   isTransparent,
   getStrokeWidthByKey,
   reduceToCommonValue,
   invariant,
-  FONT_SIZES,
+  getFontSizePresets,
   type StrokeWidthKey,
 } from "@excalidraw/common";
 
 import {
+  richTextFromPlainText,
   canBecomePolygon,
   normalizeStickyNote,
   getNonDeletedElements,
@@ -76,7 +78,7 @@ import {
   toggleLinePolygonState,
 } from "@excalidraw/element";
 
-import { deriveStylesPanelMode } from "@excalidraw/common";
+import { isSubcanvasPin } from "@excalidraw/element/subcanvasPin";
 
 import type { LocalPoint, Radians } from "@excalidraw/math";
 
@@ -100,7 +102,10 @@ import type { ElementUpdate, Scene } from "@excalidraw/element";
 
 import type { CaptureUpdateActionType } from "@excalidraw/element";
 
+import { getEditorStylesPanelMode } from "../components/stylesPanelMode";
+
 import { trackEvent } from "../analytics";
+import { PreferenceConfigureButton } from "../components/PreferenceConfigureButton";
 import { RadioSelection } from "../components/RadioSelection";
 import { IconButton } from "../components/IconButton";
 import { ColorPicker } from "../components/ColorPicker/ColorPicker";
@@ -171,6 +176,9 @@ import {
 
 import { getShortcutKey } from "../shortcut";
 
+import { executeRichTextCommand } from "../wysiwyg/richTextEditorBridge";
+import { RichTextJustifyIcon } from "../components/RichTextIcons";
+
 import {
   getColorTargetAppStateUpdates,
   resolveColorTarget,
@@ -182,7 +190,11 @@ import type { AppClassProperties, AppState, Primitive } from "../types";
 const FONT_SIZE_RELATIVE_INCREASE_STEP = 0.1;
 
 const getStylesPanelInfo = (app: AppClassProperties) => {
-  const stylesPanelMode = deriveStylesPanelMode(app.editorInterface);
+  const stylesPanelMode = getEditorStylesPanelMode(
+    app.editorInterface,
+    app.state,
+    app.props.desktopIntegration?.toolPanel,
+  );
   return {
     stylesPanelMode,
     isCompact: stylesPanelMode !== "full",
@@ -404,8 +416,13 @@ export const actionChangeStrokeColor = register<
     const { stylesPanelMode } = getStylesPanelInfo(app);
     const target = resolveColorTarget(appState, elements, "strokeColor");
     // a note has no stroke: its "stroke" is the ink of its text and footer
+    const hasSelectedPin = app.scene
+      .getSelectedElements(appState)
+      .some(isSubcanvasPin);
     const label =
-      target.kind === "sticky" ? t("labels.textColor") : t("labels.stroke");
+      target.kind === "sticky" && !hasSelectedPin
+        ? t("labels.textColor")
+        : t("labels.stroke");
 
     return (
       <>
@@ -1015,6 +1032,9 @@ export const actionChangeFontSize = register<ExcalidrawTextElement["fontSize"]>(
     },
     PanelComponent: ({ elements, appState, updateData, app, data }) => {
       const { isCompact } = getStylesPanelInfo(app);
+      const fontSizes = getFontSizePresets(
+        app.props.desktopIntegration?.fontSizePresets,
+      );
 
       return (
         <fieldset>
@@ -1024,25 +1044,25 @@ export const actionChangeFontSize = register<ExcalidrawTextElement["fontSize"]>(
               group="font-size"
               options={[
                 {
-                  value: FONT_SIZES.sm,
+                  value: fontSizes.sm,
                   text: t("labels.small"),
                   icon: FontSizeSmallIcon,
                   testId: "fontSize-small",
                 },
                 {
-                  value: FONT_SIZES.md,
+                  value: fontSizes.md,
                   text: t("labels.medium"),
                   icon: FontSizeMediumIcon,
                   testId: "fontSize-medium",
                 },
                 {
-                  value: FONT_SIZES.lg,
+                  value: fontSizes.lg,
                   text: t("labels.large"),
                   icon: FontSizeLargeIcon,
                   testId: "fontSize-large",
                 },
                 {
-                  value: FONT_SIZES.xl,
+                  value: fontSizes.xl,
                   text: t("labels.veryLarge"),
                   icon: FontSizeExtraLargeIcon,
                   testId: "fontSize-veryLarge",
@@ -1085,6 +1105,9 @@ export const actionChangeFontSize = register<ExcalidrawTextElement["fontSize"]>(
                 );
               }}
             />
+            {app.props.desktopIntegration?.onConfigurePreferences && (
+              <PreferenceConfigureButton section="fontSizes" />
+            )}
           </div>
         </fieldset>
       );
@@ -1246,6 +1269,14 @@ export const actionChangeFontFamily = register<{
       },
       captureUpdate: nextCaptureUpdateAction,
     };
+
+    const systemFamily = nextFontFamily && getSystemFontFamily(nextFontFamily);
+    if (currentItemFontFamily && systemFamily) {
+      result.appState.fontRegistry = {
+        ...appState.fontRegistry,
+        [currentItemFontFamily]: systemFamily,
+      };
+    }
 
     if (nextFontFamily && !skipOnHoverRender) {
       const elementContainerMapping = new Map<
@@ -1549,6 +1580,9 @@ export const actionChangeTextAlign = register<TextAlign>({
   label: "Change text alignment",
   trackEvent: false,
   perform: (elements, appState, value, app) => {
+    if (value === "justify") {
+      executeRichTextCommand(app.ownerDocument, { type: "layout" });
+    }
     return {
       elements: changeProperty(
         elements,
@@ -1557,7 +1591,15 @@ export const actionChangeTextAlign = register<TextAlign>({
           if (isTextElement(oldElement)) {
             const newElement: ExcalidrawTextElement = newElementWith(
               oldElement,
-              { textAlign: value },
+              {
+                textAlign: value,
+                ...(value === "justify" && {
+                  richText:
+                    oldElement.richText ??
+                    richTextFromPlainText(oldElement.originalText),
+                  autoResize: false,
+                }),
+              },
             );
             redrawTextBoundingBox(
               newElement,
@@ -1606,6 +1648,12 @@ export const actionChangeTextAlign = register<TextAlign>({
                 text: t("labels.right"),
                 icon: TextAlignRightIcon,
                 testId: "align-right",
+              },
+              {
+                value: "justify",
+                text: getLanguage().code === "en" ? "Justify" : "两端对齐",
+                icon: RichTextJustifyIcon,
+                testId: "align-justify",
               },
             ]}
             value={getFormValue(
@@ -2300,3 +2348,74 @@ export const actionChangeArrowType = register<keyof typeof ARROW_TYPE>({
     );
   },
 });
+
+const textFormatActions = {
+  bold: { name: "toggleTextBold", label: "加粗", key: "b" },
+  italic: { name: "toggleTextItalic", label: "斜体", key: "i" },
+  underline: {
+    name: "toggleTextUnderline",
+    label: "labels.underline",
+    key: "u",
+  },
+} as const;
+
+const toggleTextFormat = (format: keyof typeof textFormatActions) =>
+  register({
+    name: textFormatActions[format].name,
+    label: textFormatActions[format].label,
+    trackEvent: false,
+    keyTest: (event) =>
+      event[KEYS.CTRL_OR_CMD] &&
+      !event.shiftKey &&
+      !event.altKey &&
+      event.key.toLowerCase() === textFormatActions[format].key,
+    predicate: (elements, appState) =>
+      getSelectedElements(elements, appState, {
+        includeBoundTextElement: true,
+      }).some(isTextElement) || !!appState.editingTextElement,
+    perform: (elements, appState, _value, app) => {
+      if (executeRichTextCommand(app.ownerDocument, { type: format })) {
+        return { captureUpdate: CaptureUpdateAction.NEVER };
+      }
+      return {
+        elements: changeProperty(
+          elements,
+          appState,
+          (element) => {
+            if (!isTextElement(element)) {
+              return element;
+            }
+            const document =
+              element.richText ?? richTextFromPlainText(element.originalText);
+            const enabled = !document.paragraphs.every((paragraph) =>
+              paragraph.runs.every((run) => run[format]),
+            );
+            const next = newElementWith(element, {
+              richText: {
+                version: 1,
+                paragraphs: document.paragraphs.map((paragraph) => ({
+                  ...paragraph,
+                  runs: paragraph.runs.map((run) => ({
+                    ...run,
+                    [format]: enabled,
+                  })),
+                })),
+              },
+            });
+            redrawTextBoundingBox(
+              next,
+              app.scene.getContainerElement(element),
+              app.scene,
+            );
+            return next;
+          },
+          true,
+        ),
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      };
+    },
+  });
+
+export const actionToggleTextBold = toggleTextFormat("bold");
+export const actionToggleTextItalic = toggleTextFormat("italic");
+export const actionToggleTextUnderline = toggleTextFormat("underline");

@@ -1,4 +1,6 @@
 import { serializeAsJSON } from "@excalidraw/excalidraw";
+import { collectSubcanvasScenes } from "@excalidraw/excalidraw/subcanvas";
+
 import { cleanAppStateForExport } from "@excalidraw/excalidraw/appState";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
@@ -28,6 +30,14 @@ export const createSceneTracker = () => {
   let appStateSignature = "";
   let referencedFiles: string[] = [];
   let content = "";
+  let previousScenes: AppState["subscenes"] | undefined;
+  let subsceneSignature = "";
+  let previousSubsceneSignature = "";
+  let subsceneFileIds: string[] = [];
+  const sceneSignatures = new WeakMap<
+    object,
+    { signature: string; fileIds: string[] }
+  >();
 
   return (snapshot: SceneSnapshot) => {
     const nextElements = JSON.stringify(
@@ -38,10 +48,44 @@ export const createSceneTracker = () => {
         isDeleted,
       ]),
     );
-    const nextAppState = JSON.stringify(
-      cleanAppStateForExport(snapshot.appState),
+    const { subscenes, ...persistentState } = cleanAppStateForExport(
+      snapshot.appState,
     );
-    const fileIds = new Set<string>();
+    const nextAppState = JSON.stringify(persistentState);
+    if (subscenes !== previousScenes || nextElements !== elementSignature) {
+      const scenes = collectSubcanvasScenes(snapshot.elements, subscenes);
+      const signatures: string[] = [];
+      const fileIds = new Set<string>();
+      for (const [id, scene] of Object.entries(scenes)) {
+        let cached = sceneSignatures.get(scene);
+        if (!cached) {
+          cached = {
+            signature: JSON.stringify([
+              scene.title,
+              scene.appState,
+              scene.elements.map(({ id, version, versionNonce, isDeleted }) => [
+                id,
+                version,
+                versionNonce,
+                isDeleted,
+              ]),
+            ]),
+            fileIds: scene.elements.flatMap((element) =>
+              !element.isDeleted && element.type === "image" && element.fileId
+                ? [element.fileId]
+                : [],
+            ),
+          };
+          sceneSignatures.set(scene, cached);
+        }
+        signatures.push(JSON.stringify([id, cached.signature]));
+        cached.fileIds.forEach((id) => fileIds.add(id));
+      }
+      subsceneSignature = signatures.sort().join(";");
+      subsceneFileIds = [...fileIds];
+      previousScenes = subscenes;
+    }
+    const fileIds = new Set<string>(subsceneFileIds);
     for (const element of snapshot.elements) {
       if (!element.isDeleted && "fileId" in element && element.fileId) {
         fileIds.add(element.fileId);
@@ -54,12 +98,14 @@ export const createSceneTracker = () => {
     if (
       nextElements !== elementSignature ||
       nextAppState !== appStateSignature ||
+      subsceneSignature !== previousSubsceneSignature ||
       nextFiles.length !== referencedFiles.length ||
       nextFiles.some((value, index) => value !== referencedFiles[index]) ||
       !content
     ) {
       elementSignature = nextElements;
       appStateSignature = nextAppState;
+      previousSubsceneSignature = subsceneSignature;
       referencedFiles = nextFiles;
       content = serializeAsJSON(
         snapshot.elements,

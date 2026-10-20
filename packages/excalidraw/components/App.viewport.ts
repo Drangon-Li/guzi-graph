@@ -489,6 +489,20 @@ export class AppViewport {
     name: keyof NonNullable<ViewportOffsetsOptions["reserve"]>,
   ) => {
     const isRTL = getLanguage().rtl;
+    if (
+      name === "sidebar" &&
+      this.dependencies
+        .getContainer()
+        ?.nextElementSibling?.matches(
+          '.excalidraw-sidebar-dock[data-open="true"]',
+        )
+    ) {
+      return {
+        side: isRTL ? ("left" as const) : ("right" as const),
+        offset: 0,
+      };
+    }
+
     return (
       this.uiLastMeasured.get(name) ??
       (name === "stylesPanel"

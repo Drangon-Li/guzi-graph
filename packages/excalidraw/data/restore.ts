@@ -15,6 +15,8 @@ import {
   DEFAULT_TEXT_ALIGN,
   DEFAULT_VERTICAL_ALIGN,
   FONT_FAMILY,
+  isValidSystemFontFamily,
+  registerCustomFontRegistry,
   FONT_METADATA,
   FONT_TOP_PICKS_SLOTS,
   ROUNDNESS,
@@ -35,6 +37,7 @@ import {
   isTransparent,
   DEFAULT_ZOOM,
 } from "@excalidraw/common";
+import { normalizeRichText } from "@excalidraw/element";
 import {
   calculateFixedPointForNonElbowArrowBinding,
   getNonDeletedElements,
@@ -108,6 +111,7 @@ import type {
 import type { MarkOptional, Mutable } from "@excalidraw/common/utility-types";
 
 import { getDefaultAppState } from "../appState";
+import { restoreSubcanvasScenes } from "../subcanvas";
 
 import {
   getNormalizedGridSize,
@@ -568,6 +572,10 @@ export const restoreElement = (
         verticalAlign: element.verticalAlign || DEFAULT_VERTICAL_ALIGN,
         containerId: element.containerId ?? null,
         originalText: element.originalText || text,
+        richText: normalizeRichText(element.richText),
+        paragraphSpacing: isFiniteNumber(element.paragraphSpacing)
+          ? Math.max(0, Math.min(10, element.paragraphSpacing))
+          : undefined,
         autoResize: element.autoResize ?? true,
         lineHeight,
         labelPosition: isFiniteNumber(element.labelPosition)
@@ -582,7 +590,12 @@ export const restoreElement = (
 
       // if empty text, mark as deleted. We keep in array
       // for data integrity purposes (collab etc.)
-      if (opts?.deleteInvisibleElements && !text && !element.isDeleted) {
+      if (
+        opts?.deleteInvisibleElements &&
+        !text &&
+        !element.isDeleted &&
+        !element.customData?.tableCell
+      ) {
         // TODO: we should not do this since it breaks sync / versioning when we exchange / apply just deltas and restore the elements (deletion isn't recorded)
         element = { ...element, originalText: text, isDeleted: true };
         element = bumpVersion(element);
@@ -608,6 +621,7 @@ export const restoreElement = (
         fileId: element.fileId,
         scale: element.scale || [1, 1],
         crop: element.crop ?? null,
+        imageBorder: element.imageBorder === true,
       });
     case "line":
     // @ts-ignore LEGACY type
@@ -1315,6 +1329,23 @@ export const restoreAppState = (
       nextAppState.colorTopPicks?.stickyNoteBackground,
     ),
   };
+  nextAppState.subscenes = restoreSubcanvasScenes(
+    nextAppState.subscenes,
+    (elements) => restoreElements(elements, null, { repairBindings: true }),
+  );
+  nextAppState.fontRegistry = Object.fromEntries(
+    Object.entries(
+      nextAppState.fontRegistry && typeof nextAppState.fontRegistry === "object"
+        ? nextAppState.fontRegistry
+        : {},
+    ).filter(
+      ([id, family]) =>
+        Number.isSafeInteger(Number(id)) &&
+        Number(id) >= 100000 &&
+        isValidSystemFontFamily(family),
+    ),
+  );
+  registerCustomFontRegistry(nextAppState.fontRegistry);
   nextAppState.fontTopPicks = restoreFontTopPicks(nextAppState.fontTopPicks);
 
   // legacy

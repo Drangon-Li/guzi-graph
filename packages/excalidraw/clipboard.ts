@@ -17,6 +17,8 @@ import {
 
 import { getContainingFrame } from "@excalidraw/element";
 
+import { syncTableData } from "@excalidraw/element/table";
+
 import type { ValueOf } from "@excalidraw/common/utility-types";
 
 import type { IMAGE_MIME_TYPES, STRING_MIME_TYPES } from "@excalidraw/common";
@@ -26,7 +28,10 @@ import type {
   NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
 
+import { collectSubcanvasScenes, collectSceneFiles } from "./subcanvas";
+
 import { ExcalidrawError } from "./errors";
+
 import {
   createFile,
   getFileHandle,
@@ -34,12 +39,15 @@ import {
   normalizeFile,
 } from "./data/blob";
 
+import type { SubcanvasScenes } from "./subcanvas";
+
 import type { BinaryFiles } from "./types";
 
 type ElementsClipboard = {
   type: typeof EXPORT_DATA_TYPES.excalidrawClipboard;
   elements: readonly NonDeletedExcalidrawElement[];
   files: BinaryFiles | undefined;
+  subscenes?: SubcanvasScenes;
 };
 
 export type PastedMixedContent = { type: "text" | "imageUrl"; value: string }[];
@@ -51,6 +59,8 @@ export interface ClipboardData {
   mixedContent?: PastedMixedContent;
   errorMessage?: string;
   programmaticAPI?: boolean;
+  html?: string;
+  subscenes?: SubcanvasScenes;
 }
 
 type AllowedPasteMimeTypes = typeof ALLOWED_PASTE_MIME_TYPES[number];
@@ -73,7 +83,11 @@ export const probablySupportsClipboardBlob =
 
 const clipboardContainsElements = (
   contents: any,
-): contents is { elements: ExcalidrawElement[]; files?: BinaryFiles } => {
+): contents is {
+  elements: ExcalidrawElement[];
+  files?: BinaryFiles;
+  subscenes?: SubcanvasScenes;
+} => {
   if (
     [
       EXPORT_DATA_TYPES.excalidraw,
@@ -143,9 +157,11 @@ export const createPasteEvent = ({
 export const serializeAsClipboardJSON = ({
   elements,
   files,
+  subscenes = {},
 }: {
   elements: readonly NonDeletedExcalidrawElement[];
   files: BinaryFiles | null;
+  subscenes?: SubcanvasScenes;
 }) => {
   const elementsMap = arrayToMap(elements);
   const framesToCopy = new Set<ExcalidrawFrameLikeElement>(
@@ -172,7 +188,9 @@ export const serializeAsClipboardJSON = ({
   // select bound text elements when copying
   const contents: ElementsClipboard = {
     type: EXPORT_DATA_TYPES.excalidrawClipboard,
-    elements: elements.map((element) => {
+    elements: (
+      syncTableData(elements) as readonly NonDeletedExcalidrawElement[]
+    ).map((element) => {
       if (
         getContainingFrame(element, elementsMap) &&
         !framesToCopy.has(getContainingFrame(element, elementsMap)!)
@@ -186,7 +204,17 @@ export const serializeAsClipboardJSON = ({
 
       return element;
     }),
-    files: files ? _files : undefined,
+    files: files
+      ? { ..._files, ...collectSceneFiles(elements, files, subscenes) }
+      : undefined,
+    subscenes: Object.fromEntries(
+      Object.entries(collectSubcanvasScenes(elements, subscenes)).map(
+        ([id, scene]) => [
+          id,
+          { ...scene, elements: syncTableData(scene.elements) },
+        ],
+      ),
+    ),
   };
 
   return JSON.stringify(contents);
@@ -197,8 +225,9 @@ export const copyToClipboard = async (
   files: BinaryFiles | null,
   /** supply if available to make the operation more certain to succeed */
   clipboardEvent?: ClipboardEvent | null,
+  subscenes?: SubcanvasScenes,
 ) => {
-  const json = serializeAsClipboardJSON({ elements, files });
+  const json = serializeAsClipboardJSON({ elements, files, subscenes });
 
   await copyTextToSystemClipboard(
     {
@@ -524,6 +553,7 @@ export const parseClipboard = async (
   dataList: ParsedDataTranferList,
   isPlainPaste = false,
 ): Promise<ClipboardData> => {
+  const html = !isPlainPaste ? dataList.getData(MIME_TYPES.html) : undefined;
   const parsedEventData = await parseClipboardEventTextData(
     dataList,
     isPlainPaste,
@@ -532,6 +562,7 @@ export const parseClipboard = async (
   if (parsedEventData.type === "mixedContent") {
     return {
       mixedContent: parsedEventData.value,
+      html: html || undefined,
     };
   }
 
@@ -543,6 +574,7 @@ export const parseClipboard = async (
       return {
         elements: systemClipboardData.elements,
         files: systemClipboardData.files,
+        subscenes: systemClipboardData.subscenes,
         text: isPlainPaste
           ? JSON.stringify(systemClipboardData.elements, null, 2)
           : undefined,
@@ -551,7 +583,11 @@ export const parseClipboard = async (
     }
   } catch {}
 
-  return { text: parsedEventData.value };
+  const rawText = dataList.getData(MIME_TYPES.text);
+  return {
+    text: rawText?.includes("\t") ? rawText : parsedEventData.value,
+    html: html || undefined,
+  };
 };
 
 export const copyBlobToClipboardAsPng = async (blob: Blob | Promise<Blob>) => {
