@@ -61,6 +61,7 @@ import { JSONExportDialog } from "./JSONExportDialog";
 import { LaserPointerButton } from "./LaserPointerButton";
 import { Toast } from "./Toast";
 import { Toolbar } from "./Toolbar";
+import { getToolPanelDock, getToolPanelWidth, ToolPanel } from "./ToolPanel";
 import {
   ViewportStatusBadge,
   ViewportStatusBorder,
@@ -179,6 +180,46 @@ const LayerUI = ({
   const stylesPanelMode = useStylesPanelMode();
   const isCompactStylesPanel = stylesPanelMode === "compact";
   const tunnels = useInitializeTunnels();
+  const toolPanel = appProps.desktopIntegration?.toolPanel;
+  const toolPanelDock = defaultUIEnabled
+    ? getToolPanelDock(
+        toolPanel,
+        appState,
+        editorInterface.formFactor === "phone",
+      )
+    : "floating";
+  const toolPanelDocked = toolPanelDock !== "floating";
+  const [toolPanelWidth, setToolPanelWidth] = React.useState(
+    toolPanel?.width ?? 280,
+  );
+  const [toolPanelCollapsed, setToolPanelCollapsed] = React.useState(false);
+  const [toolPanelResizing, setToolPanelResizing] = React.useState(false);
+  const toolPanelAutoHide = React.useRef(false);
+  const toolPanelSelectionKey = getSelectedElements(elements, appState)
+    .map((element) => element.id)
+    .sort()
+    .concat(
+      appState.editingTextElement
+        ? [`editing:${appState.editingTextElement.id}`]
+        : [],
+    )
+    .join(",");
+  React.useEffect(() => {
+    // A manual collapse stays closed until the editing target changes.
+    if (toolPanelAutoHide.current) {
+      setToolPanelCollapsed(!toolPanelSelectionKey);
+    }
+  }, [toolPanelSelectionKey]);
+  React.useEffect(() => {
+    setToolPanelWidth(toolPanel?.width ?? 280);
+  }, [toolPanel?.width]);
+  React.useEffect(() => {
+    if (toolPanel?.dock === "floating") {
+      toolPanelAutoHide.current = false;
+      setToolPanelCollapsed(false);
+    }
+  }, [toolPanel?.dock]);
+  const panelWidth = getToolPanelWidth(toolPanelWidth, appState.width);
 
   const spacing = isCompactStylesPanel
     ? {
@@ -245,9 +286,11 @@ const LayerUI = ({
     <div style={{ position: "relative" }}>
       <div className="excalidraw-ui-top-left">
         {renderTopLeftUI?.(false, appState)}
-        <tunnels.MainMenuTunnel.Out />
+        {!toolPanelDocked && <tunnels.MainMenuTunnel.Out />}
       </div>
-      {renderWelcomeScreen && <tunnels.WelcomeScreenMenuHintTunnel.Out />}
+      {renderWelcomeScreen && !toolPanelDocked && (
+        <tunnels.WelcomeScreenMenuHintTunnel.Out />
+      )}
     </div>
   );
 
@@ -322,7 +365,7 @@ const LayerUI = ({
             className={clsx("App-menu_top__left")}
           >
             {renderCanvasActions()}
-            {defaultUIEnabled && (
+            {defaultUIEnabled && !toolPanelDocked && (
               <div
                 className={clsx("selected-shape-actions-container", {
                   "selected-shape-actions-container--compact":
@@ -340,6 +383,7 @@ const LayerUI = ({
                 selected */}
             {defaultUIEnabled &&
               isCompactStylesPanel &&
+              !toolPanelDocked &&
               !appState.viewModeEnabled &&
               shouldRenderSelectedShapeActions && (
                 <PenModeButton
@@ -471,6 +515,11 @@ const LayerUI = ({
     isSidebarDocked &&
     editorInterface.canFitSidebar
   );
+  const rightInset =
+    isSidebarDockedAndFits ||
+    (toolPanelDock === "right" && appState.openSidebar)
+      ? "var(--right-sidebar-width)"
+      : "0px";
 
   const layerUIJSX = (
     <>
@@ -651,11 +700,10 @@ const LayerUI = ({
           )}
           <div
             className="layer-ui__wrapper"
-            style={
-              isSidebarDockedAndFits
-                ? { width: `calc(100% - var(--right-sidebar-width))` }
-                : {}
-            }
+            style={{
+              left: "0px",
+              width: `calc(100% - 0px - ${rightInset})`,
+            }}
           >
             {renderWelcomeScreen && <tunnels.WelcomeScreenCenterTunnel.Out />}
             {renderFixedSideContainer()}
@@ -703,6 +751,33 @@ const LayerUI = ({
               </div>
             )}
           </div>
+          {toolPanel && toolPanelDock !== "floating" && (
+            <ToolPanel
+              options={toolPanel}
+              dock={toolPanelDock}
+              width={panelWidth}
+              collapsed={toolPanelCollapsed}
+              resizing={toolPanelResizing}
+              onResize={setToolPanelWidth}
+              onResizingChange={setToolPanelResizing}
+              onCollapsedChange={(collapsed) => {
+                toolPanelAutoHide.current = collapsed;
+                setToolPanelCollapsed(collapsed);
+              }}
+              appState={appState}
+              propertiesAvailable={showSelectedShapeActions(appState, elements)}
+              hidden={toolPanelDock === "right" && !!appState.openSidebar}
+              canvasMenu={<tunnels.MainMenuTunnel.Out />}
+              properties={
+                <SelectedShapeActions
+                  appState={appState}
+                  elementsMap={app.scene.getNonDeletedElementsMap()}
+                  renderAction={actionManager.renderAction}
+                  app={app}
+                />
+              }
+            />
+          )}
           {renderSidebars()}
         </>
       )}

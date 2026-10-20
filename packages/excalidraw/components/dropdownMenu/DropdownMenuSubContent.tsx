@@ -2,11 +2,13 @@ import clsx from "clsx";
 
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
 
-import { useCallback, useState } from "react";
+import { useCallback, useContext, useState } from "react";
 
 import { useEditorInterface } from "../App";
 import { Island } from "../Island";
 import Stack from "../Stack";
+
+import { PersistentMenuContext } from "./common";
 
 const BASE_ALIGN_OFFSET = -4;
 const BASE_SIDE_OFFSET = 4;
@@ -19,6 +21,7 @@ const DropdownMenuSubContent = ({
   className?: string;
 }) => {
   const editorInterface = useEditorInterface();
+  const persistent = useContext(PersistentMenuContext);
 
   const classNames = clsx(`dropdown-menu dropdown-submenu ${className}`, {
     "dropdown-menu--mobile": editorInterface.formFactor === "phone",
@@ -43,6 +46,14 @@ const DropdownMenuSubContent = ({
 
   const [sideOffset, setSideOffset] = useState(BASE_SIDE_OFFSET);
   const [alignOffset, setAlignOffset] = useState(BASE_ALIGN_OFFSET);
+
+  if (persistent) {
+    return (
+      <div className={`${classNames} dropdown-submenu--persistent`}>
+        <Stack.Col className="dropdown-menu-container">{children}</Stack.Col>
+      </div>
+    );
+  }
 
   return (
     <DropdownMenuPrimitive.SubContent

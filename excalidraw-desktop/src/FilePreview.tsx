@@ -9,6 +9,9 @@ import { exportToCanvas } from "@excalidraw/excalidraw/scene/export";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
+import { translate } from "./i18n";
+
+import type { DesktopLanguage } from "./i18n";
 import type { ProjectFile } from "./shared";
 
 const MAX_THUMBNAIL_SIZE = 720;
@@ -111,8 +114,10 @@ export const FilePreview = ({
   file,
   root,
   theme,
+  language = "zh-CN",
 }: {
   file: ProjectFile;
+  language?: DesktopLanguage;
   root: HTMLElement;
   theme: "light" | "dark";
 }) => {
@@ -154,7 +159,7 @@ export const FilePreview = ({
         <span
           className={failed ? "desktop-preview-error" : "desktop-preview-empty"}
         >
-          {failed ? "预览不可用" : ExcalLogo}
+          {failed ? translate(language, "预览不可用") : ExcalLogo}
         </span>
       )}
     </div>

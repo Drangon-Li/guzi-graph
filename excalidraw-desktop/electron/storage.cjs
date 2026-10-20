@@ -1,6 +1,7 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
+const { translate } = require("./i18n.cjs");
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -9,6 +10,7 @@ const EXPORT_EXTENSIONS = new Set([
   "png",
   "svg",
   "json",
+  "md",
   "excalidraw",
   "excalidrawlib",
 ]);
@@ -20,7 +22,7 @@ const inside = (root, target) =>
 const fail = (message, code = "INVALID_PATH") =>
   Object.assign(new Error(message), { code });
 
-function fileName(value, extension = "excalidraw") {
+function fileName(value, extension = "excalidraw", language = "zh-CN") {
   if (
     typeof value !== "string" ||
     !value.trim() ||
@@ -29,7 +31,7 @@ function fileName(value, extension = "excalidraw") {
     value === "." ||
     value === ".."
   ) {
-    throw fail("请输入有效的文件名。");
+    throw fail(translate(language, "请输入有效的文件名。"));
   }
   return value.toLowerCase().endsWith(`.${extension}`)
     ? value
@@ -54,13 +56,13 @@ function categoryParts(value) {
   return parts;
 }
 
-function documentPath(value) {
+function documentPath(value, language = "zh-CN") {
   if (
     typeof value !== "string" ||
     !path.isAbsolute(value) ||
     path.extname(value).toLowerCase() !== ".excalidraw"
   )
-    throw fail("请选择 .excalidraw 文件。");
+    throw fail(translate(language, "请选择 .excalidraw 文件。"));
   return path.resolve(value);
 }
 
@@ -96,7 +98,18 @@ async function atomicWrite(target, content) {
 class DesktopStorage {
   constructor(userData) {
     this.userData = userData;
-    this.settings = { rootDirectory: null, theme: "system" };
+    this.settings = {
+      rootDirectory: null,
+      theme: "system",
+      toolPanelDock: "floating",
+      toolPanelWidth: 280,
+      language: "zh-CN",
+      structuredExportFormat: "json",
+      includeInferredStructure: true,
+      skipRemoveConfirmation: false,
+      skipTrashConfirmation: false,
+    };
+    this.hiddenPaths = new Set();
     this.session = { paths: [], activePath: null };
     this.recentFiles = new Map();
     this.authorized = new Set();
@@ -119,6 +132,24 @@ class DesktopStorage {
       }
     };
     const settings = await readJson("settings.json");
+    for (const key of [
+      "toolPanelDock",
+      "toolPanelWidth",
+      "language",
+      "structuredExportFormat",
+      "includeInferredStructure",
+      "skipRemoveConfirmation",
+      "skipTrashConfirmation",
+    ]) {
+      if (this.validSetting(key, settings?.[key]))
+        this.settings[key] = settings[key];
+    }
+    const hidden = await readJson("hidden-files.json");
+    for (const candidate of Array.isArray(hidden) ? hidden : []) {
+      try {
+        this.hiddenPaths.add(this.documentPath(candidate));
+      } catch {}
+    }
     if (THEMES.has(settings?.theme)) this.settings.theme = settings.theme;
     if (
       typeof settings?.rootDirectory === "string" &&
@@ -132,7 +163,8 @@ class DesktopStorage {
     if (Array.isArray(session?.paths)) {
       for (const candidate of session.paths) {
         try {
-          this.authorized.add(documentPath(candidate));
+          const target = this.documentPath(candidate);
+          if (!this.hiddenPaths.has(target)) this.authorized.add(target);
         } catch {
           /* Ignore a malformed persisted entry. */
         }
@@ -146,7 +178,8 @@ class DesktopStorage {
     if (Array.isArray(recentFiles)) {
       for (const entry of recentFiles) {
         try {
-          const candidate = documentPath(entry?.path);
+          const candidate = this.documentPath(entry?.path);
+          if (this.hiddenPaths.has(candidate)) continue;
           if (!Number.isFinite(entry.lastOpenedAt) || entry.lastOpenedAt < 0)
             continue;
           this.recentFiles.set(
@@ -191,15 +224,53 @@ class DesktopStorage {
   recordOpenedFile(candidate) {
     return this.serialize(async () => {
       const target = await this.allowedPath(candidate);
-      if (!(await fs.stat(target)).isFile()) throw fail("目标不是文件。");
+      if (!(await fs.stat(target)).isFile()) throw this.fail("目标不是文件。");
+      if (this.hiddenPaths.has(target))
+        await this.persistHiddenPaths(
+          new Set([...this.hiddenPaths].filter((item) => item !== target)),
+        );
       await this.recordRecentFile(target);
     });
   }
 
   serialize(action) {
-    const work = this.queue.then(action);
+    const work = this.queue.then(action).catch((error) => {
+      error.message = translate(this.settings.language, error.message);
+      throw error;
+    });
     this.queue = work.catch(() => {});
     return work;
+  }
+
+  documentPath(value) {
+    return documentPath(value, this.settings.language);
+  }
+
+  fail(message, code) {
+    return fail(translate(this.settings.language, message), code);
+  }
+
+  validSetting(key, value) {
+    if (key === "toolPanelWidth")
+      return (
+        typeof value === "number" &&
+        Number.isFinite(value) &&
+        value >= 260 &&
+        value <= 480
+      );
+    if (key === "toolPanelDock")
+      return ["floating", "left", "right"].includes(value);
+    if (key === "language") return ["zh-CN", "en"].includes(value);
+    if (key === "structuredExportFormat") return ["json", "md"].includes(value);
+    return typeof value === "boolean";
+  }
+
+  async persistHiddenPaths(paths) {
+    await atomicWrite(
+      path.join(this.userData, "hidden-files.json"),
+      JSON.stringify([...paths]),
+    );
+    this.hiddenPaths = paths;
   }
 
   getSettings() {
@@ -208,18 +279,34 @@ class DesktopStorage {
 
   async updateSettings(update) {
     if (!update || typeof update !== "object" || Array.isArray(update))
-      throw fail("设置无效。");
+      throw this.fail("设置无效。");
     if ("theme" in update && !THEMES.has(update.theme))
-      throw fail("主题无效。");
+      throw this.fail("主题无效。");
     if (
       "rootDirectory" in update &&
       update.rootDirectory !== null &&
       update.rootDirectory !== this.settings.rootDirectory
     )
-      throw fail("请通过目录选择器设置项目目录。");
+      throw this.fail("请通过目录选择器设置项目目录。");
+    const preferences = {};
+    for (const key of [
+      "toolPanelDock",
+      "toolPanelWidth",
+      "language",
+      "structuredExportFormat",
+      "includeInferredStructure",
+      "skipRemoveConfirmation",
+      "skipTrashConfirmation",
+    ]) {
+      if (key in update) {
+        if (!this.validSetting(key, update[key])) throw this.fail("设置无效。");
+        preferences[key] = update[key];
+      }
+    }
     return this.serialize(async () => {
       const next = {
         ...this.settings,
+        ...preferences,
         ...("theme" in update ? { theme: update.theme } : {}),
         ...("rootDirectory" in update
           ? { rootDirectory: update.rootDirectory }
@@ -236,7 +323,7 @@ class DesktopStorage {
 
   async chooseRoot(directory) {
     const root = await fs.realpath(directory);
-    if (!(await fs.stat(root)).isDirectory()) throw fail("项目目录无效。");
+    if (!(await fs.stat(root)).isDirectory()) throw this.fail("项目目录无效。");
     return this.serialize(async () => {
       const next = { ...this.settings, rootDirectory: root };
       await atomicWrite(
@@ -249,7 +336,7 @@ class DesktopStorage {
   }
 
   async grantFile(candidate) {
-    const resolved = documentPath(candidate);
+    const resolved = this.documentPath(candidate);
     const real = await fs.realpath(resolved).catch(async (error) => {
       if (error.code !== "ENOENT") throw error;
       return path.join(
@@ -257,13 +344,13 @@ class DesktopStorage {
         path.basename(resolved),
       );
     });
-    const canonical = documentPath(real);
+    const canonical = this.documentPath(real);
     this.authorized.add(canonical);
     return canonical;
   }
 
   async allowedPath(candidate, { writing = false } = {}) {
-    const resolved = documentPath(candidate);
+    const resolved = this.documentPath(candidate);
     const root = this.settings.rootDirectory;
     const parent = await fs.realpath(path.dirname(resolved));
     let real;
@@ -274,10 +361,10 @@ class DesktopStorage {
       real = path.join(parent, path.basename(resolved));
     }
     if (root && inside(root, resolved) && !inside(root, real))
-      throw fail("符号链接不能越过项目根目录。", "NOT_AUTHORIZED");
+      throw this.fail("符号链接不能越过项目根目录。", "NOT_AUTHORIZED");
     if (!this.authorized.has(real) && !(root && inside(root, real)))
-      throw fail("文件未经授权。", "NOT_AUTHORIZED");
-    return documentPath(real);
+      throw this.fail("文件未经授权。", "NOT_AUTHORIZED");
+    return this.documentPath(real);
   }
 
   async readFile(candidate) {
@@ -285,7 +372,7 @@ class DesktopStorage {
     const handle = await fs.open(target, "r");
     try {
       const stat = await handle.stat();
-      if (!stat.isFile()) throw fail("目标不是文件。");
+      if (!stat.isFile()) throw this.fail("目标不是文件。");
       const content = await handle.readFile("utf8");
       this.authorized.add(target);
       return {
@@ -304,6 +391,7 @@ class DesktopStorage {
     const history = [];
     for (const [candidate, lastOpenedAt] of this.recentFiles) {
       try {
+        if (this.hiddenPaths.has(candidate)) continue;
         const target = await this.allowedPath(candidate);
         const stat = await fs.stat(target);
         if (!stat.isFile()) continue;
@@ -340,7 +428,7 @@ class DesktopStorage {
     if (!rootDirectory)
       return { rootDirectory: null, files: [], folders: [], history };
     if ((await fs.realpath(rootDirectory)) !== rootDirectory)
-      throw fail("项目根目录已变更，请重新选择。");
+      throw this.fail("项目根目录已变更，请重新选择。");
     const files = [];
     const folders = [];
     const visit = async (directory, category) => {
@@ -354,6 +442,7 @@ class DesktopStorage {
           await visit(absolute, relative);
         } else if (
           entry.isFile() &&
+          !this.hiddenPaths.has(absolute) &&
           path.extname(entry.name).toLowerCase() === ".excalidraw"
         ) {
           const stat = await fs.stat(absolute);
@@ -384,22 +473,27 @@ class DesktopStorage {
       !UUID.test(request.documentId) ||
       typeof request.content !== "string"
     )
-      throw fail("保存请求无效。");
+      throw this.fail("保存请求无效。");
     return this.serialize(async () => {
       const target = await this.allowedPath(request.path, { writing: true });
+      if (this.hiddenPaths.has(target))
+        throw this.fail(
+          "画布已从项目移除，请重新打开后再保存。",
+          "REMOVED_FILE",
+        );
       if (request.occupiedPaths !== undefined) {
         if (!Array.isArray(request.occupiedPaths))
-          throw fail("已打开文件列表无效。");
+          throw this.fail("已打开文件列表无效。");
         const key = (value) =>
           process.platform === "darwin" ? value.toLowerCase() : value;
         for (const candidate of request.occupiedPaths) {
-          const resolved = documentPath(candidate);
+          const resolved = this.documentPath(candidate);
           const canonical = await fs.realpath(resolved).catch((error) => {
             if (error.code !== "ENOENT") throw error;
             return resolved;
           });
           if (key(canonical) === key(target))
-            throw fail(
+            throw this.fail(
               "此文件已在其他标签中打开，请选择其他保存位置。",
               "OPEN_DOCUMENT_CONFLICT",
             );
@@ -409,7 +503,7 @@ class DesktopStorage {
         if (error.code !== "ENOENT") throw error;
         return null;
       });
-      if (stat && !stat.isFile()) throw fail("目标不是文件。");
+      if (stat && !stat.isFile()) throw this.fail("目标不是文件。");
       const copiedVersion = this.copiedVersions.get(target);
       const unchangedCopy =
         copiedVersion &&
@@ -422,12 +516,12 @@ class DesktopStorage {
           (stat.mtimeMs !== request.expectedModifiedAt && !unchangedCopy))
       ) {
         throw Object.assign(
-          fail("文件已被其他程序修改。", "EXTERNAL_MODIFICATION"),
+          this.fail("文件已被其他程序修改。", "EXTERNAL_MODIFICATION"),
           { actualModifiedAt: stat.mtimeMs },
         );
       }
       if (!overwrite && !stat && typeof request.expectedModifiedAt === "number")
-        throw fail("文件已被移走或删除。", "EXTERNAL_MODIFICATION");
+        throw this.fail("文件已被移走或删除。", "EXTERNAL_MODIFICATION");
       await atomicWrite(target, request.content);
       this.copiedVersions.delete(target);
       this.authorized.add(target);
@@ -439,9 +533,9 @@ class DesktopStorage {
 
   async categoryDirectory(category, create = false) {
     const root = this.settings.rootDirectory;
-    if (!root) throw fail("请先选择项目目录。");
+    if (!root) throw this.fail("请先选择项目目录。");
     if ((await fs.realpath(root)) !== root)
-      throw fail("项目根目录已变更，请重新选择。");
+      throw this.fail("项目根目录已变更，请重新选择。");
     let current = root;
     for (const part of categoryParts(category)) {
       current = path.join(current, part);
@@ -451,7 +545,7 @@ class DesktopStorage {
         });
       const real = await fs.realpath(current);
       if (!inside(root, real) || !(await fs.stat(real)).isDirectory())
-        throw fail("分类不能越过项目根目录。");
+        throw this.fail("分类不能越过项目根目录。");
       current = real;
     }
     return current;
@@ -462,12 +556,12 @@ class DesktopStorage {
     if (source === destination) return this.readFile(source);
     const parent = await fs.realpath(path.dirname(destination));
     if (parent !== path.dirname(destination))
-      throw fail("目标目录不能是符号链接。");
+      throw this.fail("目标目录不能是符号链接。");
     const priorCopy = this.copiedVersions.get(source);
     let copiedTimes = null;
     await fs.link(source, destination).catch(async (error) => {
       if (error.code === "EEXIST")
-        throw fail("已有同名文件，请使用其他名称。", "NAME_CONFLICT");
+        throw this.fail("已有同名文件，请使用其他名称。", "NAME_CONFLICT");
       if (error.code === "EXDEV") {
         copiedTimes = await fs.stat(source);
         await fs
@@ -478,7 +572,10 @@ class DesktopStorage {
           )
           .catch((copyError) => {
             if (copyError.code === "EEXIST")
-              throw fail("已有同名文件，请使用其他名称。", "NAME_CONFLICT");
+              throw this.fail(
+                "已有同名文件，请使用其他名称。",
+                "NAME_CONFLICT",
+              );
             throw copyError;
           });
         // Node utimes truncates to microseconds; use the midpoint to avoid losing
@@ -553,7 +650,7 @@ class DesktopStorage {
   }
 
   renameFile(candidate, name) {
-    const nextName = fileName(name);
+    const nextName = fileName(name, "excalidraw", this.settings.language);
     return this.serialize(async () => {
       const source = await this.allowedPath(candidate);
       return this.relocate(source, path.join(path.dirname(source), nextName));
@@ -565,8 +662,41 @@ class DesktopStorage {
       const destination = await this.categoryDirectory(category);
       return this.relocate(
         candidate,
-        path.join(destination, path.basename(documentPath(candidate))),
+        path.join(destination, path.basename(this.documentPath(candidate))),
       );
+    });
+  }
+
+  removeFile(candidate, mode, trashItem) {
+    return this.serialize(async () => {
+      if (!["remove", "trash"].includes(mode))
+        throw this.fail("移除方式无效。");
+      const target = await this.allowedPath(candidate);
+      if (
+        path.resolve(candidate) !== target ||
+        (await fs.lstat(candidate)).isSymbolicLink()
+      )
+        throw this.fail("不能通过符号链接移除画布。", "NOT_AUTHORIZED");
+      if (!(await fs.stat(target)).isFile()) throw this.fail("目标不是文件。");
+      if (mode === "trash") {
+        if (typeof trashItem !== "function") throw this.fail("废纸篓不可用。");
+        await trashItem(target);
+      }
+      await this.persistHiddenPaths(new Set([...this.hiddenPaths, target]));
+      const recent = new Map(this.recentFiles);
+      recent.delete(target);
+      await this.persistRecentFiles(recent);
+      const next = {
+        paths: this.session.paths.filter((item) => item !== target),
+        activePath:
+          this.session.activePath === target ? null : this.session.activePath,
+      };
+      await atomicWrite(
+        path.join(this.userData, "session.json"),
+        JSON.stringify(next),
+      );
+      this.session = next;
+      this.copiedVersions.delete(target);
     });
   }
 
@@ -591,16 +721,21 @@ class DesktopStorage {
         session.paths.some((item) => typeof item !== "string") ||
         (session.activePath !== null && typeof session.activePath !== "string")
       )
-        throw fail("会话无效。");
+        throw this.fail("会话无效。");
       const paths = [];
-      for (const item of session.paths)
-        paths.push(await this.allowedPath(item));
-      const activePath =
-        session.activePath === null
+      for (const item of session.paths) {
+        if (this.hiddenPaths.has(path.resolve(item))) continue;
+        const target = await this.allowedPath(item);
+        if (!this.hiddenPaths.has(target)) paths.push(target);
+      }
+      let activePath =
+        session.activePath === null ||
+        this.hiddenPaths.has(path.resolve(session.activePath))
           ? null
           : await this.allowedPath(session.activePath);
+      if (this.hiddenPaths.has(activePath)) activePath = null;
       if (activePath !== null && !paths.includes(activePath))
-        throw fail("活动文件不在会话中。");
+        throw this.fail("活动文件不在会话中。");
       const next = { paths: [...new Set(paths)], activePath };
       await atomicWrite(
         path.join(this.userData, "session.json"),
@@ -612,7 +747,7 @@ class DesktopStorage {
 
   draftPath(id) {
     if (typeof id !== "string" || !UUID.test(id))
-      throw fail("恢复草稿 ID 无效。");
+      throw this.fail("恢复草稿 ID 无效。");
     return path.join(this.userData, "drafts", `${id}.json`);
   }
 
@@ -648,15 +783,18 @@ class DesktopStorage {
       !Number.isFinite(draft.modifiedAt) ||
       (draft.path !== null && typeof draft.path !== "string")
     )
-      throw fail("恢复草稿无效。");
+      throw this.fail("恢复草稿无效。");
     return this.serialize(async () => {
-      if (draft.path !== null)
-        await this.allowedPath(draft.path, { writing: true });
+      let canonicalPath = draft.path;
+      if (draft.path !== null) {
+        canonicalPath = await this.allowedPath(draft.path, { writing: true });
+        if (this.hiddenPaths.has(canonicalPath)) return;
+      }
       await atomicWrite(
         destination,
         JSON.stringify({
           id: draft.id,
-          path: draft.path,
+          path: canonicalPath,
           title: draft.title,
           content: draft.content,
           modifiedAt: draft.modifiedAt,

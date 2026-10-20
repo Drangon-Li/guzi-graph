@@ -136,6 +136,7 @@ export class AppText {
     const { left, right } = this.app.viewport.getSideInsets(
       [
         "sidebar",
+        "toolDock",
         ...this.getTextSidePanels().filter(
           (name) => name !== "stats" || isBesideStats,
         ),

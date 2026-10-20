@@ -852,6 +852,23 @@ export interface ExcalidrawProps {
     open: () => Promise<void>;
     /** Hide online services while retaining local tools and shortcut help. */
     localOnly?: boolean;
+    toolPanel?: {
+      dock: "floating" | "left" | "right";
+      onDockChange: (dock: "floating" | "left" | "right") => void;
+      width?: number;
+      onWidthChange?: (width: number) => void;
+      labels: {
+        title: string;
+        canvas: string;
+        properties: string;
+        pinLeft: string;
+        pinRight: string;
+        unpin: string;
+        collapse: string;
+        expand: string;
+        resize: string;
+      };
+    };
   };
   className?: string;
   /**
@@ -1659,4 +1676,4 @@ export type ViewportOffsets = Offsets & {
  * remembered; reserving uses that remembered footprint, or an approximate
  * default if the surface hasn't been rendered yet.
  */
-export type ViewportUIName = "sidebar" | "stylesPanel" | "stats";
+export type ViewportUIName = "sidebar" | "stylesPanel" | "stats" | "toolDock";

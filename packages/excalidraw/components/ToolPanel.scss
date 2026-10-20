@@ -1,0 +1,324 @@
+.excalidraw {
+  --tool-panel-transition-duration: 260ms;
+  --tool-panel-transition-easing: cubic-bezier(0.22, 1, 0.36, 1);
+
+  .tool-panel {
+    --button-border: transparent;
+    --button-bg: var(--color-surface-mid);
+
+    position: absolute;
+    top: 76px;
+    max-height: var(--tool-panel-max-height);
+    display: flex;
+    flex-direction: column;
+    background: var(--island-bg-color);
+    color: var(--text-primary-color);
+    z-index: var(--zIndex-layerUI);
+    pointer-events: var(--ui-pointerEvents);
+    box-sizing: border-box;
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-island);
+    overflow: hidden;
+    transition: width var(--tool-panel-transition-duration)
+        var(--tool-panel-transition-easing),
+      top var(--tool-panel-transition-duration)
+        var(--tool-panel-transition-easing);
+
+    &[hidden] {
+      display: none;
+    }
+    &--left {
+      left: 16px;
+    }
+    &--right {
+      right: 16px;
+    }
+    &--resizing {
+      transition: none;
+      user-select: none;
+    }
+    &--collapsed {
+      top: 16px;
+      background: transparent;
+      box-shadow: none;
+      overflow: visible;
+      pointer-events: none;
+    }
+    &--left.tool-panel--collapsed > .tool-panel-dock-controls {
+      right: -36px;
+    }
+    &--right.tool-panel--collapsed > .tool-panel-dock-controls {
+      right: 44px;
+    }
+    &--collapsed .tool-panel-content {
+      opacity: 0;
+      visibility: hidden;
+      transform: translateX(-12px);
+      transition-delay: 0s, 0s, var(--tool-panel-transition-duration);
+    }
+    &--right.tool-panel--collapsed .tool-panel-content {
+      transform: translateX(12px);
+    }
+  }
+
+  .tool-panel-content {
+    height: auto;
+    max-height: var(--tool-panel-max-height);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    opacity: 1;
+    visibility: inherit;
+    transform: translateX(0);
+    transition: opacity 180ms ease-out,
+      transform var(--tool-panel-transition-duration)
+        var(--tool-panel-transition-easing),
+      visibility 0s;
+  }
+
+  .tool-panel > .tool-panel-dock-controls {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    width: 90px;
+    pointer-events: var(--ui-pointerEvents);
+    transition: width var(--tool-panel-transition-duration)
+        var(--tool-panel-transition-easing),
+      right var(--tool-panel-transition-duration)
+        var(--tool-panel-transition-easing);
+  }
+
+  .tool-panel--collapsed > .tool-panel-dock-controls {
+    width: 28px;
+    border-radius: var(--border-radius-md);
+    background: var(--island-bg-color);
+    box-shadow: var(--shadow-island);
+  }
+
+  .tool-panel-resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 6px;
+    cursor: col-resize;
+    touch-action: none;
+    z-index: 3;
+    &::after {
+      content: "";
+      position: absolute;
+      inset: 0 0 0 auto;
+      width: 2px;
+      background: var(--color-primary);
+      opacity: 0;
+      transition: opacity 120ms ease-out;
+    }
+    &:hover::after,
+    &:focus-visible::after {
+      opacity: 1;
+    }
+    &:focus-visible {
+      outline: 0;
+    }
+  }
+
+  .tool-panel--right .tool-panel-resize-handle {
+    left: 0;
+    right: auto;
+    &::after {
+      left: 0;
+      right: auto;
+    }
+  }
+
+  .tool-panel--resizing .tool-panel-resize-handle::after {
+    opacity: 1;
+  }
+
+  &.theme--dark .tool-panel {
+    --button-hover-bg: #363541;
+    --button-bg: var(--color-surface-high);
+  }
+
+  .tool-panel-header,
+  .tool-panel-floating-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 12px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--default-border-color);
+    flex-shrink: 0;
+    strong {
+      font-weight: 500;
+    }
+  }
+
+  .tool-panel-header {
+    box-sizing: border-box;
+    min-height: 44px;
+    padding: 8px 108px 8px 12px;
+  }
+
+  .tool-panel-floating-header {
+    padding: 0 2px 8px;
+    margin-bottom: 5px;
+  }
+
+  .tool-panel-dock-controls {
+    display: flex;
+    gap: 3px;
+    button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      padding: 5px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-primary-color);
+      cursor: pointer;
+      &[hidden] {
+        display: none;
+      }
+      &:hover,
+      &[aria-pressed="true"] {
+        background: var(--color-primary-light);
+        color: var(--color-primary);
+      }
+      &:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 1px;
+      }
+    }
+    svg {
+      width: 18px;
+      height: 18px;
+    }
+    span {
+      display: flex;
+    }
+    .tool-panel-left-icon {
+      transform: scaleX(-1);
+    }
+  }
+
+  .tool-panel-tabs {
+    display: flex;
+    gap: 3px;
+    margin: 8px 10px;
+    padding: 3px;
+    background: var(--color-surface-low);
+    border: 1px solid var(--default-border-color);
+    border-radius: 8px;
+    flex-shrink: 0;
+    button {
+      flex: 1;
+      border: 0;
+      border-radius: 5px;
+      padding: 7px;
+      background: transparent;
+      color: var(--text-primary-color);
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      &[aria-selected="true"] {
+        background: var(--color-primary-light);
+        color: var(--color-primary);
+      }
+      &:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      &:focus-visible {
+        outline: 2px solid var(--color-primary);
+      }
+    }
+  }
+
+  .tool-panel-body {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 0 10px 12px;
+    flex: 0 1 auto;
+    &[hidden] {
+      display: none;
+    }
+    > .selected-shape-actions {
+      width: 100%;
+    }
+
+    .tool-panel-menu {
+      position: static;
+      width: 100%;
+      max-width: none;
+      background: none;
+      box-shadow: none;
+      border: 0;
+    }
+    .dropdown-menu-item,
+    .dropdown-menu__submenu-trigger {
+      width: 100%;
+      min-height: 34px;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+    .dropdown-menu-item__text {
+      white-space: normal;
+    }
+    .dropdown-menu-item__shortcut {
+      font-size: 10px;
+    }
+    .dropdown-menu__submenu--persistent {
+      > summary {
+        list-style: none;
+        cursor: pointer;
+      }
+      > summary::-webkit-details-marker {
+        display: none;
+      }
+      &[open] > summary {
+        color: var(--color-primary);
+        background: var(--color-primary-light);
+        .dropdown-menu__submenu-trigger-icon {
+          transform: rotate(90deg);
+        }
+      }
+    }
+    .dropdown-submenu--persistent {
+      position: static;
+      width: auto;
+      min-width: 0;
+      margin: 6px 0 8px;
+      padding: 8px;
+      border: 1px solid var(--default-border-color);
+      border-radius: 8px;
+      background: var(--color-surface-low);
+      box-shadow: none;
+      transform: none;
+
+      .dropdown-menu-container {
+        background: transparent;
+        box-shadow: none;
+        max-height: none;
+        overflow: visible;
+      }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tool-panel,
+    .tool-panel > .tool-panel-dock-controls,
+    .tool-panel-content,
+    .tool-panel--collapsed .tool-panel-content,
+    .tool-panel-resize-handle::after {
+      transition: none;
+    }
+  }
+}

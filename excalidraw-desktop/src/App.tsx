@@ -11,6 +11,8 @@ import {
   CloseIcon,
   DeviceDesktopIcon,
   ExcalLogo,
+  ExportIcon,
+  exportToFileIcon,
   LoadIcon,
   MoonIcon,
   PlusIcon,
@@ -22,6 +24,10 @@ import {
 import type { LibraryPersistenceAdapter } from "@excalidraw/excalidraw/data/library";
 
 import { fileTitle } from "./document";
+import { translate } from "./i18n";
+import { DesktopSegmentedControl, DesktopSelect } from "./DesktopControls";
+import { StructuredExportDialog } from "./StructuredExportDialog";
+import { exportCanvasPdf } from "./structuredExport";
 import { InlineTabTitle } from "./InlineTabTitle";
 import { Projects } from "./Projects";
 import { useWorkspace } from "./workspace";
@@ -29,20 +35,25 @@ import { useWorkspace } from "./workspace";
 import "./styles.scss";
 
 import type { ProjectEdit } from "./Projects";
+import type { DesktopLanguage } from "./i18n";
+import type { ProjectFile } from "./shared";
 import type { CanvasDocument, Workspace } from "./workspace";
 import type { ReactNode } from "react";
 
 const Modal = ({
   root,
   title,
+  language,
   children,
   onClose,
 }: {
   root: HTMLElement;
   title: string;
+  language: DesktopLanguage;
   children: ReactNode;
   onClose: () => void;
 }) => {
+  const t = (message: string) => translate(language, message);
   const container = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -54,15 +65,20 @@ const Modal = ({
     const focusable = () =>
       Array.from(
         node.querySelectorAll<HTMLElement>(
-          "button:not(:disabled), input, select, [tabindex='0']",
+          "button:not(:disabled):not([tabindex='-1']), input:not(:disabled):not([tabindex='-1']), [tabindex='0']",
         ),
       );
     const frame = ownerWindow.requestAnimationFrame(() => {
       const initial =
-        node.querySelector<HTMLElement>("input, select") || focusable()[0];
+        node.querySelector<HTMLElement>(
+          "input:not(:disabled):not([tabindex='-1'])",
+        ) || focusable()[0];
       initial?.focus();
     });
     const onKeyDown = (event: KeyboardEvent) => {
+      if (root.querySelector(".desktop-select-content[data-state='open']")) {
+        return;
+      }
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
@@ -102,7 +118,11 @@ const Modal = ({
       >
         <header>
           <h2>{title}</h2>
-          <Button aria-label="关闭对话框" title="关闭" onSelect={onClose}>
+          <Button
+            aria-label={t("关闭对话框")}
+            title={t("关闭")}
+            onSelect={onClose}
+          >
             {CloseIcon}
           </Button>
         </header>
@@ -123,6 +143,8 @@ const ProjectEditModal = ({
   edit: ProjectEdit;
   onClose: () => void;
 }) => {
+  const t = (message: string) =>
+    translate(workspace.settings.language, message);
   const [value, setValue] = useState(
     edit.kind === "folder"
       ? ""
@@ -134,10 +156,10 @@ const ProjectEditModal = ({
   const [failed, setFailed] = useState(false);
   const title =
     edit.kind === "folder"
-      ? "新建分类"
+      ? t("新建分类")
       : edit.kind === "move"
-      ? "移动到分类"
-      : "重命名画布";
+      ? t("移动到分类")
+      : t("重命名画布");
   const close = () => !busy && onClose();
   const submit = async () => {
     if (busy || (edit.kind !== "move" && !value.trim())) {
@@ -157,7 +179,12 @@ const ProjectEditModal = ({
     }
   };
   return (
-    <Modal root={root} title={title} onClose={close}>
+    <Modal
+      root={root}
+      title={title}
+      language={workspace.settings.language}
+      onClose={close}
+    >
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -166,26 +193,28 @@ const ProjectEditModal = ({
       >
         <div className="desktop-modal-body">
           {edit.kind === "move" ? (
-            <label className="desktop-form-label">
-              目标文件夹
-              <select
+            <div className="desktop-form-label">
+              <span>{t("目标文件夹")}</span>
+              <DesktopSelect
+                root={root}
+                label={t("目标文件夹")}
                 value={value}
-                onChange={(event) => setValue(event.target.value)}
-              >
-                <option value="">未分类（默认文件夹）</option>
-                {workspace.index.folders.map((folder) => (
-                  <option key={folder} value={folder}>
-                    {folder}
-                  </option>
-                ))}
-              </select>
-            </label>
+                onValueChange={setValue}
+                options={[
+                  { value: "", label: t("未分类（默认文件夹）") },
+                  ...workspace.index.folders.map((folder) => ({
+                    value: folder,
+                    label: folder,
+                  })),
+                ]}
+              />
+            </div>
           ) : (
             <label className="desktop-form-label">
               <TextField
                 value={value}
                 onChange={setValue}
-                label={edit.kind === "folder" ? "文件夹名称" : "画布名称"}
+                label={edit.kind === "folder" ? t("文件夹名称") : t("画布名称")}
                 fullWidth
                 selectOnRender
               />
@@ -193,20 +222,20 @@ const ProjectEditModal = ({
           )}
           <p>
             {edit.kind === "folder"
-              ? "分类会在默认文件夹内创建真实文件夹。"
+              ? t("分类会在默认文件夹内创建真实文件夹。")
               : edit.kind === "rename"
-              ? "文件名会同步更新，扩展名保持 .excalidraw。"
-              : "文件会移入默认文件夹下所选的分类，原位置将不再保留。"}
+              ? t("文件名会同步更新，扩展名保持 .excalidraw。")
+              : t("文件会移入默认文件夹下所选的分类，原位置将不再保留。")}
           </p>
           {failed && (
             <p className="desktop-inline-error" role="alert">
-              {workspace.error || "操作失败，请重试。"}
+              {workspace.error || t("操作失败，请重试。")}
             </p>
           )}
         </div>
         <footer>
           <Button onSelect={close} disabled={busy}>
-            取消
+            {t("取消")}
           </Button>
           <Button
             type="submit"
@@ -214,7 +243,7 @@ const ProjectEditModal = ({
             className="desktop-primary"
             disabled={busy || (edit.kind !== "move" && !value.trim())}
           >
-            {busy ? "处理中…" : "确定"}
+            {busy ? t("处理中…") : t("确定")}
           </Button>
         </footer>
       </form>
@@ -230,6 +259,7 @@ const Editor = ({
   root,
   workspace,
   onSettings,
+  onStructuredExport,
 }: {
   document: CanvasDocument;
   active: boolean;
@@ -238,84 +268,223 @@ const Editor = ({
   root: HTMLElement;
   workspace: Workspace;
   onSettings: () => void;
-}) => (
-  <section
-    className={`desktop-editor-pane${active ? " is-active" : ""}`}
-    data-document-id={document.id}
-    aria-hidden={!active}
-    inert={!active || blocked}
-  >
-    <Excalidraw
-      ownerDocument={root.ownerDocument}
-      initialData={document.initialData}
-      onExcalidrawAPI={(api) => {
-        document.api = api;
-      }}
-      onInitialize={(api) => workspace.initialize(document, api)}
-      onChange={(elements, appState, files) =>
-        workspace.capture(document, { elements, appState, files })
-      }
-      desktopIntegration={{
-        localOnly: true,
-        save: (snapshot, saveAs) =>
-          workspace.editorSave(document, snapshot, saveAs),
-        open: workspace.openFiles,
-      }}
-      interaction={active && !blocked}
-      handleKeyboardGlobally={active && !blocked}
-      autoFocus={active}
-      langCode="zh-CN"
-      theme={theme}
-      name={document.title}
-      UIOptions={{ canvasActions: { toggleTheme: false } }}
+  onStructuredExport: () => void;
+}) => {
+  const t = (message: string) =>
+    translate(workspace.settings.language, message);
+  return (
+    <section
+      className={`desktop-editor-pane${active ? " is-active" : ""}`}
+      data-document-id={document.id}
+      aria-hidden={!active}
+      inert={!active || blocked}
     >
-      <MainMenu>
-        <MainMenu.Item
-          icon={PlusIcon}
-          shortcut="⌘N"
-          onSelect={workspace.newDocument}
-        >
-          新建画布
-        </MainMenu.Item>
-        <MainMenu.Item
-          icon={LoadIcon}
-          shortcut="⌘O"
-          onSelect={() => void workspace.openFiles()}
-        >
-          打开文件…
-        </MainMenu.Item>
-        <MainMenu.DefaultItems.SaveToActiveFile />
-        <MainMenu.Item
-          icon={saveAs}
-          shortcut="⌘⇧S"
-          onSelect={() => void workspace.requestSave(document, true)}
-        >
-          另存为…
-        </MainMenu.Item>
-        <MainMenu.DefaultItems.SaveAsImage />
-        <MainMenu.Separator />
-        <MainMenu.DefaultItems.SearchMenu />
-        <MainMenu.DefaultItems.ClearCanvas />
-        <MainMenu.DefaultItems.ChangeCanvasBackground />
-        <MainMenu.DefaultItems.Preferences />
-        <MainMenu.DefaultItems.Help />
-        <MainMenu.Separator />
-        <MainMenu.Item icon={ExcalLogo} onSelect={workspace.showProjects}>
-          返回项目页
-        </MainMenu.Item>
-        <MainMenu.Item icon={settingsIcon} onSelect={onSettings}>
-          桌面设置
-        </MainMenu.Item>
-      </MainMenu>
-    </Excalidraw>
-  </section>
-);
+      <Excalidraw
+        ownerDocument={root.ownerDocument}
+        initialData={document.initialData}
+        onExcalidrawAPI={(api) => {
+          document.api = api;
+        }}
+        onInitialize={(api) => workspace.initialize(document, api)}
+        onChange={(elements, appState, files) =>
+          workspace.capture(document, { elements, appState, files })
+        }
+        desktopIntegration={{
+          localOnly: true,
+          toolPanel: {
+            dock: workspace.settings.toolPanelDock ?? "floating",
+            width: workspace.settings.toolPanelWidth ?? 280,
+            onWidthChange: (width) =>
+              void workspace.updateSettings({ toolPanelWidth: width }),
+            onDockChange: (dock) =>
+              void workspace.updateSettings({ toolPanelDock: dock }),
+            labels: {
+              title: t("工具侧栏"),
+              canvas: t("画布"),
+              properties: t("元素"),
+              pinLeft: t("固定到左侧"),
+              pinRight: t("固定到右侧"),
+              unpin: t("取消固定"),
+              collapse: t("收起工具侧栏"),
+              expand: t("展开工具侧栏"),
+              resize: t("调整工具侧栏宽度"),
+            },
+          },
+          save: (snapshot, saveAs) =>
+            workspace.editorSave(document, snapshot, saveAs),
+          open: workspace.openFiles,
+        }}
+        interaction={active && !blocked}
+        handleKeyboardGlobally={active && !blocked}
+        autoFocus={active}
+        langCode={workspace.settings.language}
+        theme={theme}
+        name={document.title}
+        UIOptions={{ canvasActions: { toggleTheme: false } }}
+      >
+        <MainMenu>
+          <MainMenu.Item
+            icon={PlusIcon}
+            shortcut="⌘N"
+            onSelect={workspace.newDocument}
+          >
+            {t("新建画布")}
+          </MainMenu.Item>
+          <MainMenu.Item
+            icon={LoadIcon}
+            shortcut="⌘O"
+            onSelect={() => void workspace.openFiles()}
+          >
+            {t("打开文件…")}
+          </MainMenu.Item>
+          <MainMenu.DefaultItems.SaveToActiveFile />
+          <MainMenu.Item
+            icon={saveAs}
+            shortcut="⌘⇧S"
+            onSelect={() => void workspace.requestSave(document, true)}
+          >
+            {t("另存为…")}
+          </MainMenu.Item>
+          <MainMenu.DefaultItems.SaveAsImage />
+          <MainMenu.Item icon={exportToFileIcon} onSelect={onStructuredExport}>
+            {t("导出结构化信息…")}
+          </MainMenu.Item>
+          <MainMenu.Item
+            icon={ExportIcon}
+            onSelect={() => {
+              if (document.api) {
+                void exportCanvasPdf(
+                  document.api,
+                  document.title,
+                  root.ownerDocument.defaultView!.desktop,
+                ).catch(workspace.reportError);
+              }
+            }}
+          >
+            {t("导出 PDF…")}
+          </MainMenu.Item>
+          <MainMenu.Separator />
+          <MainMenu.DefaultItems.SearchMenu />
+          <MainMenu.DefaultItems.ClearCanvas />
+          <MainMenu.DefaultItems.ChangeCanvasBackground />
+          <MainMenu.DefaultItems.Preferences />
+          <MainMenu.DefaultItems.Help />
+          <MainMenu.Separator />
+          <MainMenu.Item icon={ExcalLogo} onSelect={workspace.showProjects}>
+            {t("返回项目页")}
+          </MainMenu.Item>
+          <MainMenu.Item icon={settingsIcon} onSelect={onSettings}>
+            {t("桌面设置")}
+          </MainMenu.Item>
+        </MainMenu>
+      </Excalidraw>
+    </section>
+  );
+};
+
+const RemoveConfirmation = ({
+  root,
+  workspace,
+  file,
+  mode,
+  onClose,
+  onConfirm,
+}: {
+  root: HTMLElement;
+  workspace: Workspace;
+  file: ProjectFile;
+  mode: "remove" | "trash";
+  onClose: () => void;
+  onConfirm: (skip: boolean) => void;
+}) => {
+  const [skip, setSkip] = useState(false);
+  const t = (message: string, params?: Record<string, string | number>) =>
+    translate(workspace.settings.language, message, params);
+  return (
+    <Modal
+      root={root}
+      language={workspace.settings.language}
+      title={t(mode === "remove" ? "删除画布？" : "彻底删除画布？")}
+      onClose={onClose}
+    >
+      <div className="desktop-modal-body">
+        <p>
+          {t(
+            mode === "remove"
+              ? "「{title}」将从软件中隐藏，原文件会保留在当前位置。"
+              : "「{title}」将移到 macOS 废纸篓，并从项目页移除。",
+            { title: fileTitle(file.name) },
+          )}
+        </p>
+        <p>
+          {t(
+            mode === "remove"
+              ? "以后可通过打开原文件将它重新加入项目页。"
+              : "可从废纸篓恢复；清空废纸篓后将无法恢复。",
+          )}
+        </p>
+        <label className="desktop-checkbox-label">
+          <input
+            type="checkbox"
+            checked={skip}
+            onChange={(event) => setSkip(event.target.checked)}
+          />
+          {t("不再提示此操作")}
+        </label>
+      </div>
+      <footer>
+        <Button onSelect={onClose}>{t("取消")}</Button>
+        <Button className="desktop-danger" onSelect={() => onConfirm(skip)}>
+          {t(mode === "remove" ? "删除" : "移到废纸篓")}
+        </Button>
+      </footer>
+    </Modal>
+  );
+};
 
 export const App = ({ root }: { root: HTMLElement }) => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [edit, setEdit] = useState<ProjectEdit | null>(null);
-  const workspace = useWorkspace(root, settingsOpen || recoveryOpen || !!edit);
+  const [removal, setRemoval] = useState<{
+    file: ProjectFile;
+    mode: "remove" | "trash";
+  } | null>(null);
+  const [structuredExport, setStructuredExport] =
+    useState<CanvasDocument | null>(null);
+  const workspace = useWorkspace(
+    root,
+    settingsOpen || recoveryOpen || !!edit || !!removal || !!structuredExport,
+  );
+  const t = (message: string, params?: Record<string, string | number>) =>
+    translate(workspace.settings.language, message, params);
+  const removeFile = async (
+    file: ProjectFile,
+    mode: "remove" | "trash",
+    skip = false,
+  ) => {
+    setRemoval(null);
+    if (await workspace.removeFile(file, mode)) {
+      if (skip) {
+        await workspace.updateSettings(
+          mode === "remove"
+            ? { skipRemoveConfirmation: true }
+            : { skipTrashConfirmation: true },
+        );
+      }
+    }
+  };
+  const requestRemoval = (file: ProjectFile, mode: "remove" | "trash") => {
+    if (
+      mode === "remove"
+        ? workspace.settings.skipRemoveConfirmation
+        : workspace.settings.skipTrashConfirmation
+    ) {
+      void removeFile(file, mode);
+    } else {
+      setRemoval({ file, mode });
+    }
+  };
   const { projectsVisible, openFiles, closing } = workspace;
   const [systemDark, setSystemDark] = useState(
     () =>
@@ -332,7 +501,12 @@ export const App = ({ root }: { root: HTMLElement }) => {
     (document) => document.id === workspace.activeId,
   );
   const modalOpen =
-    settingsOpen || recoveryOpen || !!edit || !!workspace.closePrompt;
+    settingsOpen ||
+    recoveryOpen ||
+    !!edit ||
+    !!removal ||
+    !!structuredExport ||
+    !!workspace.closePrompt;
   const libraryAdapter = useMemo<LibraryPersistenceAdapter>(
     () => ({
       load: () => {
@@ -393,13 +567,17 @@ export const App = ({ root }: { root: HTMLElement }) => {
             workspace.projectsVisible ? " selected" : ""
           }`}
           onSelect={workspace.showProjects}
-          title="项目页 · ⌘⇧P"
-          aria-label="返回项目页"
+          title={t("项目页 · ⌘⇧P")}
+          aria-label={t("返回项目页")}
         >
           {ExcalLogo}
-          <span>项目</span>
+          <span>{t("项目")}</span>
         </Button>
-        <nav className="desktop-tabs" aria-label="已打开的画布" role="tablist">
+        <nav
+          className="desktop-tabs"
+          aria-label={t("已打开的画布")}
+          role="tablist"
+        >
           {workspace.documents.map((document) => (
             <div
               className={`desktop-tab${
@@ -411,6 +589,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
             >
               <InlineTabTitle
                 document={document}
+                language={workspace.settings.language}
                 selected={
                   !workspace.projectsVisible &&
                   workspace.activeId === document.id
@@ -421,8 +600,8 @@ export const App = ({ root }: { root: HTMLElement }) => {
               <button
                 className="desktop-tab-close"
                 onClick={() => void workspace.closeDocument(document.id)}
-                aria-label={`关闭 ${document.title}`}
-                title="关闭画布"
+                aria-label={t("关闭 {title}", { title: document.title })}
+                title={t("关闭画布")}
               >
                 {CloseIcon}
               </button>
@@ -432,34 +611,37 @@ export const App = ({ root }: { root: HTMLElement }) => {
         <Button
           className="desktop-titlebar-new"
           onSelect={workspace.newDocument}
-          aria-label="新建画布"
-          title="新建画布 · ⌘N"
+          aria-label={t("新建画布")}
+          title={t("新建画布 · ⌘N")}
         >
           {PlusIcon}
         </Button>
         {active && !workspace.projectsVisible && (
           <span className="desktop-save-status">
             {active.saving
-              ? "正在保存…"
+              ? t("正在保存…")
               : active.dirty
-              ? "未保存"
+              ? t("未保存")
               : active.path
-              ? "已保存"
-              : "新画布"}
+              ? t("已保存")
+              : t("新画布")}
           </span>
         )}
       </header>
       {workspace.error && (
         <div className="desktop-error-banner" role="alert">
           <span>{workspace.error}</span>
-          <Button onSelect={workspace.clearError} aria-label="关闭错误提示">
+          <Button
+            onSelect={workspace.clearError}
+            aria-label={t("关闭错误提示")}
+          >
             {CloseIcon}
           </Button>
         </div>
       )}
       <div className="desktop-workspace">
         {workspace.loading ? (
-          <div className="desktop-loading">正在打开本地工作区…</div>
+          <div className="desktop-loading">{t("正在打开本地工作区…")}</div>
         ) : (
           <>
             <div
@@ -479,6 +661,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
                 onEdit={setEdit}
                 onSettings={() => setSettingsOpen(true)}
                 onRecovery={() => setRecoveryOpen(true)}
+                onRemove={requestRemoval}
               />
             </div>
             {workspace.documents.map((document) => (
@@ -494,6 +677,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
                   document.id === workspace.activeId
                 }
                 onSettings={() => setSettingsOpen(true)}
+                onStructuredExport={() => setStructuredExport(document)}
               />
             ))}
           </>
@@ -502,42 +686,106 @@ export const App = ({ root }: { root: HTMLElement }) => {
       {settingsOpen && (
         <Modal
           root={root}
-          title="桌面设置"
+          language={workspace.settings.language}
+          title={t("桌面设置")}
           onClose={() => setSettingsOpen(false)}
         >
-          <div className="desktop-modal-body">
-            <h3>外观</h3>
-            <div className="desktop-theme-options">
-              {(
-                [
-                  ["light", "浅色", SunIcon],
-                  ["dark", "深色", MoonIcon],
-                  ["system", "跟随系统", DeviceDesktopIcon],
-                ] as const
-              ).map(([value, label, icon]) => (
-                <Button
-                  key={value}
-                  selected={workspace.settings.theme === value}
-                  onSelect={() => void workspace.changeTheme(value)}
+          <div className="desktop-modal-body desktop-settings-body">
+            <section className="desktop-settings-section">
+              <h3>{t("外观")}</h3>
+              <DesktopSegmentedControl
+                label={t("外观")}
+                value={workspace.settings.theme}
+                options={[
+                  { value: "light", label: t("浅色"), icon: SunIcon },
+                  { value: "dark", label: t("深色"), icon: MoonIcon },
+                  {
+                    value: "system",
+                    label: t("跟随系统"),
+                    icon: DeviceDesktopIcon,
+                  },
+                ]}
+                onValueChange={(value) =>
+                  void workspace.changeTheme(
+                    value as "light" | "dark" | "system",
+                  )
+                }
+              />
+              <div className="desktop-settings-row">
+                <span>{t("语言")}</span>
+                <DesktopSegmentedControl
+                  label={t("语言")}
+                  value={workspace.settings.language}
+                  options={[
+                    { value: "zh-CN", label: "中文" },
+                    { value: "en", label: "English" },
+                  ]}
+                  onValueChange={(value) =>
+                    void workspace.updateSettings({
+                      language: value as DesktopLanguage,
+                    })
+                  }
+                />
+              </div>
+            </section>
+            <section className="desktop-settings-section">
+              <h3>{t("结构化导出")}</h3>
+              <div className="desktop-settings-row">
+                <span>{t("默认格式")}</span>
+                <DesktopSegmentedControl
+                  label={t("默认格式")}
+                  value={workspace.settings.structuredExportFormat}
+                  options={[
+                    { value: "json", label: "JSON" },
+                    { value: "md", label: "Markdown" },
+                  ]}
+                  onValueChange={(value) =>
+                    void workspace.updateSettings({
+                      structuredExportFormat: value as "json" | "md",
+                    })
+                  }
+                />
+              </div>
+              <label className="desktop-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={workspace.settings.includeInferredStructure}
+                  onChange={(event) =>
+                    void workspace.updateSettings({
+                      includeInferredStructure: event.target.checked,
+                    })
+                  }
+                />
+                {t("按布局组织信息")}
+              </label>
+              <p className="desktop-settings-help">
+                {t("根据分组、容器和位置推断章节与层级。")}
+              </p>
+            </section>
+            <section className="desktop-settings-section">
+              <h3>{t("默认文件夹")}</h3>
+              <div className="desktop-settings-directory">
+                <p
+                  className="desktop-settings-path"
+                  title={workspace.settings.rootDirectory || undefined}
                 >
-                  {icon}
-                  {label}
+                  {workspace.settings.rootDirectory || t("尚未设置")}
+                </p>
+                <Button onSelect={workspace.changeDirectory}>
+                  {t("选择文件夹…")}
                 </Button>
-              ))}
-            </div>
-            <h3>默认文件夹</h3>
-            <p className="desktop-settings-path">
-              {workspace.settings.rootDirectory || "尚未设置"}
-            </p>
-            <p>这里的 .excalidraw 文件显示在项目页，子文件夹对应分类。</p>
-            <Button onSelect={workspace.changeDirectory}>选择文件夹…</Button>
+              </div>
+              <p>
+                {t("这里的 .excalidraw 文件显示在项目页，子文件夹对应分类。")}
+              </p>
+            </section>
           </div>
           <footer>
             <Button
               className="desktop-primary"
               onSelect={() => setSettingsOpen(false)}
             >
-              完成
+              {t("完成")}
             </Button>
           </footer>
         </Modal>
@@ -545,18 +793,21 @@ export const App = ({ root }: { root: HTMLElement }) => {
       {recoveryOpen && (
         <Modal
           root={root}
-          title="恢复未保存的画布"
+          language={workspace.settings.language}
+          title={t("恢复未保存的画布")}
           onClose={() => setRecoveryOpen(false)}
         >
           <div className="desktop-modal-body">
-            <p>恢复草稿会打开成独立画布，保存时由你选择文件位置。</p>
+            <p>{t("恢复草稿会打开成独立画布，保存时由你选择文件位置。")}</p>
             <div className="desktop-draft-list">
               {workspace.drafts.map((draft) => (
                 <article key={draft.id}>
                   <div>
                     <strong>{draft.title}</strong>
                     <small>
-                      {new Date(draft.modifiedAt).toLocaleString("zh-CN")}
+                      {new Date(draft.modifiedAt).toLocaleString(
+                        workspace.settings.language,
+                      )}
                     </small>
                     {draft.path && (
                       <small title={draft.path}>{draft.path}</small>
@@ -565,7 +816,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
                   <Button
                     onSelect={() => void workspace.discardDraft(draft.id)}
                   >
-                    放弃
+                    {t("放弃")}
                   </Button>
                   <Button
                     className="desktop-primary"
@@ -575,15 +826,17 @@ export const App = ({ root }: { root: HTMLElement }) => {
                       }
                     }}
                   >
-                    恢复
+                    {t("恢复")}
                   </Button>
                 </article>
               ))}
-              {!workspace.drafts.length && <p>没有待恢复的草稿。</p>}
+              {!workspace.drafts.length && <p>{t("没有待恢复的草稿。")}</p>}
             </div>
           </div>
           <footer>
-            <Button onSelect={() => setRecoveryOpen(false)}>稍后处理</Button>
+            <Button onSelect={() => setRecoveryOpen(false)}>
+              {t("稍后处理")}
+            </Button>
           </footer>
         </Modal>
       )}
@@ -598,28 +851,56 @@ export const App = ({ root }: { root: HTMLElement }) => {
           onClose={() => setEdit(null)}
         />
       )}
+      {removal && (
+        <RemoveConfirmation
+          root={root}
+          workspace={workspace}
+          file={removal.file}
+          mode={removal.mode}
+          onClose={() => setRemoval(null)}
+          onConfirm={(skip) =>
+            void removeFile(removal.file, removal.mode, skip)
+          }
+        />
+      )}
+      {structuredExport?.api && (
+        <StructuredExportDialog
+          root={root}
+          api={structuredExport.api}
+          title={structuredExport.title}
+          language={workspace.settings.language}
+          defaultFormat={workspace.settings.structuredExportFormat}
+          includeInferredStructure={workspace.settings.includeInferredStructure}
+          onClose={() => setStructuredExport(null)}
+        />
+      )}
       {workspace.closePrompt && (
         <Modal
           root={root}
-          title="保存画布更改？"
+          language={workspace.settings.language}
+          title={t("保存画布更改？")}
           onClose={() => workspace.closePrompt?.resolve("cancel")}
         >
           <div className="desktop-modal-body">
-            <p>「{workspace.closePrompt.title}」有未保存的更改。</p>
-            <p>放弃后，这些更改将不会保留。</p>
+            <p>
+              {t("「{title}」有未保存的更改。", {
+                title: workspace.closePrompt.title,
+              })}
+            </p>
+            <p>{t("放弃后，这些更改将不会保留。")}</p>
           </div>
           <footer>
             <Button onSelect={() => workspace.closePrompt?.resolve("discard")}>
-              放弃更改
+              {t("放弃更改")}
             </Button>
             <Button onSelect={() => workspace.closePrompt?.resolve("cancel")}>
-              取消
+              {t("取消")}
             </Button>
             <Button
               className="desktop-primary"
               onSelect={() => workspace.closePrompt?.resolve("save")}
             >
-              保存
+              {t("保存")}
             </Button>
           </footer>
         </Modal>

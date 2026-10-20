@@ -46,6 +46,13 @@ test("defaults require explicit project directory selection", async (t) => {
   assert.deepEqual(storage.getSettings(), {
     rootDirectory: null,
     theme: "system",
+    toolPanelDock: "floating",
+    toolPanelWidth: 280,
+    language: "zh-CN",
+    structuredExportFormat: "json",
+    includeInferredStructure: true,
+    skipRemoveConfirmation: false,
+    skipTrashConfirmation: false,
   });
   assert.deepEqual(await storage.listProjects(), {
     rootDirectory: null,
@@ -563,4 +570,308 @@ test("persisted history does not authorize a symlink replacement or external sib
     code: "NOT_AUTHORIZED",
   });
   await assert.rejects(reopened.readFile(secret), { code: "NOT_AUTHORIZED" });
+});
+
+test("new preferences migrate old settings, persist and validate exact field types", async (t) => {
+  const { base, storage } = await fixture(t);
+  const update = {
+    language: "en",
+    structuredExportFormat: "md",
+    includeInferredStructure: false,
+    skipRemoveConfirmation: true,
+    skipTrashConfirmation: true,
+  };
+  await storage.updateSettings(update);
+  const restored = await new DesktopStorage(
+    path.join(base, "userData"),
+  ).initialize();
+  for (const [key, value] of Object.entries(update))
+    assert.equal(restored.getSettings()[key], value);
+  for (const update of [
+    { language: "fr" },
+    { structuredExportFormat: "html" },
+    { includeInferredStructure: 1 },
+    { skipTrashConfirmation: "true" },
+  ])
+    await assert.rejects(restored.updateSettings(update), /Invalid settings/);
+  await fs.writeFile(
+    path.join(base, "userData", "settings.json"),
+    JSON.stringify({ theme: "dark" }),
+  );
+  const legacy = await new DesktopStorage(
+    path.join(base, "userData"),
+  ).initialize();
+  assert.equal(legacy.getSettings().toolPanelDock, "floating");
+  assert.equal(legacy.getSettings().toolPanelWidth, 280);
+  assert.equal(legacy.getSettings().language, "zh-CN");
+  assert.equal(legacy.getSettings().includeInferredStructure, true);
+  assert.equal(legacy.getSettings().skipRemoveConfirmation, false);
+});
+
+test("tool panel dock persists each valid value and ignores invalid saved values", async (t) => {
+  const { base, storage } = await fixture(t);
+  const userData = path.join(base, "userData");
+  for (const toolPanelDock of ["left", "right", "floating"]) {
+    const updated = await storage.updateSettings({ toolPanelDock });
+    assert.equal(updated.toolPanelDock, toolPanelDock);
+    const reopened = await new DesktopStorage(userData).initialize();
+    assert.equal(reopened.getSettings().toolPanelDock, toolPanelDock);
+  }
+  for (const toolPanelDock of ["top", "LEFT", "", true, null, 1, {}, []]) {
+    await assert.rejects(storage.updateSettings({ toolPanelDock }));
+    assert.equal(storage.getSettings().toolPanelDock, "floating");
+    await fs.writeFile(
+      path.join(userData, "settings.json"),
+      JSON.stringify({ toolPanelDock }),
+    );
+    const reopened = await new DesktopStorage(userData).initialize();
+    assert.equal(reopened.getSettings().toolPanelDock, "floating");
+  }
+});
+
+test("tool panel width persists finite values within its inclusive bounds", async (t) => {
+  const { base, storage } = await fixture(t);
+  const userData = path.join(base, "userData");
+  for (const toolPanelWidth of [260, 480, 320.5]) {
+    const updated = await storage.updateSettings({ toolPanelWidth });
+    assert.equal(updated.toolPanelWidth, toolPanelWidth);
+    const reopened = await new DesktopStorage(userData).initialize();
+    assert.equal(reopened.getSettings().toolPanelWidth, toolPanelWidth);
+  }
+  for (const toolPanelWidth of [
+    259.9,
+    480.1,
+    NaN,
+    Infinity,
+    -Infinity,
+    "280",
+    null,
+    true,
+    {},
+    [],
+  ]) {
+    await assert.rejects(storage.updateSettings({ toolPanelWidth }), {
+      code: "INVALID_PATH",
+    });
+    assert.equal(storage.getSettings().toolPanelWidth, 320.5);
+    const reopened = await new DesktopStorage(userData).initialize();
+    assert.equal(reopened.getSettings().toolPanelWidth, 320.5);
+  }
+});
+
+test("invalid saved tool panel widths fall back to the default", async (t) => {
+  const { base } = await fixture(t);
+  const userData = path.join(base, "userData");
+  for (const toolPanelWidth of [259, 481, "280", null, true, {}, []]) {
+    await fs.writeFile(
+      path.join(userData, "settings.json"),
+      JSON.stringify({ toolPanelWidth }),
+    );
+    const reopened = await new DesktopStorage(userData).initialize();
+    assert.equal(reopened.getSettings().toolPanelWidth, 280);
+  }
+});
+
+test("remove hides a drawing persistently and cleans history and session while preserving recovery drafts", async (t) => {
+  const { base, storage, create } = await fixture(t);
+  const drawing = await create("hidden.excalidraw", "keep this file");
+  const other = await create("other.excalidraw");
+  await storage.recordOpenedFile(drawing.path);
+  await storage.setSession({
+    paths: [drawing.path, other.path],
+    activePath: drawing.path,
+  });
+  const draft = {
+    id: randomUUID(),
+    path: drawing.path,
+    title: "removed",
+    content: "draft",
+    modifiedAt: Date.now(),
+  };
+  const kept = { ...draft, id: randomUUID(), path: other.path };
+  await storage.writeDraft(draft);
+  await storage.writeDraft(kept);
+  await storage.removeFile(drawing.path, "remove");
+  assert.equal(await fs.readFile(drawing.path, "utf8"), "keep this file");
+  assert.deepEqual(storage.getSession(), {
+    paths: [other.path],
+    activePath: null,
+  });
+  assert.deepEqual(new Set(await storage.listDrafts()), new Set([draft, kept]));
+  const restored = await new DesktopStorage(
+    path.join(base, "userData"),
+  ).initialize();
+  assert.deepEqual(
+    new Set(await restored.listDrafts()),
+    new Set([draft, kept]),
+  );
+  assert.equal(
+    (await restored.listProjects()).files.some(
+      ({ path }) => path === drawing.path,
+    ),
+    false,
+  );
+  assert.equal((await restored.listProjects()).history.length, 0);
+  await restored.readFile(drawing.path);
+  assert.equal(
+    (await restored.listProjects()).files.some(
+      ({ path }) => path === drawing.path,
+    ),
+    false,
+  );
+  await restored.recordOpenedFile(drawing.path);
+  assert.equal(
+    (await restored.listProjects()).files.some(
+      ({ path }) => path === drawing.path,
+    ),
+    true,
+  );
+  assert.equal((await restored.listProjects()).history[0].path, drawing.path);
+});
+
+test("trash commits cleanup only after the mocked system trash succeeds", async (t) => {
+  const { base, storage, create } = await fixture(t);
+  const drawing = await create("trash.excalidraw");
+  await storage.recordOpenedFile(drawing.path);
+  await storage.setSession({ paths: [drawing.path], activePath: drawing.path });
+  const draft = {
+    id: randomUUID(),
+    path: drawing.path,
+    title: "draft",
+    content: "draft",
+    modifiedAt: Date.now(),
+  };
+  await storage.writeDraft(draft);
+  await assert.rejects(
+    storage.removeFile(drawing.path, "trash", async () => {
+      throw new Error("system refused");
+    }),
+    /system refused/,
+  );
+  assert.equal((await storage.listProjects()).history.length, 1);
+  assert.equal(storage.getSession().activePath, drawing.path);
+  assert.deepEqual(await storage.listDrafts(), [draft]);
+  const afterFailure = await new DesktopStorage(
+    path.join(base, "userData"),
+  ).initialize();
+  assert.deepEqual(await afterFailure.listDrafts(), [draft]);
+  assert.equal((await afterFailure.listProjects()).history.length, 1);
+  assert.equal(afterFailure.getSession().activePath, drawing.path);
+  let trashed;
+  await storage.removeFile(drawing.path, "trash", async (target) => {
+    trashed = target;
+    await fs.rename(target, `${target}.fixture-trash`);
+  });
+  assert.equal(trashed, drawing.path);
+  assert.deepEqual(storage.getSession(), { paths: [], activePath: null });
+  assert.deepEqual(await storage.listDrafts(), [draft]);
+  assert.deepEqual((await storage.listProjects()).history, []);
+  const restored = await new DesktopStorage(
+    path.join(base, "userData"),
+  ).initialize();
+  assert.deepEqual(await restored.listDrafts(), [draft]);
+  await restored.writeDraft({ ...draft, path: null });
+  assert.deepEqual(await restored.listDrafts(), [{ ...draft, path: null }]);
+});
+
+test("remove rejects unauthorized files, symlinks and invalid modes before calling trash", async (t) => {
+  const { root, base, storage, create } = await fixture(t);
+  const drawing = await create("safe.excalidraw");
+  const external = path.join(base, "external.excalidraw");
+  await fs.writeFile(external, "outside");
+  let count = 0;
+  const trash = async () => {
+    count++;
+  };
+  await assert.rejects(storage.removeFile(external, "trash", trash), {
+    code: "NOT_AUTHORIZED",
+  });
+  for (const [name, target] of [
+    ["inside", drawing.path],
+    ["outside", external],
+  ]) {
+    const link = path.join(root, `${name}.excalidraw`);
+    await fs.symlink(target, link);
+    await assert.rejects(storage.removeFile(link, "trash", trash), {
+      code: "NOT_AUTHORIZED",
+    });
+  }
+  await assert.rejects(
+    storage.removeFile(drawing.path, "delete", trash),
+    /移除方式/,
+  );
+  assert.equal(count, 0);
+  assert.equal(await fs.readFile(external, "utf8"), "outside");
+});
+
+test("queued stale saves, drafts and sessions cannot resurrect a removed drawing", async (t) => {
+  const { storage, create } = await fixture(t);
+  const drawing = await create("queued.excalidraw", "initial");
+  const draft = {
+    id: randomUUID(),
+    path: drawing.path,
+    title: "draft",
+    content: "recoverable",
+    modifiedAt: Date.now(),
+  };
+  await storage.writeDraft(draft);
+  const removal = storage.removeFile(drawing.path, "remove");
+  const staleSave = storage.saveFile(request(drawing, "stale"));
+  const staleDraft = storage.writeDraft({ ...draft, content: "stale" });
+  const staleSession = storage.setSession({
+    paths: [drawing.path],
+    activePath: drawing.path,
+  });
+  await removal;
+  await assert.rejects(staleSave, { code: "REMOVED_FILE" });
+  await Promise.all([staleDraft, staleSession]);
+  assert.equal(await fs.readFile(drawing.path, "utf8"), "initial");
+  assert.deepEqual(storage.getSession(), { paths: [], activePath: null });
+  assert.deepEqual(await storage.listDrafts(), [draft]);
+  await storage.recordOpenedFile(drawing.path);
+  await storage.saveFile(request(drawing, "restored"));
+  assert.equal(await fs.readFile(drawing.path, "utf8"), "restored");
+});
+
+for (const mode of ["remove", "trash"]) {
+  test(`${mode} preserves legacy recovery drafts stored through a symbolic alias across restart`, async (t) => {
+    const { root, base, storage, create } = await fixture(t);
+    const drawing = await create("draft-source.excalidraw");
+    const alias = path.join(root, "alias.excalidraw");
+    await fs.symlink(drawing.path, alias);
+    const draft = {
+      id: randomUUID(),
+      path: alias,
+      title: "legacy",
+      content: "draft",
+      modifiedAt: Date.now(),
+    };
+    await fs.writeFile(
+      path.join(base, "userData", "drafts", `${draft.id}.json`),
+      JSON.stringify(draft),
+    );
+    await storage.removeFile(drawing.path, mode, async (target) =>
+      fs.rename(target, `${target}.fixture-trash`),
+    );
+    assert.deepEqual(await storage.listDrafts(), [draft]);
+    const restored = await new DesktopStorage(
+      path.join(base, "userData"),
+    ).initialize();
+    assert.deepEqual(await restored.listDrafts(), [draft]);
+    await restored.writeDraft({ ...draft, path: null });
+    assert.deepEqual(await restored.listDrafts(), [{ ...draft, path: null }]);
+  });
+}
+
+test("English storage validation includes direct non-serialized operations", async (t) => {
+  const { storage } = await fixture(t);
+  await storage.updateSettings({ language: "en" });
+  await assert.rejects(
+    storage.readFile("relative.excalidraw"),
+    /Choose an .excalidraw file/,
+  );
+  assert.throws(
+    () => storage.renameFile("relative.excalidraw", "../bad"),
+    /valid file name/,
+  );
 });

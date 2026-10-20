@@ -12,6 +12,8 @@ const {
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+const { translate } = require("./i18n.cjs");
+const { renderPdf, validatePdfRequest } = require("./pdf.cjs");
 const {
   DesktopStorage,
   atomicWrite,
@@ -22,7 +24,7 @@ const {
 if (process.env.EXCALIDRAW_DESKTOP_USER_DATA) {
   const userData = process.env.EXCALIDRAW_DESKTOP_USER_DATA;
   if (!path.isAbsolute(userData))
-    throw new Error("隔离 userData 必须使用绝对路径。");
+    throw new Error(translate("zh-CN", "隔离 userData 必须使用绝对路径。"));
   app.setPath("userData", userData);
 }
 
@@ -41,6 +43,8 @@ protocol.registerSchemesAsPrivileged([
 
 let window = null;
 let storage;
+const t = (message, values) =>
+  translate(storage?.getSettings().language || "zh-CN", message, values);
 let closePending = false;
 let closeApproved = false;
 let quitRequested = false;
@@ -60,7 +64,7 @@ function getDevelopmentURL() {
     url.username ||
     url.password
   )
-    throw new Error("开发 URL 只允许本机 loopback 地址。");
+    throw new Error(t("开发 URL 只允许本机 loopback 地址。"));
   return url;
 }
 
@@ -84,7 +88,7 @@ function assertSender(event) {
     event.senderFrame !== window.webContents.mainFrame ||
     !trustedURL(event.senderFrame.url)
   )
-    throw new Error("拒绝非主窗口的文件访问。");
+    throw new Error(t("拒绝非主窗口的文件访问。"));
 }
 
 function emitCommand(command) {
@@ -118,7 +122,7 @@ async function drainFiles() {
       await dialog.showMessageBox(
         ...nativeDialogOptions({
           type: "error",
-          message: "无法打开画布",
+          message: t("无法打开画布"),
           detail: error.message,
         }),
       );
@@ -149,7 +153,7 @@ function nativeDialogOptions(options) {
 
 async function saveDocument(request) {
   if (!request || typeof request !== "object")
-    throw new Error("保存请求无效。");
+    throw new Error(t("保存请求无效。"));
   let target = request.path;
   let overwrite = false;
   if (request.saveAs || !target) {
@@ -157,15 +161,15 @@ async function saveDocument(request) {
     const root = storage.getSettings().rootDirectory;
     const result = await dialog.showSaveDialog(
       ...nativeDialogOptions({
-        title: request.saveAs ? "画布另存为" : "保存画布",
+        title: request.saveAs ? t("画布另存为") : t("保存画布"),
         defaultPath: target || (root ? path.join(root, name) : name),
-        filters: [{ name: "Excalidraw 画布", extensions: ["excalidraw"] }],
+        filters: [{ name: t("Excalidraw 画布"), extensions: ["excalidraw"] }],
         properties: ["createDirectory", "showOverwriteConfirmation"],
       }),
     );
     if (result.canceled || !result.filePath) return null;
     if (path.extname(result.filePath).toLowerCase() !== ".excalidraw")
-      throw new Error("画布文件名需要以 .excalidraw 结尾。");
+      throw new Error(t("画布文件名需要以 .excalidraw 结尾。"));
     target = result.filePath;
     target = await storage.grantFile(target);
     overwrite = true;
@@ -177,11 +181,11 @@ async function saveDocument(request) {
     const choice = await dialog.showMessageBox(
       ...nativeDialogOptions({
         type: "warning",
-        buttons: ["取消", "覆盖保存"],
+        buttons: [t("取消"), t("覆盖保存")],
         defaultId: 0,
         cancelId: 0,
-        message: "此画布已被其他程序修改或移走",
-        detail: "覆盖保存会用当前画布替换磁盘上的版本。",
+        message: t("此画布已被其他程序修改或移走"),
+        detail: t("覆盖保存会用当前画布替换磁盘上的版本。"),
         noLink: true,
       }),
     );
@@ -190,18 +194,67 @@ async function saveDocument(request) {
   }
 }
 
+function safeSegment(value) {
+  if (
+    typeof value !== "string" ||
+    !value ||
+    value !== value.trim() ||
+    /[\\/\x00-\x1f<>:"|?*]/.test(value) ||
+    value === "." ||
+    value === ".." ||
+    value.endsWith(".")
+  )
+    throw new Error(t("导出附件路径无效。"));
+  return value;
+}
+
+async function assertExportPath(destination) {
+  const parent = path.dirname(destination);
+  if ((await fs.realpath(parent)) !== parent)
+    throw new Error(t("导出路径不能包含符号链接。"));
+  const stat = await fs.lstat(destination).catch((error) => {
+    if (error.code !== "ENOENT") throw error;
+    return null;
+  });
+  if (stat?.isSymbolicLink()) throw new Error(t("导出路径不能包含符号链接。"));
+}
+
+async function chooseExport(name, extension) {
+  const result = await dialog.showSaveDialog(
+    ...nativeDialogOptions({
+      title: t("导出画布"),
+      defaultPath: fileName(name, extension),
+      filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
+      properties: ["createDirectory", "showOverwriteConfirmation"],
+    }),
+  );
+  if (result.canceled || !result.filePath) return null;
+  if (!result.filePath.toLowerCase().endsWith(`.${extension}`))
+    throw new Error(t("导出文件名需要以 .{extension} 结尾。", { extension }));
+  return result.filePath;
+}
+
 function installIPC() {
   const handle = (name, callback) =>
     ipcMain.handle(`desktop:${name}`, async (event, ...args) => {
       assertSender(event);
-      return callback(...args);
+      try {
+        return await callback(...args);
+      } catch (error) {
+        error.message = t(error.message);
+        throw error;
+      }
     });
   handle("get-settings", () => storage.getSettings());
-  handle("update-settings", (settings) => storage.updateSettings(settings));
+  handle("update-settings", async (settings) => {
+    const updated = await storage.updateSettings(settings);
+    installMenu();
+    return updated;
+  });
   handle("choose-directory", async () => {
     const result = await dialog.showOpenDialog(
       ...nativeDialogOptions({
-        title: "选择画布项目目录",
+        title: t("选择画布项目目录"),
         properties: ["openDirectory", "createDirectory"],
       }),
     );
@@ -213,8 +266,8 @@ function installIPC() {
   handle("open-files", async () => {
     const result = await dialog.showOpenDialog(
       ...nativeDialogOptions({
-        title: "打开画布",
-        filters: [{ name: "Excalidraw 画布", extensions: ["excalidraw"] }],
+        title: t("打开画布"),
+        filters: [{ name: t("Excalidraw 画布"), extensions: ["excalidraw"] }],
         properties: ["openFile", "multiSelections"],
       }),
     );
@@ -238,24 +291,91 @@ function installIPC() {
       !EXPORT_EXTENSIONS.has(request.extension.toLowerCase()) ||
       !(request.data instanceof ArrayBuffer)
     )
-      throw new Error("导出格式或数据无效。");
+      throw new Error(t("导出格式或数据无效。"));
     const extension = request.extension.toLowerCase();
-    const name = fileName(request.name, extension);
-    const result = await dialog.showSaveDialog(
-      ...nativeDialogOptions({
-        title: "导出画布",
-        defaultPath: name,
-        filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
-        properties: ["createDirectory", "showOverwriteConfirmation"],
-      }),
-    );
-    if (result.canceled || !result.filePath) return false;
-    if (!result.filePath.toLowerCase().endsWith(`.${extension}`))
-      throw new Error(`导出文件名需要以 .${extension} 结尾。`);
-    const destination = result.filePath;
-    await atomicWrite(destination, Buffer.from(request.data));
-    return true;
+    const assets = request.assets === undefined ? [] : request.assets;
+    if (
+      !Array.isArray(assets) ||
+      (assets.length && !["md", "json"].includes(extension))
+    )
+      throw new Error(t("导出格式或数据无效。"));
+    const assetNames = new Set();
+    if (request.assetDirectory !== undefined)
+      safeSegment(request.assetDirectory);
+    for (const asset of assets) {
+      if (!asset || !(asset.data instanceof ArrayBuffer))
+        throw new Error(t("导出格式或数据无效。"));
+      safeSegment(asset.name);
+      if (!request.assetDirectory || assetNames.has(asset.name))
+        throw new Error(t("导出附件路径无效。"));
+      assetNames.add(asset.name);
+    }
+    const result = await chooseExport(request.name, extension);
+    if (!result) return false;
+    return storage.serialize(async () => {
+      await assertExportPath(result);
+      let directory;
+      if (assets.length) {
+        directory = path.join(path.dirname(result), request.assetDirectory);
+        await assertExportPath(directory);
+        for (const asset of assets) {
+          const target = path.join(directory, asset.name);
+          const stat = await fs.lstat(target).catch((error) => {
+            if (error.code !== "ENOENT") throw error;
+            return null;
+          });
+          if (stat && (!stat.isFile() || stat.isSymbolicLink()))
+            throw new Error(t("导出路径不能包含符号链接。"));
+          if (
+            stat &&
+            !(await fs.readFile(target)).equals(Buffer.from(asset.data))
+          )
+            throw new Error(
+              t("导出附件已存在且内容不同，请选择其他导出位置。"),
+            );
+        }
+        await fs.mkdir(directory, { recursive: true });
+        for (const asset of assets) {
+          const target = path.join(directory, asset.name);
+          await assertExportPath(target);
+          try {
+            await fs.writeFile(target, Buffer.from(asset.data), {
+              flag: "wx",
+              mode: 0o600,
+            });
+          } catch (error) {
+            if (error.code !== "EEXIST") throw error;
+            await assertExportPath(target);
+            if (!(await fs.readFile(target)).equals(Buffer.from(asset.data)))
+              throw new Error(
+                t("导出附件已存在且内容不同，请选择其他导出位置。"),
+              );
+          }
+        }
+      }
+      await atomicWrite(result, Buffer.from(request.data));
+      return true;
+    });
   });
+  handle("save-pdf", async (request) => {
+    validatePdfRequest(request);
+    const destination = await chooseExport(request.name, "pdf");
+    if (!destination) return false;
+    const data = await renderPdf(BrowserWindow, request);
+    return storage.serialize(async () => {
+      await assertExportPath(destination);
+      await atomicWrite(destination, data);
+      return true;
+    });
+  });
+  handle("edit-text", (command) => {
+    if (!["undo", "redo"].includes(command))
+      throw new Error(t("文本编辑命令无效。"));
+    window.webContents[command]();
+  });
+  handle("remove-file", (candidate, mode) =>
+    storage.removeFile(candidate, mode, (target) => shell.trashItem(target)),
+  );
   handle("rename-file", (candidate, name) =>
     storage.renameFile(candidate, name),
   );
@@ -394,6 +514,18 @@ function createWindow() {
     },
   });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("before-input-event", (event, input) => {
+    const modifier = process.platform === "darwin" ? input.meta : input.control;
+    if (
+      input.type === "keyDown" &&
+      modifier &&
+      !input.alt &&
+      input.key?.toLowerCase() === "z"
+    ) {
+      event.preventDefault();
+      emitCommand(input.shift ? "redo" : "undo");
+    }
+  });
   window.webContents.on(
     "did-start-navigation",
     (_event, _url, _inPlace, isMainFrame) => {
@@ -425,7 +557,7 @@ function createWindow() {
     "did-fail-load",
     (_event, code, description, url, isMainFrame) => {
       if (isMainFrame && code !== -3)
-        dialog.showErrorBox("无法加载 Excalidraw", `${description}\n${url}`);
+        dialog.showErrorBox(t("无法加载 Excalidraw"), `${description}\n${url}`);
     },
   );
   window.loadURL(developmentURL ? developmentURL.href : appURL);
@@ -459,53 +591,55 @@ function installMenu() {
           {
             label: app.name,
             submenu: [
-              { role: "about" },
+              { role: "about", label: t("关于 {name}", { name: app.name }) },
               { type: "separator" },
-              { role: "hide" },
-              { role: "hideOthers" },
-              { role: "unhide" },
+              { role: "hide", label: t("隐藏 {name}", { name: app.name }) },
+              { role: "hideOthers", label: t("隐藏其他", { name: app.name }) },
+              { role: "unhide", label: t("显示全部", { name: app.name }) },
               { type: "separator" },
-              { role: "quit" },
+              { role: "quit", label: t("退出 {name}", { name: app.name }) },
             ],
           },
         ]
       : []),
     {
-      label: "文件",
+      label: t("文件"),
       submenu: [
-        command("新建画布", "new", "CmdOrCtrl+N"),
-        command("打开画布…", "open"),
-        command("保存", "save"),
-        command("另存为…", "save-as"),
+        command(t("新建画布"), "new", "CmdOrCtrl+N"),
+        command(t("打开画布…"), "open"),
+        command(t("保存"), "save"),
+        command(t("另存为…"), "save-as"),
         { type: "separator" },
-        command("项目管理", "projects", "CmdOrCtrl+Shift+P"),
-        command("关闭标签", "close-tab", "CmdOrCtrl+W"),
+        command(t("项目管理"), "projects", "CmdOrCtrl+Shift+P"),
+        command(t("关闭标签"), "close-tab", "CmdOrCtrl+W"),
         {
-          label: "关闭窗口",
+          label: t("关闭窗口"),
           accelerator: "CmdOrCtrl+Shift+W",
           click: () => requestClose(),
         },
-        ...(process.platform === "darwin" ? [] : [{ role: "quit" }]),
+        ...(process.platform === "darwin"
+          ? []
+          : [{ role: "quit", label: t("退出 {name}", { name: app.name }) }]),
       ],
     },
     {
-      label: "编辑",
+      label: t("编辑"),
       submenu: [
-        editingCommand("撤销", "Z"),
-        editingCommand("重做", "Z", true),
+        command(t("撤销"), "undo", "CmdOrCtrl+Z"),
+        command(t("重做"), "redo", "CmdOrCtrl+Shift+Z"),
         { type: "separator" },
-        { role: "cut" },
-        { role: "copy" },
-        { role: "paste" },
-        editingCommand("全选", "A"),
+        { role: "cut", label: t("剪切", { name: app.name }) },
+        { role: "copy", label: t("复制", { name: app.name }) },
+        { role: "paste", label: t("粘贴", { name: app.name }) },
+        editingCommand(t("全选"), "A"),
       ],
     },
     {
-      label: "窗口",
+      label: t("窗口"),
       submenu: [
-        { role: "minimize" },
-        { role: "zoom" },
-        { role: "togglefullscreen" },
+        { role: "minimize", label: t("最小化", { name: app.name }) },
+        { role: "zoom", label: t("缩放", { name: app.name }) },
+        { role: "togglefullscreen", label: t("切换全屏", { name: app.name }) },
       ],
     },
   ];
@@ -550,7 +684,7 @@ else {
       });
     })
     .catch((error) => {
-      dialog.showErrorBox("Excalidraw 无法启动", error.message);
+      dialog.showErrorBox(t("Excalidraw 无法启动"), error.message);
       quitApproved = true;
       app.quit();
     });

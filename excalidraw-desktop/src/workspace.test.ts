@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 
+import { loadFromBlob } from "@excalidraw/excalidraw";
 import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
@@ -23,9 +24,37 @@ import type {
   DesktopAPI,
   DesktopCommand,
   DiskDocument,
+  DesktopSettings,
+  ProjectFile,
   RecentFile,
 } from "./shared";
 import type { CanvasDocument } from "./workspace";
+
+vi.mock("@excalidraw/excalidraw", async (original) => {
+  const actual = await original<typeof import("@excalidraw/excalidraw")>();
+  return { ...actual, loadFromBlob: vi.fn(actual.loadFromBlob) };
+});
+
+const settings: DesktopSettings = {
+  rootDirectory: "/drawings",
+  theme: "system",
+  toolPanelDock: "floating",
+  toolPanelWidth: 280,
+  language: "zh-CN",
+  structuredExportFormat: "json",
+  includeInferredStructure: true,
+  skipRemoveConfirmation: false,
+  skipTrashConfirmation: false,
+};
+
+const projectFile = (path: string): ProjectFile => ({
+  path,
+  name: path.split("/").pop()!,
+  relativePath: path,
+  category: "",
+  modifiedAt: 123,
+  size: 100,
+});
 
 const snapshot = (version = 1): SceneSnapshot => ({
   elements: [
@@ -135,9 +164,7 @@ describe("desktop document workspace", () => {
     document.body.append(root);
     command = () => {};
     desktop = {
-      getSettings: vi
-        .fn()
-        .mockResolvedValue({ rootDirectory: "/drawings", theme: "system" }),
+      getSettings: vi.fn().mockResolvedValue(settings),
       updateSettings: vi.fn(),
       chooseDirectory: vi.fn(),
       listProjects: vi.fn().mockResolvedValue({
@@ -151,6 +178,9 @@ describe("desktop document workspace", () => {
       recordOpenedFile: vi.fn().mockResolvedValue(undefined),
       saveFile: vi.fn(),
       saveExport: vi.fn(),
+      savePdf: vi.fn(),
+      editText: vi.fn().mockResolvedValue(undefined),
+      removeFile: vi.fn().mockResolvedValue(undefined),
       renameFile: vi.fn(),
       moveFile: vi.fn(),
       createFolder: vi.fn(),
@@ -447,8 +477,8 @@ describe("desktop document workspace", () => {
       },
     ];
     vi.mocked(desktop.getSettings).mockResolvedValue({
+      ...settings,
       rootDirectory: null,
-      theme: "system",
     });
     vi.mocked(desktop.listProjects).mockResolvedValue({
       rootDirectory: null,
@@ -482,6 +512,7 @@ describe("desktop document workspace", () => {
         onEdit,
         onSettings: vi.fn(),
         onRecovery: vi.fn(),
+        onRemove: vi.fn(),
       }),
     );
     expect(view.getByRole("heading", { name: "历史画布" })).toBeInTheDocument();
@@ -827,5 +858,437 @@ describe("desktop document workspace", () => {
         saveAs: true,
       }),
     );
+  });
+  it.each(["remove", "trash"] as const)(
+    "locks a canvas until %s succeeds, then clears its tab and draft",
+    async (mode) => {
+      const hook = await mount();
+      const first = addDocument(hook);
+      first.document.path = "/drawings/original.excalidraw";
+      let finish!: () => void;
+      vi.mocked(desktop.removeFile).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      let removing!: Promise<boolean>;
+      act(() => {
+        removing = hook.result.current.removeFile(
+          projectFile(first.document.path!),
+          mode,
+        );
+      });
+      await waitFor(() =>
+        expect(desktop.removeFile).toHaveBeenCalledWith(
+          first.document.path,
+          mode,
+        ),
+      );
+      expect(first.api.commitEditing).toHaveBeenCalled();
+      expect(hook.result.current.closing).toBe(true);
+      expect(hook.result.current.documents).toContain(first.document);
+      expect(desktop.deleteDraft).not.toHaveBeenCalled();
+      await act(async () => {
+        expect(await hook.result.current.requestSave(first.document)).toBe(
+          false,
+        );
+        expect(
+          await hook.result.current.editorSave(
+            first.document,
+            snapshot(5),
+            false,
+          ),
+        ).toBe(false);
+      });
+      expect(desktop.saveFile).not.toHaveBeenCalled();
+      await act(async () => {
+        finish();
+        expect(await removing).toBe(true);
+      });
+      expect(hook.result.current.documents).toHaveLength(0);
+      expect(desktop.deleteDraft).toHaveBeenCalledWith(first.document.id);
+      expect(hook.result.current.closing).toBe(false);
+    },
+  );
+
+  it("cancels dirty removal without changing the active view, native file, or draft", async () => {
+    const hook = await mount();
+    const first = addDocument(hook);
+    first.document.path = "/drawings/original.excalidraw";
+    first.edit(2);
+    act(() => hook.result.current.showProjects());
+    let removing!: Promise<boolean>;
+    act(() => {
+      removing = hook.result.current.removeFile(
+        projectFile(first.document.path!),
+        "remove",
+      );
+    });
+    await waitFor(() => expect(hook.result.current.closePrompt).not.toBeNull());
+    expect(hook.result.current.projectsVisible).toBe(true);
+    await act(async () => {
+      hook.result.current.closePrompt!.resolve("cancel");
+      expect(await removing).toBe(false);
+    });
+    expect(desktop.removeFile).not.toHaveBeenCalled();
+    expect(desktop.deleteDraft).not.toHaveBeenCalled();
+    expect(hook.result.current.documents).toContain(first.document);
+    expect(first.document.dirty).toBe(true);
+    expect(first.document.removalPhase).toBeUndefined();
+    expect(hook.result.current.projectsVisible).toBe(true);
+  });
+
+  it("keeps discarded dirty content and the tab when moving to Trash fails", async () => {
+    const hook = await mount();
+    const first = addDocument(hook);
+    first.document.path = "/drawings/original.excalidraw";
+    first.edit(2);
+    const content = first.document.content;
+    vi.mocked(desktop.removeFile).mockRejectedValue(
+      new Error("Trash unavailable"),
+    );
+    let removing!: Promise<boolean>;
+    act(() => {
+      removing = hook.result.current.removeFile(
+        projectFile(first.document.path!),
+        "trash",
+      );
+    });
+    await waitFor(() => expect(hook.result.current.closePrompt).not.toBeNull());
+    await act(async () => {
+      hook.result.current.closePrompt!.resolve("discard");
+      expect(await removing).toBe(false);
+    });
+    expect(hook.result.current.documents).toContain(first.document);
+    expect(first.document.content).toBe(content);
+    expect(first.document.dirty).toBe(true);
+    expect(desktop.deleteDraft).not.toHaveBeenCalled();
+    expect(hook.result.current.error).toBe("Trash unavailable");
+  });
+
+  it("saves committed text before removing a dirty canvas and rejects competing saves", async () => {
+    const hook = await mount();
+    const first = addDocument(hook);
+    first.document.path = "/drawings/original.excalidraw";
+    vi.mocked(first.api.commitEditing).mockImplementation(() => first.edit(3));
+    let finish!: (value: DiskDocument) => void;
+    vi.mocked(desktop.saveFile).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    let removing!: Promise<boolean>;
+    act(() => {
+      removing = hook.result.current.removeFile(
+        projectFile(first.document.path!),
+        "trash",
+      );
+    });
+    await waitFor(() => expect(hook.result.current.closePrompt).not.toBeNull());
+    act(() => hook.result.current.closePrompt!.resolve("save"));
+    await waitFor(() => expect(desktop.saveFile).toHaveBeenCalledTimes(1));
+    expect(
+      JSON.parse(vi.mocked(desktop.saveFile).mock.calls[0][0].content)
+        .elements[0].x,
+    ).toBe(3);
+    expect(desktop.removeFile).not.toHaveBeenCalled();
+    await act(async () => {
+      expect(await hook.result.current.requestSave(first.document, true)).toBe(
+        false,
+      );
+    });
+    await act(async () => {
+      finish(disk(first.document.path!, first.document.content));
+      expect(await removing).toBe(true);
+    });
+    expect(desktop.removeFile).toHaveBeenCalledWith(
+      "/drawings/original.excalidraw",
+      "trash",
+    );
+    expect(hook.result.current.documents).toHaveLength(0);
+  });
+
+  it("waits for an ongoing Save As and preserves the tab rebound to its new path", async () => {
+    const hook = await mount();
+    const first = addDocument(hook);
+    first.document.path = "/drawings/original.excalidraw";
+    const originalPath = first.document.path;
+    let finish!: (value: DiskDocument) => void;
+    vi.mocked(desktop.saveFile).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    let saving!: Promise<boolean>;
+    let removing!: Promise<boolean>;
+    act(() => {
+      saving = hook.result.current.requestSave(first.document, true);
+      removing = hook.result.current.removeFile(
+        projectFile(originalPath),
+        "remove",
+      );
+    });
+    expect(desktop.removeFile).not.toHaveBeenCalled();
+    await act(async () => {
+      finish(disk("/drawings/copy.excalidraw", first.document.content));
+      expect(await saving).toBe(true);
+      expect(await removing).toBe(true);
+    });
+    expect(desktop.removeFile).toHaveBeenCalledWith(originalPath, "remove");
+    expect(hook.result.current.documents).toContain(first.document);
+    expect(first.document.path).toBe("/drawings/copy.excalidraw");
+  });
+
+  it.each(["remove", "trash"] as const)(
+    "preserves an unrecovered startup draft after %s of its clean disk document",
+    async (mode) => {
+      const draft = {
+        id: "recovery",
+        path: "/drawings/original.excalidraw",
+        title: "Original title",
+        content: createSceneTracker()(snapshot(2)),
+        modifiedAt: 100,
+      };
+      vi.mocked(desktop.listDrafts).mockResolvedValue([draft]);
+      vi.mocked(desktop.getSession).mockResolvedValue({
+        paths: [draft.path],
+        activePath: draft.path,
+      });
+      vi.mocked(desktop.readFile).mockResolvedValue(
+        disk(draft.path, createSceneTracker()(snapshot())),
+      );
+      const hook = await mount();
+      const original = hook.result.current.documents[0];
+      expect(original).toMatchObject({
+        path: draft.path,
+        dirty: false,
+        initialData: { elements: [{ id: "rectangle", x: 1 }] },
+      });
+      expect(hook.result.current.drafts).toEqual([draft]);
+      await act(async () => {
+        expect(
+          await hook.result.current.removeFile(projectFile(draft.path), mode),
+        ).toBe(true);
+      });
+      expect(hook.result.current.documents).toHaveLength(0);
+      expect(hook.result.current.closePrompt).toBeNull();
+      expect(hook.result.current.drafts).toEqual([draft]);
+      expect(desktop.deleteDraft).toHaveBeenCalledWith(original.id);
+      expect(desktop.deleteDraft).not.toHaveBeenCalledWith(draft.id);
+      await act(async () => {
+        expect(
+          await hook.result.current.recover(hook.result.current.drafts[0]),
+        ).toBe(true);
+      });
+      expect(desktop.writeDraft).toHaveBeenCalledWith({ ...draft, path: null });
+      expect(hook.result.current.documents[0]).toMatchObject({
+        id: draft.id,
+        path: null,
+        title: draft.title,
+        initialData: { elements: [{ id: "rectangle", x: 2 }] },
+        dirty: true,
+        recovered: true,
+      });
+      expect(hook.result.current.drafts).toHaveLength(0);
+    },
+  );
+
+  it("persists recovery as an independent draft and never closes it when removing its original file", async () => {
+    const hook = await mount();
+    const draft = {
+      id: "recovery",
+      path: "/drawings/original.excalidraw",
+      title: "Original title",
+      content: createSceneTracker()(snapshot()),
+      modifiedAt: 100,
+    };
+    await act(async () => {
+      expect(await hook.result.current.recover(draft)).toBe(true);
+    });
+    expect(desktop.writeDraft).toHaveBeenCalledWith({ ...draft, path: null });
+    const recovered = hook.result.current.documents[0];
+    await act(async () => {
+      expect(
+        await hook.result.current.removeFile(projectFile(draft.path), "trash"),
+      ).toBe(true);
+    });
+    expect(hook.result.current.documents).toEqual([recovered]);
+    expect(recovered.path).toBeNull();
+    expect(recovered.title).toBe(draft.title);
+    expect(desktop.deleteDraft).not.toHaveBeenCalled();
+  });
+
+  it("keeps recovery available when detaching its stored path fails", async () => {
+    const hook = await mount();
+    vi.mocked(desktop.writeDraft).mockRejectedValue(
+      new Error("draft write failed"),
+    );
+    await act(async () => {
+      expect(
+        await hook.result.current.recover({
+          id: "recovery",
+          path: "/drawings/a.excalidraw",
+          title: "a",
+          content: createSceneTracker()(snapshot()),
+          modifiedAt: 100,
+        }),
+      ).toBe(false);
+    });
+    expect(hook.result.current.documents).toHaveLength(0);
+    expect(desktop.deleteDraft).not.toHaveBeenCalled();
+  });
+
+  it("changes the UI language without replacing existing documents or their names", async () => {
+    const hook = await mount();
+    const first = addDocument(hook);
+    vi.mocked(desktop.updateSettings).mockResolvedValue({
+      ...settings,
+      language: "en",
+    });
+    await act(async () => {
+      await hook.result.current.updateSettings({ language: "en" });
+    });
+    expect(root.ownerDocument.documentElement.lang).toBe("en");
+    expect(hook.result.current.documents[0]).toBe(first.document);
+    expect(first.document.title).toBe("未命名");
+    let newCanvas!: CanvasDocument;
+    act(() => {
+      newCanvas = hook.result.current.newDocument();
+    });
+    expect(newCanvas.title).toBe("Untitled");
+  });
+
+  it("routes native text undo while a desktop modal blocks canvas commands", async () => {
+    const hook = renderHook(() => useWorkspace(root, true));
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+    const input = root.ownerDocument.createElement("input");
+    root.append(input);
+    input.focus();
+    await act(async () => {
+      command("undo");
+    });
+    expect(desktop.editText).toHaveBeenCalledWith("undo");
+  });
+  it.each(["remove", "trash"] as const)(
+    "ignores a delayed project read after %s succeeds, but permits an explicit later reopen",
+    async (mode) => {
+      const hook = await mount();
+      const file = projectFile("/drawings/delayed.excalidraw");
+      const source = disk(file.path, createSceneTracker()(snapshot()));
+      let finishRead!: (value: DiskDocument) => void;
+      vi.mocked(desktop.readFile).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve;
+          }),
+      );
+      let opening!: Promise<void>;
+      act(() => {
+        opening = hook.result.current.openProject(file);
+      });
+      await waitFor(() =>
+        expect(desktop.readFile).toHaveBeenCalledWith(file.path),
+      );
+      await act(async () => {
+        expect(await hook.result.current.removeFile(file, mode)).toBe(true);
+      });
+      await act(async () => {
+        finishRead(source);
+        await opening;
+      });
+      expect(hook.result.current.documents).toHaveLength(0);
+      expect(desktop.recordOpenedFile).not.toHaveBeenCalled();
+      vi.mocked(desktop.readFile).mockResolvedValue(source);
+      await act(async () => {
+        await hook.result.current.openProject(file);
+      });
+      expect(hook.result.current.documents).toHaveLength(1);
+      expect(desktop.recordOpenedFile).toHaveBeenCalledWith(file.path);
+    },
+  );
+
+  it("ignores a scene parse begun before removal instead of recreating its tab and project history", async () => {
+    const hook = await mount();
+    const file = projectFile("/drawings/parsed.excalidraw");
+    vi.mocked(desktop.openFiles).mockResolvedValue([
+      disk(file.path, createSceneTracker()(snapshot())),
+    ]);
+    let finishParse!: (value: Awaited<ReturnType<typeof loadFromBlob>>) => void;
+    vi.mocked(loadFromBlob).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishParse = resolve;
+        }),
+    );
+    let opening!: Promise<void>;
+    act(() => {
+      opening = hook.result.current.openFiles();
+    });
+    await waitFor(() => expect(finishParse).toBeDefined());
+    await act(async () => {
+      expect(await hook.result.current.removeFile(file, "remove")).toBe(true);
+    });
+    await act(async () => {
+      finishParse({ elements: [], appState: snapshot().appState, files: {} });
+      await opening;
+    });
+    expect(hook.result.current.documents).toHaveLength(0);
+    expect(desktop.recordOpenedFile).not.toHaveBeenCalled();
+  });
+
+  it("waits for a removal guard and resumes an existing open request when removal is cancelled", async () => {
+    const hook = await mount();
+    const first = addDocument(hook);
+    first.document.path = "/drawings/original.excalidraw";
+    first.edit(2);
+    const file = projectFile(first.document.path);
+    let removing!: Promise<boolean>;
+    let opening!: Promise<void>;
+    act(() => {
+      removing = hook.result.current.removeFile(file, "remove");
+    });
+    await waitFor(() => expect(hook.result.current.closePrompt).not.toBeNull());
+    act(() => {
+      opening = hook.result.current.openProject(file);
+    });
+    await act(async () => {});
+    expect(desktop.recordOpenedFile).not.toHaveBeenCalled();
+    await act(async () => {
+      hook.result.current.closePrompt!.resolve("cancel");
+      expect(await removing).toBe(false);
+      await opening;
+    });
+    expect(hook.result.current.documents).toEqual([first.document]);
+    expect(desktop.recordOpenedFile).toHaveBeenCalledWith(file.path);
+    expect(desktop.removeFile).not.toHaveBeenCalled();
+  });
+
+  it("cancels a native window-close request during removal so the next close request can run", async () => {
+    const hook = await mount();
+    const file = projectFile("/drawings/removing.excalidraw");
+    let finishRemoval!: () => void;
+    vi.mocked(desktop.removeFile).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRemoval = resolve;
+        }),
+    );
+    let removing!: Promise<boolean>;
+    act(() => {
+      removing = hook.result.current.removeFile(file, "remove");
+    });
+    await waitFor(() => expect(finishRemoval).toBeDefined());
+    act(() => command("close-window"));
+    expect(desktop.cancelClose).toHaveBeenCalledTimes(1);
+    expect(desktop.confirmClose).not.toHaveBeenCalled();
+    await act(async () => {
+      finishRemoval();
+      expect(await removing).toBe(true);
+    });
+    act(() => command("close-window"));
+    await waitFor(() => expect(desktop.confirmClose).toHaveBeenCalledTimes(1));
   });
 });
