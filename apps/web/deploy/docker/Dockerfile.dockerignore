@@ -1,14 +1,15 @@
 *
 !.npmrc
 !apps/
-!config/
-!config/env/
-!config/env/.env.development
-!config/env/.env.production
-!config/env/.env.test
+!tooling/
+!tooling/config/
+!tooling/config/env/
+!tooling/config/env/.env.development
+!tooling/config/env/.env.production
+!tooling/config/env/.env.test
 !package.json
 !packages/
-!scripts/
+!tooling/scripts/
 !tsconfig.json
 !yarn.lock
 

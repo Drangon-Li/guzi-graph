@@ -6,14 +6,14 @@ const path = require("path");
 
 const wasmModules = [
   {
-    pkg: `../node_modules/fonteditor-core`,
+    pkg: `../../node_modules/fonteditor-core`,
     src: `./wasm/woff2.wasm`,
-    dest: `../packages/excalidraw/subset/woff2/woff2-wasm.ts`,
+    dest: `../../packages/excalidraw/subset/woff2/woff2-wasm.ts`,
   },
   {
-    pkg: `../node_modules/harfbuzzjs`,
+    pkg: `../../node_modules/harfbuzzjs`,
     src: `./wasm/hb-subset.wasm`,
-    dest: `../packages/excalidraw/subset/harfbuzz/harfbuzz-wasm.ts`,
+    dest: `../../packages/excalidraw/subset/harfbuzz/harfbuzz-wasm.ts`,
   },
 ];
 
@@ -39,7 +39,7 @@ for (const { pkg, src, dest } of wasmModules) {
 // @ts-nocheck
 
 /**
-* The following wasm module is generated with \`scripts/buildWasm.js\` and encoded as base64.
+* The following wasm module is generated with \`tooling/scripts/buildWasm.js\` and encoded as base64.
 *
 * The source of this content is taken from the package "${name}", which contains the following metadata:
 * 

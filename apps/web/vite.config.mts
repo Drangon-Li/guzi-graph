@@ -7,10 +7,10 @@ import { VitePWA } from "vite-plugin-pwa";
 import checker from "vite-plugin-checker";
 import { createHtmlPlugin } from "vite-plugin-html";
 import Sitemap from "vite-plugin-sitemap";
-import { woff2BrowserPlugin } from "../../scripts/woff2/woff2-vite-plugins";
+import { woff2BrowserPlugin } from "../../tooling/scripts/woff2/woff2-vite-plugins";
 export default defineConfig(({ mode }) => {
   const repositoryRoot = path.resolve(__dirname, "../..");
-  const envDirectory = path.join(repositoryRoot, "config/env");
+  const envDirectory = path.join(repositoryRoot, "tooling/config/env");
   const envVars = loadEnv(mode, envDirectory);
   // https://vitejs.dev/config/
   return {

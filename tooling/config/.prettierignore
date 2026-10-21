@@ -1,0 +1,13 @@
+# Paths with a directory component are relative to this file.
+node_modules/
+build/
+package-lock.json
+.vscode/
+../../apps/web/deploy/firebase/
+dist/
+../../apps/web/public/workbox
+../../packages/excalidraw/types
+../../examples/**/public
+dev-dist
+coverage
+../../apps/desktop/release/
