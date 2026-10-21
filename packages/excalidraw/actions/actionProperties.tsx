@@ -176,8 +176,8 @@ import {
 
 import { getShortcutKey } from "../shortcut";
 
-import { executeRichTextCommand } from "../wysiwyg/richTextEditorBridge";
-import { RichTextJustifyIcon } from "../components/RichTextIcons";
+import { executeRichTextCommand } from "../features/rich-text/editorBridge";
+import { RichTextJustifyIcon } from "../features/rich-text/RichTextIcons";
 
 import {
   getColorTargetAppStateUpdates,

@@ -58,7 +58,7 @@ import { actionTextAutoResize } from "../actions/actionTextAutoResize";
 import { withBatchedUpdates } from "../reactUtils";
 import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
 import { scrollBoundsIntoView } from "../viewport";
-import { getSubcanvasId } from "../subcanvas";
+import { getSubcanvasId } from "../features/subcanvas/model";
 import { textWysiwyg } from "../wysiwyg/textWysiwyg";
 
 import type App from "./App";

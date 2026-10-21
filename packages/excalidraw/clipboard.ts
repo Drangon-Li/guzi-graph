@@ -28,7 +28,10 @@ import type {
   NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
 
-import { collectSubcanvasScenes, collectSceneFiles } from "./subcanvas";
+import {
+  collectSubcanvasScenes,
+  collectSceneFiles,
+} from "./features/subcanvas/model";
 
 import { ExcalidrawError } from "./errors";
 
@@ -39,7 +42,7 @@ import {
   normalizeFile,
 } from "./data/blob";
 
-import type { SubcanvasScenes } from "./subcanvas";
+import type { SubcanvasScenes } from "./features/subcanvas/model";
 
 import type { BinaryFiles } from "./types";
 

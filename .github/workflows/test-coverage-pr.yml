@@ -18,7 +18,7 @@ jobs:
       - name: "Install Deps"
         run: yarn install
       - name: "Test Electron Main Process"
-        run: node --test excalidraw-desktop/electron/*.test.cjs
+        run: node --test apps/desktop/src/main/*.test.cjs apps/desktop/src/main/i18n/*.test.cjs
       - name: "Test Coverage"
         run: yarn test:coverage
       - name: "Report Coverage"

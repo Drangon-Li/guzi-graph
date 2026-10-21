@@ -111,7 +111,7 @@ import type {
 import type { MarkOptional, Mutable } from "@excalidraw/common/utility-types";
 
 import { getDefaultAppState } from "../appState";
-import { restoreSubcanvasScenes } from "../subcanvas";
+import { restoreSubcanvasScenes } from "../features/subcanvas/model";
 
 import {
   getNormalizedGridSize,

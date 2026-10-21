@@ -9,7 +9,10 @@ import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import type { MaybePromise } from "@excalidraw/common/utility-types";
 
-import { collectSubcanvasScenes, collectSceneFiles } from "../subcanvas";
+import {
+  collectSubcanvasScenes,
+  collectSceneFiles,
+} from "../features/subcanvas/model";
 
 import { cleanAppStateForExport, clearAppStateForDatabase } from "../appState";
 

@@ -16,8 +16,8 @@ import type {
 
 import { trackEvent } from "../analytics";
 import { getLanguage } from "../i18n";
-import { getSubcanvasId } from "../subcanvas";
-import { convertStickyNoteToSubcanvas } from "../subcanvasActions";
+import { getSubcanvasId } from "../features/subcanvas/model";
+import { convertStickyNoteToSubcanvas } from "../features/subcanvas/operations";
 
 import type App from "./App";
 import type { AppState, ToolType } from "../types";
