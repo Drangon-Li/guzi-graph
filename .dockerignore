@@ -1,12 +1,12 @@
 *
-!.env.development
-!.env.production
-!.eslintrc.json
 !.npmrc
-!.prettierrc
 !apps/
+!config/
+!config/env/
+!config/env/.env.development
+!config/env/.env.production
+!config/env/.env.test
 !package.json
-!public/
 !packages/
 !scripts/
 !tsconfig.json
@@ -18,3 +18,5 @@
 **/dist
 **/node_modules
 **/release
+**/.env.local
+**/.env.*.local

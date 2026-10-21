@@ -3,6 +3,7 @@ import path from "path";
 import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
+  envDir: path.resolve(__dirname, "config/env"),
   resolve: {
     alias: [
       {
@@ -84,7 +85,7 @@ export default defineConfig({
     sequence: {
       hooks: "parallel",
     },
-    setupFiles: ["./setupTests.ts"],
+    setupFiles: ["./config/test/setupTests.ts"],
     globals: true,
     environment: "jsdom",
     // don't list skipped tests in the failure tree — keeps output readable

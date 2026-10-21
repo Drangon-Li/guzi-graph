@@ -2,10 +2,11 @@ node_modules/
 build/
 package-lock.json
 .vscode/
-firebase/
+/infrastructure/firebase/
 dist/
-public/workbox
+/apps/web/public/workbox
 packages/excalidraw/types
 examples/**/public
 dev-dist
 coverage
+/apps/desktop/release/
