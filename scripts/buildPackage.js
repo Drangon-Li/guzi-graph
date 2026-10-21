@@ -9,11 +9,11 @@ const { parseEnvVariables } = require("../packages/excalidraw/env.cjs");
 
 const ENV_VARS = {
   development: {
-    ...parseEnvVariables(`${__dirname}/../.env.development`),
+    ...parseEnvVariables(`${__dirname}/../config/env/.env.development`),
     DEV: true,
   },
   production: {
-    ...parseEnvVariables(`${__dirname}/../.env.production`),
+    ...parseEnvVariables(`${__dirname}/../config/env/.env.production`),
     PROD: true,
   },
 };

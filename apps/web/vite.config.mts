@@ -10,7 +10,8 @@ import Sitemap from "vite-plugin-sitemap";
 import { woff2BrowserPlugin } from "../../scripts/woff2/woff2-vite-plugins";
 export default defineConfig(({ mode }) => {
   const repositoryRoot = path.resolve(__dirname, "../..");
-  const envVars = loadEnv(mode, repositoryRoot);
+  const envDirectory = path.join(repositoryRoot, "config/env");
+  const envVars = loadEnv(mode, envDirectory);
   // https://vitejs.dev/config/
   return {
     server: {
@@ -18,7 +19,7 @@ export default defineConfig(({ mode }) => {
       // open the browser
       open: true,
     },
-    envDir: repositoryRoot,
+    envDir: envDirectory,
     resolve: {
       alias: [
         {
@@ -321,6 +322,6 @@ export default defineConfig(({ mode }) => {
         minify: true,
       }),
     ],
-    publicDir: path.join(repositoryRoot, "public"),
+    publicDir: path.resolve(__dirname, "public"),
   };
 });

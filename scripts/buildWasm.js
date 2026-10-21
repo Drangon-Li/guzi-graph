@@ -8,12 +8,12 @@ const wasmModules = [
   {
     pkg: `../node_modules/fonteditor-core`,
     src: `./wasm/woff2.wasm`,
-    dest: `../packages/excalidraw/fonts/wasm/woff2-wasm.ts`,
+    dest: `../packages/excalidraw/subset/woff2/woff2-wasm.ts`,
   },
   {
     pkg: `../node_modules/harfbuzzjs`,
     src: `./wasm/hb-subset.wasm`,
-    dest: `../packages/excalidraw/fonts/wasm/hb-subset-wasm.ts`,
+    dest: `../packages/excalidraw/subset/harfbuzz/harfbuzz-wasm.ts`,
   },
 ];
 
