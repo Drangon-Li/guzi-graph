@@ -1,5 +1,7 @@
 # 谷子白板宣传片
 
+![谷子白板：把论文，画成自己的知识；简单面板、便捷快捷键、免费开源](./images/guzi-promo-cover-v2.png)
+
 https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 
 [下载原版（1080p）](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Final-Full.mp4) · [中文字幕](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Promo-zh.srt)
@@ -18,11 +20,12 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 | 虚照合成音色 | Fish Audio · 口袋唐 · [虚照](https://fish.audio/zh-CN/m/c60e274f27d443d384deea308f0c39b7/) |
 | 对话动作基础 | CMU Graphics Lab Motion Capture Database · 18_08 / 19_08 · [动作库](https://mocap.cs.cmu.edu/) · [使用说明](https://mocap.cs.cmu.edu/faqs.php) |
 | 动画与合成 | Blender 骨骼重定向、手指与表情调整、口型和听者动作控制；Python / FFmpeg 剪辑合成 |
+| 宣传封面 | 参考本片双人角色、阅读室背景与实机画面，用 AI 图像生成制作的非官方同人封面 |
 | 背景、音乐与台词 | 本次制作生成的阅读室背景、自制合成音乐与音效、原创同人对话 |
 | 论文示例 | Vaswani et al., [Attention Is All You Need](https://arxiv.org/abs/1706.03762) |
 | 软件基础 | [Excalidraw](https://github.com/excalidraw/excalidraw) 及其贡献者 |
 
-本仓库仅发布成片、视频截帧和自制画布示例，不分发第三方模型原包、贴图、包含模型的动画工程或独立音色素材。软件的 MIT 许可不覆盖第三方素材；署名不等于授予这些素材的再分发或商业使用许可。复用相关素材时，请查阅原始作者和平台条款。
+本仓库仅发布成片、宣传封面、视频截帧和自制画布示例，不分发第三方模型原包、贴图、包含模型的动画工程或独立音色素材。软件的 MIT 许可不覆盖第三方素材；署名不等于授予这些素材的再分发或商业使用许可。复用相关素材时，请查阅原始作者和平台条款。
 
 ## 示例画布
 

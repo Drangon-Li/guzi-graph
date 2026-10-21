@@ -8,13 +8,15 @@
 
 ## 72 秒认识谷子白板
 
+![谷子白板：把论文，画成自己的知识；简单面板、便捷快捷键、免费开源](./docs/images/guzi-promo-cover-v2.png)
+
 看完 _Attention Is All You Need_，怎样把 Transformer 画成自己的知识？这段宣传片结合双人动画与 **macOS 实机操作**，演示画框与连线、逐字输入、快捷键、表格构建 Causal Mask，以及用子画布展开 Q、K、V 笔记。
 
 https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 
 [下载原版（1080p，约 72 秒）](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Final-Full.mp4) · [中文字幕](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Promo-zh.srt) · [可编辑 Transformer 示例](./examples/guzi/transformer-attention.excalidraw) · [视频制作与素材署名](./docs/promo-video.md)
 
-视频为非官方同人演示，使用社区合成配音；第三方角色、模型与声音素材不属于本仓库 MIT 许可的授权范围。
+视频与封面为非官方同人演示，视频使用社区合成配音；第三方角色、模型与声音素材不属于本仓库 MIT 许可的授权范围。
 
 ## 软件截图
 
