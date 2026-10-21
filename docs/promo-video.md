@@ -1,6 +1,8 @@
 # 谷子白板宣传片
 
-[观看／下载完整版](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Final-Full.mp4) · [中文字幕](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Promo-zh.srt)
+https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
+
+[下载原版（1080p）](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Final-Full.mp4) · [中文字幕](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Promo-zh.srt)
 
 约 72 秒，1920 × 1080，24 fps。围绕阅读 _Attention Is All You Need_ 后整理 Transformer 笔记的场景，展示谷子白板的简单面板、快捷键、可编辑表格、子画布和本地图片知识库。画布部分来自真实 macOS 桌面应用录制，保留逐字输入与实际操作；压缩了等待时间，未用生成式画面替代软件界面。
 

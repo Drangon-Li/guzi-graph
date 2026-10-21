@@ -10,9 +10,9 @@
 
 看完 _Attention Is All You Need_，怎样把 Transformer 画成自己的知识？这段宣传片结合双人动画与 **macOS 实机操作**，演示画框与连线、逐字输入、快捷键、表格构建 Causal Mask，以及用子画布展开 Q、K、V 笔记。
 
-[![点击观看谷子白板宣传片：看完论文，画一张自己的 Transformer](./docs/images/guzi-promo-cover.jpg)](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Final-Full.mp4)
+https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 
-[观看／下载完整版（1080p，约 72 秒）](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Final-Full.mp4) · [中文字幕](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Promo-zh.srt) · [可编辑 Transformer 示例](./examples/guzi/transformer-attention.excalidraw) · [视频制作与素材署名](./docs/promo-video.md)
+[下载原版（1080p，约 72 秒）](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Final-Full.mp4) · [中文字幕](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Promo-zh.srt) · [可编辑 Transformer 示例](./examples/guzi/transformer-attention.excalidraw) · [视频制作与素材署名](./docs/promo-video.md)
 
 视频为非官方同人演示，使用社区合成配音；第三方角色、模型与声音素材不属于本仓库 MIT 许可的授权范围。
 
