@@ -29,5 +29,5 @@ meta*.json
 .claude
 
 # Local desktop outputs
-excalidraw-desktop/release/
-excalidraw-desktop/resources/icon.iconset/
+apps/desktop/release/
+apps/desktop/resources/icon.iconset/

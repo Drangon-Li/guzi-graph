@@ -25,7 +25,7 @@ import { UIAppStateContext } from "../context/ui-appState";
 import { useAtom, useAtomValue } from "../editor-jotai";
 
 import { t } from "../i18n";
-import { getSelectedTableRoot } from "../table";
+import { getSelectedTableRoot } from "../features/table/helpers";
 import { getScrollToContentState, getSelectedElements } from "../scene";
 import {
   getColorTargetAppStateUpdates,

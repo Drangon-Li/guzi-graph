@@ -40,10 +40,10 @@ import type {
   NonDeleted,
 } from "@excalidraw/element/types";
 
-import { getTableDefaults } from "../table";
+import { getTableDefaults } from "../features/table/helpers";
 
-import { restoreSubcanvasScenes } from "../subcanvas";
-import { cloneSubcanvasScenes } from "../subcanvasActions";
+import { restoreSubcanvasScenes } from "../features/subcanvas/model";
+import { cloneSubcanvasScenes } from "../features/subcanvas/operations";
 import { restoreElements } from "../data/restore";
 
 import { actionCopy, actionCut } from "../actions";

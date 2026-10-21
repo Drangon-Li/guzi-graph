@@ -35,6 +35,6 @@
       "@excalidraw/utils/*": ["./packages/utils/src/*"]
     }
   },
-  "include": ["packages", "excalidraw-app"],
+  "include": ["packages", "apps/web"],
   "exclude": ["examples", "dist", "types", "tests"]
 }

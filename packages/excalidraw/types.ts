@@ -605,7 +605,7 @@ export interface AppState {
    * font picker popup). `null` means no customization (defaults are used) */
   fontTopPicks: readonly FontFamilyValues[] | null;
   fontRegistry: Record<string, string>;
-  subscenes: import("./subcanvas").SubcanvasScenes;
+  subscenes: import("./features/subcanvas/model").SubcanvasScenes;
 }
 
 export type SearchMatch = {

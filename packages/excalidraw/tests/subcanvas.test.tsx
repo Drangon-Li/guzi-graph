@@ -5,11 +5,14 @@ import { Excalidraw } from "../index";
 import { restoreElements, restoreAppState } from "../data/restore";
 import { serializeAsJSON } from "../data/json";
 import { getDefaultAppState } from "../appState";
-import { collectSubcanvasScenes, getSubcanvasId } from "../subcanvas";
+import {
+  collectSubcanvasScenes,
+  getSubcanvasId,
+} from "../features/subcanvas/model";
 import {
   cloneSubcanvasScenes,
   convertStickyNoteToSubcanvas,
-} from "../subcanvasActions";
+} from "../features/subcanvas/operations";
 import { exportToSvg } from "../scene/export";
 
 import { API } from "./helpers/api";

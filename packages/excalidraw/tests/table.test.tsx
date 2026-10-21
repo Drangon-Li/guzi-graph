@@ -241,7 +241,7 @@ it("clones a copied nested subcanvas tree for each paste", async () => {
     ...API.createElement({ type: "stickynote" }),
     customData: { subcanvas: { sceneId: "source-grandchild" } },
   };
-  const scenes: import("../subcanvas").SubcanvasScenes = {
+  const scenes: import("../features/subcanvas/model").SubcanvasScenes = {
     "source-child": {
       version: 1,
       title: "Child",

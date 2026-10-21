@@ -8,7 +8,7 @@ import type { PointerType } from "@excalidraw/element/types";
 import { trackEvent } from "../analytics";
 import { t } from "../i18n";
 import { getShortcutKey } from "../shortcut";
-import { setStickyNoteCreationMode } from "../subcanvasActions";
+import { setStickyNoteCreationMode } from "../features/subcanvas/operations";
 
 import { IconButton } from "./IconButton";
 import { ToolPopover } from "./ToolPopover";

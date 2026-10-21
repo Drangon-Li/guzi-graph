@@ -4,7 +4,10 @@ import {
   createTableElements,
 } from "@excalidraw/element/table";
 
-import { getSelectedTableRoot, getTableDefaults } from "../table";
+import {
+  getSelectedTableRoot,
+  getTableDefaults,
+} from "../features/table/helpers";
 
 import { register } from "./register";
 

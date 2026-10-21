@@ -9,7 +9,7 @@ import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 import { useAppStateValue } from "../hooks/useAppStateValue";
 import { getSelectedElements, getTargetElements } from "../scene";
 import { t } from "../i18n";
-import { getSelectedTableRoot } from "../table";
+import { getSelectedTableRoot } from "../features/table/helpers";
 import { actionTableProperties } from "../actions/actionTable";
 
 import { IconButton } from "./IconButton";

@@ -35,7 +35,7 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 
 ## 安装
 
-v0.3.0 面向 **macOS Apple Silicon（arm64）**，安装包名为 `Excalidraw-Guzi-0.3.0-arm64.dmg`。暂未提供 Intel Mac、Windows 或 Linux 安装包。
+v0.4.0 面向 **macOS Apple Silicon（arm64）**，安装包名为 `Excalidraw-Guzi-0.4.0-arm64.dmg`。暂未提供 Intel Mac、Windows 或 Linux 安装包。
 
 1. 在 [Releases](https://github.com/Drangon-Li/guzi-graph/releases) 下载对应版本的 DMG。
 2. 打开 DMG，将 **Excalidraw-Guzi.app** 拖入「应用程序」。
@@ -55,6 +55,7 @@ v0.3.0 面向 **macOS Apple Silicon（arm64）**，安装包名为 `Excalidraw-G
 - [项目规划](./examples/guzi/project-planning.excalidraw)：流程图、任务表格与分层整理。
 - [Transformer 与 Attention](./examples/guzi/transformer-attention.excalidraw)：Encoder / Decoder 架构、参数表与 QKV 子画布，来自宣传片的实机演示。
 - [Encoder / Decoder 入门](./examples/guzi/encoder-decoder.excalidraw)：宣传片中通过复制、连线与改色创建的简洁示例。
+- [Transformer Architecture](./examples/guzi/transformer-architecture.excalidraw)：随桌面应用内置，可从项目页的「示例库」打开，包含架构图和子画布笔记。打开后编辑的是未保存副本，保存时选择自己的文件位置。
 
 编辑会自动写入本地恢复草稿，可从草稿恢复入口找回未保存内容。**自动草稿不等于原文件已保存**，需要长期保留的内容仍应显式保存。
 
@@ -87,7 +88,7 @@ PDF 导出先将画布转为 SVG，再通过 Electron 的打印接口生成 PDF�
 
 ## 开发与构建
 
-仓库保留 Excalidraw monorepo 结构；桌面应用位于 [`excalidraw-desktop/`](./excalidraw-desktop)，画布核心位于 [`packages/`](./packages)。
+仓库采用 monorepo 结构；桌面应用位于 [`apps/desktop/`](./apps/desktop)，网页应用位于 [`apps/web/`](./apps/web)，画布核心位于 [`packages/`](./packages)。桌面代码按主进程、preload、共享契约和 renderer 分层；renderer 按工作区、编辑器、项目、设置、导出和示例归类。
 
 需要 Node.js **22.12.0 或更高版本**和 Yarn **1.22.22**。生成 DMG 需要 macOS；首次安装依赖与打包可能需要下载 Electron 和构建工具。
 
@@ -108,17 +109,17 @@ yarn desktop:build
 yarn desktop:package
 ```
 
-桌面构建输出位于 `excalidraw-desktop/dist/`，打包产物位于 `excalidraw-desktop/release/`。只生成 `.app` 目录可运行：
+桌面构建输出位于 `apps/desktop/dist/`，打包产物位于 `apps/desktop/release/`。只生成 `.app` 目录可运行：
 
 ```bash
-npm --prefix excalidraw-desktop run package:dir
+npm --prefix apps/desktop run package:dir
 ```
 
 修改画布核心后，按受影响范围运行相关测试，例如：
 
 ```bash
 yarn test:app run packages/excalidraw/tests/table.test.tsx packages/excalidraw/tests/subcanvas.test.tsx
-yarn test:app run packages/excalidraw/wysiwyg/richTextWysiwyg.test.tsx
+yarn test:app run packages/excalidraw/features/rich-text/editor.test.tsx
 ```
 
 本地构建沿用 ad-hoc 签名配置，不会自动完成 Developer ID 签名或 Apple 公证。

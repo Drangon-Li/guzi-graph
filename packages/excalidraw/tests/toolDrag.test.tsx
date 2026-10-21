@@ -9,7 +9,7 @@ import {
 import type { ExcalidrawStickyNoteElement } from "@excalidraw/element/types";
 
 import { Excalidraw } from "../index";
-import { getSubcanvasId } from "../subcanvas";
+import { getSubcanvasId } from "../features/subcanvas/model";
 
 import { API } from "./helpers/api";
 import { Keyboard, UI } from "./helpers/ui";

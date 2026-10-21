@@ -14,7 +14,7 @@ import { exportToCanvas } from "@excalidraw/utils";
 
 import type { ExcalidrawTextElement } from "@excalidraw/element/types";
 
-import { handleDesktopEditingCommand } from "../../../excalidraw-desktop/src/desktopEditing";
+import { handleDesktopEditingCommand } from "../../../apps/desktop/src/renderer/features/editor/desktopEditing";
 
 import { Excalidraw } from "../index";
 import { API } from "../tests/helpers/api";
@@ -29,9 +29,9 @@ import * as dataModule from "../data";
 import {
   executeRichTextCommand,
   getRichTextSelectionState,
-} from "./richTextEditorBridge";
+} from "../features/rich-text/editorBridge";
 
-import type {} from "../../../excalidraw-desktop/src/shared";
+import type {} from "../../../apps/desktop/src/shared/desktop-api";
 
 const { h } = window;
 const getRichEditor = () =>

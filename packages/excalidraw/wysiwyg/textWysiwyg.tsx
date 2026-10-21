@@ -81,8 +81,8 @@ import {
 import {
   executeRichTextCommand,
   registerRichTextEditor,
-} from "./richTextEditorBridge";
-import { richTextWysiwyg } from "./richTextWysiwyg";
+} from "../features/rich-text/editorBridge";
+import { richTextWysiwyg } from "../features/rich-text/editor";
 
 import type { ParsedDataTranferList } from "../clipboard";
 

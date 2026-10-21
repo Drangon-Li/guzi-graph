@@ -4,7 +4,7 @@
 !.eslintrc.json
 !.npmrc
 !.prettierrc
-!excalidraw-app/
+!apps/
 !package.json
 !public/
 !packages/
@@ -17,3 +17,4 @@
 **/build
 **/dist
 **/node_modules
+**/release

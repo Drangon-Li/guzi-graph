@@ -23,14 +23,18 @@ import { useTextEditorFocus } from "../hooks/useTextEditorFocus";
 
 import { actionToggleViewMode } from "../actions/actionToggleViewMode";
 
-import "./Actions.scss";
-
-import { TableActions, getSelectedTableRoot } from "./TableActions";
-import { SubcanvasActions } from "./SubcanvasActions";
+import {
+  TableActions,
+  getSelectedTableRoot,
+} from "../features/table/TableActions";
+import { SubcanvasActions } from "../features/subcanvas/SubcanvasActions";
 import {
   RichTextControls,
   RichTextHighlightControls,
-} from "./RichTextControls";
+} from "../features/rich-text/RichTextControls";
+
+import "./Actions.scss";
+
 import { ImageBorderActions } from "./ImageBorderActions";
 import { useExcalidrawContainer } from "./App";
 import Stack from "./Stack";

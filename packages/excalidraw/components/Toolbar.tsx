@@ -6,8 +6,9 @@ import { KEYS } from "@excalidraw/common";
 import { useTunnels } from "../context/tunnels";
 import { t } from "../i18n";
 
+import { TableInsertButton } from "../features/table/TableInsertButton";
+
 import { useEditorInterface, useStylesPanelMode } from "./App";
-import { TableInsertButton } from "./TableInsertButton";
 import { HintViewer } from "./HintViewer";
 import { hideTooltip, showTooltip } from "./Tooltip";
 import { Island } from "./Island";

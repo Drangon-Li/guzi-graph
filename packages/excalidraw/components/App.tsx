@@ -250,8 +250,8 @@ import type { TransformHandleDirection } from "@excalidraw/element";
 
 import type { Mutable, ValueOf } from "@excalidraw/common/utility-types";
 
-import { getSubcanvasId } from "../subcanvas";
-import { convertStickyNoteToSubcanvas } from "../subcanvasActions";
+import { getSubcanvasId } from "../features/subcanvas/model";
+import { convertStickyNoteToSubcanvas } from "../features/subcanvas/operations";
 
 import {
   actionAddToLibrary,
@@ -384,6 +384,8 @@ import {
 
 import { useAppStateValue } from "../hooks/useAppStateValue";
 
+import { TablePropertiesDialog } from "../features/table/TableActions";
+
 import ConvertElementTypePopup, {
   getConversionTypeFromElements,
   convertElementTypePopupAtom,
@@ -422,7 +424,6 @@ import { CanvasLayout } from "./CanvasLayout";
 import { getEditorStylesPanelMode } from "./stylesPanelMode";
 import { ElementCanvasButton } from "./MagicButton";
 import { SVGLayer } from "./SVGLayer";
-import { TablePropertiesDialog } from "./TableActions";
 import Spinner from "./Spinner";
 import { searchItemInFocusAtom } from "./SearchMenu";
 import { isSidebarDockedAtom } from "./Sidebar/Sidebar";
@@ -1112,7 +1113,7 @@ class App extends React.Component<AppProps, AppState> {
     return props.ui !== false;
   }
 
-  get editorStore() {
+  get editorStore(): AppProps["editorStore"] {
     return this.props.editorStore;
   }
 
