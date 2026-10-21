@@ -6,13 +6,13 @@ import "@testing-library/jest-dom";
 import { configure } from "@testing-library/react";
 import { vi } from "vitest";
 
-import polyfill from "../../packages/excalidraw/polyfill";
-import { mockThrottleRAF } from "../../packages/excalidraw/tests/helpers/mocks";
-import { yellow } from "../../packages/excalidraw/tests/helpers/colorize";
+import polyfill from "../../../packages/excalidraw/polyfill";
+import { mockThrottleRAF } from "../../../packages/excalidraw/tests/helpers/mocks";
+import { yellow } from "../../../packages/excalidraw/tests/helpers/colorize";
 import {
   PolyfillLocalStorage,
   testPolyfills,
-} from "../../packages/excalidraw/tests/helpers/polyfills";
+} from "../../../packages/excalidraw/tests/helpers/polyfills";
 
 Object.assign(globalThis, testPolyfills);
 PolyfillLocalStorage();
@@ -20,7 +20,7 @@ PolyfillLocalStorage();
 // By default testing-library dumps the entire serialized DOM into the error
 // message whenever a `waitFor`/`getBy*` fails, which floods the test output
 // (often hundreds of lines of HTML per failure). Strip it out unless
-// VITE_DEBUG_DOM is enabled (see config/env/.env.test), e.g. `VITE_DEBUG_DOM=true yarn test`.
+// VITE_DEBUG_DOM is enabled (see tooling/config/env/.env.test), e.g. `VITE_DEBUG_DOM=true yarn test`.
 const debugDom = ["true", "1"].includes(process.env.VITE_DEBUG_DOM ?? "");
 if (!debugDom) {
   configure({
@@ -95,15 +95,15 @@ Object.defineProperty(document, "fonts", {
 });
 
 Object.defineProperty(window, "EXCALIDRAW_ASSET_PATH", {
-  value: `file://${path.resolve(__dirname, "../..")}/`,
+  value: `file://${path.resolve(__dirname, "../../..")}/`,
 });
 
 // mock the font fetch only, so that everything else, as font subsetting, can run inside of the (snapshot) tests
 vi.mock(
-  "../../packages/excalidraw/fonts/ExcalidrawFontFace",
+  "../../../packages/excalidraw/fonts/ExcalidrawFontFace",
   async (importOriginal) => {
     const mod = await importOriginal<
-      typeof import("../../packages/excalidraw/fonts/ExcalidrawFontFace")
+      typeof import("../../../packages/excalidraw/fonts/ExcalidrawFontFace")
     >();
     const ExcalidrawFontFaceImpl = mod.ExcalidrawFontFace;
 

@@ -1,19 +1,21 @@
 *
 !.npmrc
 !apps/
-!config/
-!config/env/
-!config/env/.env.development
-!config/env/.env.production
-!config/env/.env.test
+!tooling/
+!tooling/config/
+!tooling/config/env/
+!tooling/config/env/.env.development
+!tooling/config/env/.env.production
+!tooling/config/env/.env.test
 !package.json
 !packages/
-!scripts/
+!tooling/scripts/
 !tsconfig.json
 !yarn.lock
 
 # keep (sub)sub directories at the end to exclude from explicit included
 # e.g. ./packages/excalidraw/{dist,node_modules}
+apps/web/deploy/
 **/build
 **/dist
 **/node_modules

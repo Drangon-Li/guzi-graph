@@ -92,7 +92,7 @@ PDF 导出先将画布转为 SVG，再通过 Electron 的打印接口生成 PDF�
 
 仓库采用 monorepo 结构；桌面应用位于 [`apps/desktop/`](./apps/desktop)，网页应用位于 [`apps/web/`](./apps/web)，画布核心位于 [`packages/`](./packages)。桌面代码按主进程、preload、共享契约和 renderer 分层；renderer 按工作区、编辑器、项目、设置、导出和示例归类。
 
-共享环境变量和测试初始化位于 [`config/`](./config)，Web 静态资源位于 `apps/web/public/`，Docker 与 Firebase 部署配置位于 [`infrastructure/`](./infrastructure)。开发文档集中在 [`docs/development/`](./docs/development)，用户画布示例与 SDK 集成示例保留在 [`examples/`](./examples)。本地环境覆盖文件放在 `config/env/.env.local` 或对应模式的 `.env.*.local` 中。
+共享环境变量、测试配置和构建脚本位于 [`tooling/`](./tooling)，Web 静态资源位于 `apps/web/public/`，Docker 与 Firebase 部署配置位于 [`apps/web/deploy/`](./apps/web/deploy)。开发文档集中在 [`docs/development/`](./docs/development)，用户画布示例与 SDK 集成示例保留在 [`examples/`](./examples)。本地环境覆盖文件放在 `tooling/config/env/.env.local` 或对应模式的 `.env.*.local` 中。
 
 需要 Node.js **22.12.0 或更高版本**和 Yarn **1.22.22**。生成 DMG 需要 macOS；首次安装依赖与打包可能需要下载 Electron 和构建工具。
 

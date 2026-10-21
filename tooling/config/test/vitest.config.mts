@@ -2,74 +2,95 @@ import path from "path";
 
 import { configDefaults, defineConfig } from "vitest/config";
 
+const repositoryRoot = path.resolve(__dirname, "../../..");
+
 export default defineConfig({
-  envDir: path.resolve(__dirname, "config/env"),
+  root: repositoryRoot,
+  envDir: path.resolve(__dirname, "../env"),
   resolve: {
     alias: [
       {
         find: /^@excalidraw\/common$/,
-        replacement: path.resolve(__dirname, "./packages/common/src/index.ts"),
+        replacement: path.resolve(
+          repositoryRoot,
+          "./packages/common/src/index.ts",
+        ),
       },
       {
         find: /^@excalidraw\/common\/(.*?)/,
-        replacement: path.resolve(__dirname, "./packages/common/src/$1"),
+        replacement: path.resolve(repositoryRoot, "./packages/common/src/$1"),
       },
       {
         find: /^@excalidraw\/element$/,
-        replacement: path.resolve(__dirname, "./packages/element/src/index.ts"),
+        replacement: path.resolve(
+          repositoryRoot,
+          "./packages/element/src/index.ts",
+        ),
       },
       {
         find: /^@excalidraw\/element\/(.*?)/,
-        replacement: path.resolve(__dirname, "./packages/element/src/$1"),
+        replacement: path.resolve(repositoryRoot, "./packages/element/src/$1"),
       },
       {
         find: /^@excalidraw\/excalidraw$/,
-        replacement: path.resolve(__dirname, "./packages/excalidraw/index.tsx"),
+        replacement: path.resolve(
+          repositoryRoot,
+          "./packages/excalidraw/index.tsx",
+        ),
       },
       {
         find: /^@excalidraw\/excalidraw\/(.*?)/,
-        replacement: path.resolve(__dirname, "./packages/excalidraw/$1"),
+        replacement: path.resolve(repositoryRoot, "./packages/excalidraw/$1"),
       },
       {
         find: /^@excalidraw\/math$/,
-        replacement: path.resolve(__dirname, "./packages/math/src/index.ts"),
+        replacement: path.resolve(
+          repositoryRoot,
+          "./packages/math/src/index.ts",
+        ),
       },
       {
         find: /^@excalidraw\/math\/(.*?)/,
-        replacement: path.resolve(__dirname, "./packages/math/src/$1"),
+        replacement: path.resolve(repositoryRoot, "./packages/math/src/$1"),
       },
       {
         find: /^@excalidraw\/utils$/,
-        replacement: path.resolve(__dirname, "./packages/utils/src/index.ts"),
+        replacement: path.resolve(
+          repositoryRoot,
+          "./packages/utils/src/index.ts",
+        ),
       },
       {
         find: /^@excalidraw\/utils\/(.*?)/,
-        replacement: path.resolve(__dirname, "./packages/utils/src/$1"),
+        replacement: path.resolve(repositoryRoot, "./packages/utils/src/$1"),
       },
       {
         find: /^@excalidraw\/fractional-indexing$/,
         replacement: path.resolve(
-          __dirname,
+          repositoryRoot,
           "./packages/fractional-indexing/src/index.ts",
         ),
       },
       {
         find: /^@excalidraw\/fractional-indexing\/(.*?)/,
         replacement: path.resolve(
-          __dirname,
+          repositoryRoot,
           "./packages/fractional-indexing/src/$1",
         ),
       },
       {
         find: /^@excalidraw\/laser-pointer$/,
         replacement: path.resolve(
-          __dirname,
+          repositoryRoot,
           "./packages/laser-pointer/src/index.ts",
         ),
       },
       {
         find: /^@excalidraw\/laser-pointer\/(.*?)/,
-        replacement: path.resolve(__dirname, "./packages/laser-pointer/src/$1"),
+        replacement: path.resolve(
+          repositoryRoot,
+          "./packages/laser-pointer/src/$1",
+        ),
       },
     ],
   },
@@ -85,7 +106,7 @@ export default defineConfig({
     sequence: {
       hooks: "parallel",
     },
-    setupFiles: ["./config/test/setupTests.ts"],
+    setupFiles: [path.resolve(__dirname, "setupTests.ts")],
     globals: true,
     environment: "jsdom",
     // don't list skipped tests in the failure tree — keeps output readable

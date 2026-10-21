@@ -64,20 +64,20 @@
     "start:production": "yarn --cwd ./apps/web start:production",
     "start:example": "yarn build:packages && yarn --cwd ./examples/with-script-in-browser start",
     "test:all": "yarn test:typecheck && yarn test:code && yarn test:other && yarn test:app --watch=false",
-    "test:app": "vitest",
+    "test:app": "vitest --config tooling/config/test/vitest.config.mts",
     "test:code": "eslint --max-warnings=0 --ext .js,.ts,.tsx .",
     "test:other": "yarn prettier --list-different",
     "test:typecheck": "tsc",
     "test:update": "yarn test:app --update --watch=false",
     "test": "yarn test:app",
-    "test:coverage": "vitest --coverage",
-    "test:coverage:watch": "vitest --coverage --watch",
+    "test:coverage": "vitest --config tooling/config/test/vitest.config.mts --coverage",
+    "test:coverage:watch": "vitest --config tooling/config/test/vitest.config.mts --coverage --watch",
     "test:ui": "yarn test --ui --coverage.enabled=true",
     "fix:code": "yarn test:code --fix",
     "fix:other": "yarn prettier --write",
     "fix": "yarn fix:other && yarn fix:code",
-    "locales-coverage": "node scripts/build-locales-coverage.js",
-    "prettier": "prettier \"**/*.{css,scss,json,md,html,yml}\" --ignore-path=.eslintignore",
+    "locales-coverage": "node tooling/scripts/build-locales-coverage.js",
+    "prettier": "prettier \"**/*.{css,scss,json,md,html,yml}\" --ignore-path=tooling/config/.prettierignore",
     "rm:build": "rimraf --glob apps/web/build apps/web/dist apps/web/dev-dist packages/*/dist packages/*/build examples/*/build examples/*/dist",
     "rm:node_modules": "rimraf --glob node_modules apps/web/node_modules packages/*/node_modules",
     "clean-install": "yarn rm:node_modules && yarn install",
@@ -182,6 +182,20 @@
           ]
         }
       }
+    ],
+    "ignorePatterns": [
+      "node_modules/",
+      "build/",
+      "package-lock.json",
+      ".vscode/",
+      "/apps/web/deploy/firebase/",
+      "dist/",
+      "/apps/web/public/workbox",
+      "packages/excalidraw/types",
+      "examples/**/public",
+      "dev-dist",
+      "coverage",
+      "/apps/desktop/release/"
     ]
   }
 }

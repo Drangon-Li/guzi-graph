@@ -14,7 +14,7 @@
     "test": "node --test src/main/*.test.cjs src/main/i18n/*.test.cjs && npm run test:renderer",
     "package": "npm run build && electron-builder --mac dmg --arm64",
     "package:dir": "npm run build && electron-builder --mac dir --arm64",
-    "test:renderer": "cd ../.. && vitest run apps/desktop/src/renderer --reporter=dot"
+    "test:renderer": "cd ../.. && vitest --config tooling/config/test/vitest.config.mts run apps/desktop/src/renderer --reporter=dot"
   },
   "dependencies": {
     "react": "19.0.0",
