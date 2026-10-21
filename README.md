@@ -1,10 +1,20 @@
 # Excalidraw-Guzi
 
-**Excalidraw-Guzi** 是从开源 [Excalidraw](https://github.com/excalidraw/excalidraw) 修改而来的本地白板软件，面向 **macOS 桌面端**。保留手绘画布与 `.excalidraw` 文件格式，加入本地工作区、表格、富文本、子画布和自定义样式预设，方便整理项目规划、研究笔记与流程图。
+**Excalidraw-Guzi（谷子白板）** 是基于 [Excalidraw](https://github.com/excalidraw/excalidraw) 二次开发的**免费开源 macOS 桌面白板**。用简洁的面板和顺手的快捷键，把想法、论文笔记和流程图整理成自己的图片知识库。保留手绘画布与 `.excalidraw` 文件格式，并加入本地工作区、可编辑表格、富文本、子画布和自定义样式预设。
 
 本项目使用 [MIT 开源许可](./LICENSE)。感谢 Excalidraw 团队与所有贡献者提供优秀的画布基础。
 
 [下载与版本记录](https://github.com/Drangon-Li/guzi-graph/releases) · [反馈问题](https://github.com/Drangon-Li/guzi-graph/issues) · [上游仓库](https://github.com/excalidraw/excalidraw)
+
+## 72 秒认识谷子白板
+
+看完 _Attention Is All You Need_，怎样把 Transformer 画成自己的知识？这段宣传片结合双人动画与 **macOS 实机操作**，演示画框与连线、逐字输入、快捷键、表格构建 Causal Mask，以及用子画布展开 Q、K、V 笔记。
+
+[![点击观看谷子白板宣传片：看完论文，画一张自己的 Transformer](./docs/images/guzi-promo-cover.jpg)](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Final-Full.mp4)
+
+[观看／下载完整版（1080p，约 72 秒）](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Final-Full.mp4) · [中文字幕](https://github.com/Drangon-Li/guzi-graph/releases/download/v0.3.0/Guzi-Promo-zh.srt) · [可编辑 Transformer 示例](./examples/guzi/transformer-attention.excalidraw) · [视频制作与素材署名](./docs/promo-video.md)
+
+视频为非官方同人演示，使用社区合成配音；第三方角色、模型与声音素材不属于本仓库 MIT 许可的授权范围。
 
 ## 软件截图
 
@@ -40,7 +50,11 @@ v0.3.0 面向 **macOS Apple Silicon（arm64）**，安装包名为 `Excalidraw-G
 3. 使用 `⌘S` 保存，或使用 `⌘⇧S` 另存为 `.excalidraw` 文件。
 4. 从画布主菜单导出图片、PDF 或结构化信息，返回项目页管理文件。
 
-[下载并编辑「项目规划」示例](./examples/guzi/project-planning.excalidraw)：保存此文件后，用 Excalidraw-Guzi 打开，体验流程图、任务表格与分层整理的画布用法。
+保存下面的 `.excalidraw` 文件，用 Excalidraw-Guzi 打开即可继续编辑：
+
+- [项目规划](./examples/guzi/project-planning.excalidraw)：流程图、任务表格与分层整理。
+- [Transformer 与 Attention](./examples/guzi/transformer-attention.excalidraw)：Encoder / Decoder 架构、参数表与 QKV 子画布，来自宣传片的实机演示。
+- [Encoder / Decoder 入门](./examples/guzi/encoder-decoder.excalidraw)：宣传片中通过复制、连线与改色创建的简洁示例。
 
 编辑会自动写入本地恢复草稿，可从草稿恢复入口找回未保存内容。**自动草稿不等于原文件已保存**，需要长期保留的内容仍应显式保存。
 
