@@ -43,7 +43,9 @@ describe("font subsetting runtime selection", () => {
     const before = font.slice();
     const result = await subsetWoff2GlyphsByCodepoints(font.buffer, [0x4e2d]);
     expect(result).toBe(dataUrl(before.buffer));
-    expect(font).toEqual(before);
+    expect(
+      NodeBuffer.from(font.buffer).equals(NodeBuffer.from(before.buffer)),
+    ).toBe(true);
     expect(font.buffer.byteLength).toBe(before.byteLength);
     expect(mocks.createPool).not.toHaveBeenCalled();
     expect(mocks.loadWoff2).not.toHaveBeenCalled();
@@ -110,9 +112,11 @@ describe("complete font base64 encoding", () => {
       vi.stubGlobal("Buffer", undefined);
       const result = await toBase64(font.buffer);
       expect(result).toBe(expected);
-      expect(NodeBuffer.from(result.split(",")[1], "base64")).toEqual(
-        NodeBuffer.from(font.buffer),
-      );
+      expect(
+        NodeBuffer.from(result.split(",")[1], "base64").equals(
+          NodeBuffer.from(font.buffer),
+        ),
+      ).toBe(true);
     },
   );
 });
