@@ -30,6 +30,8 @@ const savedChildState = (state: AppState): SubcanvasScene["appState"] => ({
   scrollY: state.scrollY,
   zoom: state.zoom,
   gridModeEnabled: state.gridModeEnabled,
+  gridSize: state.gridSize,
+  objectsSnapModeEnabled: state.objectsSnapModeEnabled,
   fontRegistry: state.fontRegistry,
 });
 
@@ -202,6 +204,9 @@ export const SubcanvasEditor = ({
       flushSync(() => root.current?.commitEditing());
     };
     document.getSnapshot = snapshot;
+    document.invalidateSubsceneHistory = (ids) => {
+      ids.forEach((id) => checkpoints.current.delete(id));
+    };
     document.activeEditor = () =>
       currentId.current
         ? childReady.current
@@ -211,6 +216,7 @@ export const SubcanvasEditor = ({
     return () => {
       delete document.flushEditing;
       delete document.getSnapshot;
+      delete document.invalidateSubsceneHistory;
       delete document.activeEditor;
     };
   });

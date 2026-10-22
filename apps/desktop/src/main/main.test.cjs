@@ -529,6 +529,137 @@ test("save dialog rejects occupied document before writing disk", async (t) => {
   assert.equal(await fs.readFile(target, "utf8"), "another tab");
 });
 
+test("automation save requires root for new canvas and creates unique files without dialogs", async (t) => {
+  const { base, calls, invoke } = await harness(t);
+  const request = {
+    documentId: require("node:crypto").randomUUID(),
+    path: null,
+    name: "canvas",
+    content: "automated",
+    automation: true,
+  };
+  await assert.rejects(invoke("save-file", request), { code: "ROOT_REQUIRED" });
+  const root = path.join(base, "workspace");
+  await fs.mkdir(root);
+  await fs.writeFile(path.join(root, "canvas.excalidraw"), "preserved");
+  calls.openResult = { canceled: false, filePaths: [root] };
+  await invoke("choose-directory");
+  const first = await invoke("save-file", request);
+  const second = await invoke("save-file", request);
+  assert.equal(path.dirname(first.path), root);
+  assert.notEqual(first.path, second.path);
+  assert.equal(first.content, "automated");
+  assert.equal(
+    await fs.readFile(path.join(root, "canvas.excalidraw"), "utf8"),
+    "preserved",
+  );
+  assert.equal(calls.saveDialog, undefined);
+  await assert.rejects(
+    invoke("save-file", { ...request, saveAs: true }),
+    /自动化/,
+  );
+  const deck = await invoke("save-file", {
+    ...request,
+    format: "presentation",
+  });
+  assert.equal(path.dirname(deck.path), root);
+  assert.equal(path.extname(deck.path), ".guzi-presentation");
+  assert.equal(deck.content, "automated");
+  assert.equal(calls.saveDialog, undefined);
+});
+
+test("presentation automation retains path authorization and refuses external overwrites", async (t) => {
+  const { base, calls, invoke } = await harness(t);
+  const candidate = path.join(base, "outside.guzi-presentation");
+  await fs.writeFile(candidate, "original deck");
+  const request = {
+    documentId: require("node:crypto").randomUUID(),
+    path: candidate,
+    name: "deck",
+    format: "presentation",
+    content: "automated deck",
+    automation: true,
+  };
+  await assert.rejects(invoke("save-file", request), {
+    code: "NOT_AUTHORIZED",
+  });
+  calls.openResult = { canceled: false, filePaths: [candidate] };
+  const [opened] = await invoke("open-files");
+  const saved = await invoke("save-file", {
+    ...request,
+    expectedModifiedAt: opened.modifiedAt,
+  });
+  assert.equal(saved.content, request.content);
+  await fs.writeFile(candidate, "external changed deck");
+  const changed = await fs.stat(candidate);
+  await fs.utimes(candidate, new Date(), new Date(changed.mtimeMs + 1000));
+  await assert.rejects(
+    invoke("save-file", { ...request, expectedModifiedAt: saved.modifiedAt }),
+    { code: "EXTERNAL_MODIFICATION" },
+  );
+  assert.equal(await fs.readFile(candidate, "utf8"), "external changed deck");
+  assert.equal(calls.saveDialog, undefined);
+});
+
+test("automation preserves authorization and external modification checks without overwrite prompt", async (t) => {
+  const { base, calls, invoke } = await harness(t);
+  const candidate = path.join(base, "outside.excalidraw");
+  await fs.writeFile(candidate, "original");
+  const request = {
+    documentId: require("node:crypto").randomUUID(),
+    path: candidate,
+    name: "canvas",
+    content: "automated",
+    automation: true,
+  };
+  await assert.rejects(invoke("save-file", request), {
+    code: "NOT_AUTHORIZED",
+  });
+  calls.openResult = { canceled: false, filePaths: [candidate] };
+  const [opened] = await invoke("open-files");
+  const saved = await invoke("save-file", {
+    ...request,
+    expectedModifiedAt: opened.modifiedAt,
+  });
+  assert.equal(saved.content, "automated");
+  await fs.writeFile(candidate, "external changes with different size");
+  const changed = await fs.stat(candidate);
+  await fs.utimes(candidate, new Date(), new Date(changed.mtimeMs + 1000));
+  calls.conflictChoice = 1;
+  await assert.rejects(
+    invoke("save-file", { ...request, expectedModifiedAt: saved.modifiedAt }),
+    { code: "EXTERNAL_MODIFICATION" },
+  );
+  assert.equal(
+    await fs.readFile(candidate, "utf8"),
+    "external changes with different size",
+  );
+  assert.equal(calls.saveDialog, undefined);
+});
+
+test("plugin settings IPC validates sender and unknown plugins", async (t) => {
+  const { invoke, handlers, event } = await harness(t);
+  const [plugin] = await invoke("get-plugins");
+  assert.equal(plugin.id, "mcp");
+  assert.equal(plugin.enabled, false);
+  await assert.rejects(
+    invoke("set-plugin-enabled", "not-installed", true),
+    /未知插件/,
+  );
+  await assert.rejects(invoke("configure-plugin", "mcp", { port: 80 }), /端口/);
+  for (const name of [
+    "get-plugins",
+    "set-plugin-enabled",
+    "configure-plugin",
+    "set-plugin-host-ready",
+  ]) {
+    await assert.rejects(
+      handlers.get(`desktop:${name}`)({ ...event, sender: {} }),
+      /拒绝/,
+    );
+  }
+});
+
 test("presentation Save As uses its native extension and rejects drawing destinations", async (t) => {
   const { base, calls, invoke } = await harness(t);
   const drawing = path.join(base, "existing.excalidraw");
@@ -767,6 +898,7 @@ test("new IPC endpoints reject foreign senders before text, removal or PDF side 
     "remove-file",
     "edit-text",
     "save-pdf",
+    "export-pdf",
     "save-export",
   ])
     await assert.rejects(
@@ -902,6 +1034,26 @@ test("PDF IPC validates before dialog, cancellation skips rendering and success 
   assert.equal(await invoke("save-pdf", request), true);
   assert.equal(calls.printWindows.length, 1);
   assert.equal(await fs.readFile(target, "utf8"), "%PDF-fixture");
+});
+
+test("PDF byte export validates and renders without a save dialog or file destination", async (t) => {
+  const { base, calls, invoke } = await harness(t);
+  const request = {
+    name: "presentation",
+    svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+    width: 960,
+    height: 540,
+    pages: [{ svg: "<svg></svg>", width: 960, height: 540 }],
+  };
+  await assert.rejects(invoke("export-pdf", { ...request, height: 0 }), /无效/);
+  assert.equal(calls.printWindows.length, 0);
+  const before = await fs.readdir(base);
+  const data = await invoke("export-pdf", request);
+  assert.equal(Object.prototype.toString.call(data), "[object ArrayBuffer]");
+  assert.equal(Buffer.from(data).toString("utf8"), "%PDF-fixture");
+  assert.equal(calls.saveDialog, undefined);
+  assert.equal(calls.printWindows.length, 1);
+  assert.deepEqual(await fs.readdir(base), before);
 });
 
 test("JSON structured export writes relative image attachments and other export formats reject attachments", async (t) => {

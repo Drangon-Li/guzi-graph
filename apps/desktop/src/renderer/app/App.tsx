@@ -23,6 +23,7 @@ import { DesktopSelect } from "../shared/ui/DesktopControls";
 import { StructuredExportDialog } from "../features/export/StructuredExportDialog";
 import { exportCanvasPdf } from "../features/export/structuredExport";
 import { InlineTabTitle } from "../features/editor/InlineTabTitle";
+import { Market } from "../features/market/Market";
 import { Projects } from "../features/projects/Projects";
 import { Examples } from "../features/examples/Examples";
 import { useWorkspace } from "../features/workspace/workspace";
@@ -805,6 +806,9 @@ export const App = ({ root }: { root: HTMLElement }) => {
                 onSettings={() => setSettingsOpen(true)}
                 onRecovery={() => setRecoveryOpen(true)}
                 onRemove={requestRemoval}
+                market={
+                  <Market root={root} language={workspace.settings.language} />
+                }
                 examples={
                   <Examples
                     language={workspace.settings.language}

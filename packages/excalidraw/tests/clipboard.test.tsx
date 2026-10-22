@@ -1,10 +1,11 @@
 import React from "react";
 import { vi } from "vitest";
 
-import { getLineHeightInPx } from "@excalidraw/element";
+import { CaptureUpdateAction, getLineHeightInPx } from "@excalidraw/element";
 
 import {
   KEYS,
+  MIME_TYPES,
   TEXT_VIEWPORT_PADDING,
   TEXT_MAX_WRAP_WIDTH,
   arrayToMap,
@@ -16,6 +17,7 @@ import { getElementBounds } from "@excalidraw/element";
 import type { ExcalidrawTextElement } from "@excalidraw/element/types";
 
 import { createPasteEvent, serializeAsClipboardJSON } from "../clipboard";
+import { actionCopy, actionCut } from "../actions/actionClipboard";
 
 import { Excalidraw } from "../index";
 
@@ -102,6 +104,49 @@ beforeEach(async () => {
 });
 
 describe("general paste behavior", () => {
+  it("pastes editable elements when the clipboard also contains their PNG preview", async () => {
+    const rectangle = API.createElement({ type: "rectangle" });
+    const json = serializeAsClipboardJSON({
+      elements: [rectangle],
+      files: null,
+    });
+    const insertImages = vi.spyOn(h.app, "insertImages");
+    document.dispatchEvent(
+      createPasteEvent({
+        types: { [MIME_TYPES.excalidrawClipboard]: json },
+        files: [new File(["preview"], "preview.png", { type: MIME_TYPES.png })],
+      }),
+    );
+    await waitFor(() => expect(h.elements).toHaveLength(1));
+    expect(h.elements[0].type).toBe("rectangle");
+    expect(h.elements[0].id).not.toBe(rectangle.id);
+    expect(insertImages).not.toHaveBeenCalled();
+    insertImages.mockRestore();
+  });
+
+  it("does not delete cut elements when clipboard export fails", async () => {
+    const rectangle = API.createElement({ type: "rectangle" });
+    API.setElements([rectangle]);
+    API.setSelectedElements([rectangle]);
+    const failure = {
+      appState: { errorMessage: "Clipboard write failed" },
+      captureUpdate: CaptureUpdateAction.EVENTUALLY,
+    } as const;
+    const copy = vi.spyOn(actionCopy, "perform").mockResolvedValue(failure);
+    try {
+      const result = await actionCut.perform(
+        h.app.scene.getElementsIncludingDeleted(),
+        h.state,
+        null,
+        h.app,
+      );
+      expect(result).toEqual(failure);
+      expect(h.elements[0].isDeleted).toBe(false);
+    } finally {
+      copy.mockRestore();
+    }
+  });
+
   it("should randomize seed on paste", async () => {
     const rectangle = API.createElement({ type: "rectangle" });
     const clipboardJSON = await serializeAsClipboardJSON({

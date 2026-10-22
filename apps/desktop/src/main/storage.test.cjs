@@ -31,12 +31,134 @@ async function fixture(t) {
   return { base, root, storage, create };
 }
 
+test("exclusive atomic writes never replace an existing target, including concurrent creators", async (t) => {
+  const { root } = await fixture(t);
+  const target = path.join(root, "exclusive.excalidraw");
+  const results = await Promise.allSettled([
+    atomicWrite(target, "first", { createOnly: true }),
+    atomicWrite(target, "second", { createOnly: true }),
+  ]);
+  assert.equal(
+    results.filter((result) => result.status === "fulfilled").length,
+    1,
+  );
+  assert.equal(
+    results.filter(
+      (result) =>
+        result.status === "rejected" && result.reason.code === "EEXIST",
+    ).length,
+    1,
+  );
+  const content = await fs.readFile(target, "utf8");
+  await assert.rejects(
+    atomicWrite(target, "replacement", { createOnly: true }),
+    { code: "EEXIST" },
+  );
+  assert.equal(await fs.readFile(target, "utf8"), content);
+  assert.deepEqual(await fs.readdir(root), ["exclusive.excalidraw"]);
+});
+
 const request = (document, content) => ({
   documentId: randomUUID(),
   path: document.path,
   name: "drawing",
   content,
   expectedModifiedAt: document.modifiedAt,
+});
+
+test("slow saves expose the blocked stage without releasing the atomic write queue", async (t) => {
+  const { storage, create } = await fixture(t);
+  const document = await create(
+    "private-title.excalidraw",
+    "original-private-content",
+  );
+  let release;
+  let reached;
+  const blocked = new Promise((resolve) => {
+    release = resolve;
+  });
+  const syncing = new Promise((resolve) => {
+    reached = resolve;
+  });
+  const open = fs.open;
+  t.mock.method(fs, "open", async (...args) => {
+    const handle = await open(...args);
+    if (path.basename(args[0]).startsWith(".private-title.excalidraw.")) {
+      const sync = handle.sync.bind(handle);
+      handle.sync = async () => {
+        reached();
+        await blocked;
+        return sync();
+      };
+    }
+    return handle;
+  });
+  const saving = storage.saveFile(request(document, "new-private-content"));
+  await syncing;
+  let sessionFinished = false;
+  const following = storage
+    .setSession({ paths: [], activePath: null })
+    .then(() => {
+      sessionFinished = true;
+    });
+  try {
+    const diagnostics = storage.getDiagnostics();
+    assert.equal(diagnostics.pendingCount, 2);
+    assert.equal(diagnostics.active.operation, "save-file");
+    assert.equal(diagnostics.active.stage, "document:sync");
+    assert.ok(diagnostics.active.elapsedMs >= 0);
+    assert.doesNotMatch(
+      JSON.stringify(diagnostics),
+      /private|excalidraw|userData/,
+    );
+    assert.equal(sessionFinished, false);
+    assert.equal(
+      await fs.readFile(document.path, "utf8"),
+      "original-private-content",
+    );
+    release();
+    await Promise.all([saving, following]);
+    assert.equal(
+      await fs.readFile(document.path, "utf8"),
+      "new-private-content",
+    );
+    assert.deepEqual(storage.getDiagnostics(), {
+      pendingCount: 0,
+      oldestWaitMs: 0,
+      active: null,
+    });
+  } finally {
+    release();
+    await Promise.allSettled([saving, following]);
+  }
+});
+
+test("a failed disk sync leaves the original intact and the next save can proceed", async (t) => {
+  const { root, storage, create } = await fixture(t);
+  const document = await create("sync-failure.excalidraw", "original");
+  const open = fs.open;
+  let failOnce = true;
+  t.mock.method(fs, "open", async (...args) => {
+    const handle = await open(...args);
+    if (
+      failOnce &&
+      path.basename(args[0]).startsWith(".sync-failure.excalidraw.")
+    ) {
+      failOnce = false;
+      handle.sync = async () => {
+        throw Object.assign(new Error("Disk sync failed"), { code: "EIO" });
+      };
+    }
+    return handle;
+  });
+  await assert.rejects(storage.saveFile(request(document, "failed-content")), {
+    code: "EIO",
+  });
+  assert.equal(await fs.readFile(document.path, "utf8"), "original");
+  assert.deepEqual(await fs.readdir(root), ["sync-failure.excalidraw"]);
+  const saved = await storage.saveFile(request(document, "recovered"));
+  assert.equal(saved.content, "recovered");
+  assert.equal(storage.getDiagnostics().pendingCount, 0);
 });
 
 test("defaults require explicit project directory selection", async (t) => {

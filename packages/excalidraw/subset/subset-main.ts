@@ -25,6 +25,11 @@ export const subsetWoff2GlyphsByCodepoints = async (
   const { Commands, subsetToBase64, toBase64 } =
     await lazyLoadSharedSubsetChunk();
 
+  // Desktop embeds the selected font shards intact to avoid renderer crashes in font-subsetting Wasm.
+  if (import.meta.env.VITE_DISABLE_FONT_SUBSETTING === "true") {
+    return toBase64(arrayBuffer);
+  }
+
   if (!shouldUseWorkers) {
     return subsetToBase64(arrayBuffer, codePoints);
   }

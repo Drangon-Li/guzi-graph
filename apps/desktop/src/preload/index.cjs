@@ -10,6 +10,17 @@ const listen = (name, callback) => {
 };
 
 contextBridge.exposeInMainWorld("desktop", {
+  getPlugins: () => invoke("get-plugins"),
+  setPluginEnabled: (id, enabled) => invoke("set-plugin-enabled", id, enabled),
+  configurePlugin: (id, configuration) =>
+    invoke("configure-plugin", id, configuration),
+  onPluginState: (callback) => listen("plugin-state", callback),
+  onPluginRequest: (callback) => listen("plugin-request", callback),
+  onPluginRequestCancelled: (callback) =>
+    listen("plugin-request-cancelled", callback),
+  respondPluginRequest: (response) =>
+    ipcRenderer.send("desktop:plugin-response", response),
+  setPluginHostReady: (ready) => invoke("set-plugin-host-ready", ready),
   getSettings: () => invoke("get-settings"),
   updateSettings: (settings) => invoke("update-settings", settings),
   chooseDirectory: () => invoke("choose-directory"),
@@ -20,6 +31,7 @@ contextBridge.exposeInMainWorld("desktop", {
   saveFile: (request) => invoke("save-file", request),
   saveExport: (request) => invoke("save-export", request),
   savePdf: (request) => invoke("save-pdf", request),
+  exportPdf: (request) => invoke("export-pdf", request),
   editText: (command) => invoke("edit-text", command),
   removeFile: (path, mode) => invoke("remove-file", path, mode),
   renameFile: (path, name) => invoke("rename-file", path, name),

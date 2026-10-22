@@ -84,6 +84,20 @@
   "缩放": "Zoom",
   "切换全屏": "Toggle full screen",
   "PDF 导出失败，请重试。": "PDF export failed. Try again.",
+  "PDF 导出超时（{stage}），请重试。": "PDF export timed out ({stage}). Try again.",
+  "PDF 导出失败（{stage}），请重试。": "PDF export failed ({stage}). Try again.",
+  "PDF 导出失败（{stage}：{reason}），请重试。": "PDF export failed ({stage}: {reason}). Try again.",
+  "准备页面": "preparing page",
+  "创建临时目录": "creating temporary directory",
+  "写入页面": "writing page",
+  "加载页面": "loading page",
+  "解码字体与图片": "decoding fonts and images",
+  "打印页面": "printing page",
+  "打印进程已退出": "print process exited",
+  "打印窗口已关闭": "print window closed",
   "实线箭头": "Solid arrow",
-  "虚线箭头": "Dashed arrow"
+  "虚线箭头": "Dashed arrow",
+  "自动化仅支持保存当前普通画布。": "Automation only supports saving the current ordinary canvas.",
+  "自动化仅支持保存当前文档。": "Automation only supports saving the current document.",
+  "自动保存前请先在设置中选择项目目录。": "Choose a workspace directory in Settings before saving a new canvas automatically."
 }

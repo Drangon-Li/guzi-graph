@@ -64,6 +64,7 @@ export const PresentationEditor = ({
       active={props.interaction !== false}
       blocked={false}
       language={props.langCode === "en" ? "en" : "zh-CN"}
+      theme={props.theme}
       onSelect={(id) => workspace.selectSlide(document, id)}
       onAdd={() => workspace.addSlide(document)}
       onCopy={(id) => workspace.copySlide(document, id)}
@@ -76,6 +77,9 @@ export const PresentationEditor = ({
       onRename={(id, title) => workspace.renameSlide(document, id, title)}
       onMove={(id, index) => workspace.moveSlide(document, id, index)}
       onFit={fit}
+      onController={(controller) => {
+        document.presentationController = controller ?? undefined;
+      }}
       beforePresent={() => workspace.commitText(document)}
       onPresent={(value) => {
         document.presenting = value;

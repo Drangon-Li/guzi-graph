@@ -12,6 +12,7 @@ import { PresentationLayout } from "./PresentationLayout";
 import { renderSlideSvg } from "./renderSlide";
 
 import type { Presentation } from "./model";
+import type { PresentationController } from "./control";
 
 vi.mock("./renderSlide", () => ({ renderSlideSvg: vi.fn() }));
 
@@ -102,6 +103,439 @@ afterEach(() => {
   Reflect.deleteProperty(document.documentElement, "requestFullscreen");
   Reflect.deleteProperty(document, "exitFullscreen");
   Reflect.deleteProperty(document, "fullscreenElement");
+});
+
+it("registers a controller whose results match the committed player and keyboard state", async () => {
+  const props = makeProps();
+  let controller!: PresentationController;
+  const onController = vi.fn((value: PresentationController | null) => {
+    if (value) {
+      controller = value;
+    }
+  });
+  const { unmount } = render(
+    <PresentationLayout {...props} onController={onController} />,
+  );
+  expect(await controller.execute({ action: "status" })).toEqual({
+    presenting: false,
+    slideId: "second",
+    index: 1,
+    slideCount: 3,
+    fullscreen: false,
+  });
+  let result;
+  await act(async () => {
+    result = await controller.execute({ action: "start" });
+  });
+  expect(result).toMatchObject({
+    presenting: true,
+    slideId: "second",
+    index: 1,
+  });
+  const player = screen.getByRole("dialog", { name: "Slide show" });
+  expect(within(player).getByText("2 / 3")).toBeInTheDocument();
+  fireEvent.keyDown(player, { key: "Home" });
+  expect(await controller.execute({ action: "status" })).toMatchObject({
+    slideId: "first",
+    index: 0,
+  });
+  await act(async () => {
+    result = await controller.execute({ action: "next" });
+  });
+  expect(result).toMatchObject({ slideId: "second", index: 1 });
+  expect(within(player).getByText("2 / 3")).toBeInTheDocument();
+  await act(async () => {
+    result = await controller.execute({ action: "goto", slideId: "third" });
+  });
+  expect(result).toMatchObject({ slideId: "third", index: 2 });
+  expect(within(player).getByText("3 / 3")).toBeInTheDocument();
+  await act(async () => {
+    result = await controller.execute({ action: "next" });
+    expect(result).toMatchObject({ index: 2 });
+    result = await controller.execute({ action: "previous" });
+  });
+  expect(result).toMatchObject({ slideId: "second", index: 1 });
+  await expect(controller.execute({ action: "goto" })).rejects.toThrow();
+  await expect(
+    controller.execute({ action: "goto", slideId: "missing" }),
+  ).rejects.toThrow();
+  fireEvent.keyDown(player, { key: "Escape" });
+  expect(await controller.execute({ action: "status" })).toMatchObject({
+    presenting: false,
+  });
+  expect(props.presentation).toEqual(makePresentation());
+  expect(props.onSelect).not.toHaveBeenCalled();
+  unmount();
+  expect(onController).toHaveBeenLastCalledWith(null);
+  await expect(controller.execute({ action: "status" })).rejects.toThrow();
+});
+
+it.each([{ blocked: true }, { active: false }])(
+  "rejects controls while unavailable but allows status and stop: %j",
+  async (state) => {
+    const props = makeProps();
+    let controller!: PresentationController;
+    const onController = (value: PresentationController | null) => {
+      if (value) {
+        controller = value;
+      }
+    };
+    const { rerender } = render(
+      <PresentationLayout {...props} onController={onController} />,
+    );
+    await expect(controller.execute({ action: "next" })).rejects.toThrow();
+    await act(async () => {
+      await controller.execute({ action: "start", slideId: "first" });
+    });
+    expect(
+      within(screen.getByRole("dialog")).getByText("1 / 3"),
+    ).toBeInTheDocument();
+    rerender(
+      <PresentationLayout {...props} {...state} onController={onController} />,
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    for (const action of ["start", "next", "previous", "goto"] as const) {
+      await expect(
+        controller.execute({ action, slideId: "first" }),
+      ).rejects.toThrow();
+    }
+    expect(await controller.execute({ action: "status" })).toMatchObject({
+      presenting: false,
+    });
+    await act(async () => {
+      expect(await controller.execute({ action: "stop" })).toMatchObject({
+        presenting: false,
+      });
+    });
+  },
+);
+
+it("waits for actual fullscreen entry and exit before resolving controller commands", async () => {
+  let controller!: PresentationController;
+  let fullscreenElement: Element | null = null;
+  let enter!: () => void;
+  let leave!: () => void;
+  Object.defineProperty(document, "fullscreenElement", {
+    configurable: true,
+    get: () => fullscreenElement,
+  });
+  Object.defineProperty(document.documentElement, "requestFullscreen", {
+    configurable: true,
+    value: vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          enter = () => {
+            fullscreenElement = document.documentElement;
+            resolve();
+          };
+        }),
+    ),
+  });
+  Object.defineProperty(document, "exitFullscreen", {
+    configurable: true,
+    value: vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          leave = () => {
+            fullscreenElement = null;
+            resolve();
+          };
+        }),
+    ),
+  });
+  render(
+    <PresentationLayout
+      {...makeProps()}
+      onController={(value) => {
+        if (value) {
+          controller = value;
+        }
+      }}
+    />,
+  );
+  let finished = false;
+  let starting!: ReturnType<PresentationController["execute"]>;
+  await act(async () => {
+    starting = controller
+      .execute({ action: "start", slideId: "first" })
+      .then((state) => {
+        finished = true;
+        return state;
+      });
+    await Promise.resolve();
+  });
+  expect(finished).toBe(false);
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  await act(async () => {
+    enter();
+    await starting;
+  });
+  expect(await starting).toMatchObject({
+    presenting: true,
+    slideId: "first",
+    fullscreen: true,
+  });
+  let stopping!: ReturnType<PresentationController["execute"]>;
+  finished = false;
+  await act(async () => {
+    stopping = controller.execute({ action: "stop" }).then((state) => {
+      finished = true;
+      return state;
+    });
+    await Promise.resolve();
+  });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(finished).toBe(false);
+  await act(async () => {
+    leave();
+    await stopping;
+  });
+  expect(await stopping).toMatchObject({
+    presenting: false,
+    fullscreen: false,
+  });
+});
+
+it("reports windowed presentation after fullscreen rejection", async () => {
+  let controller!: PresentationController;
+  Object.defineProperty(document.documentElement, "requestFullscreen", {
+    configurable: true,
+    value: vi.fn().mockRejectedValue(new Error("Denied")),
+  });
+  render(
+    <PresentationLayout
+      {...makeProps()}
+      onController={(value) => {
+        if (value) {
+          controller = value;
+        }
+      }}
+    />,
+  );
+  await act(async () => {
+    expect(await controller.execute({ action: "start" })).toMatchObject({
+      presenting: true,
+      fullscreen: false,
+    });
+  });
+  expect(
+    screen.getByText("Fullscreen unavailable. Presenting in this window."),
+  ).toBeInTheDocument();
+});
+
+it("returns a usable player after a pending fullscreen request and cleans up late entry after stop", async () => {
+  vi.useFakeTimers();
+  let controller!: PresentationController;
+  let fullscreenElement: Element | null = null;
+  Object.defineProperty(document, "fullscreenElement", {
+    configurable: true,
+    get: () => fullscreenElement,
+  });
+  Object.defineProperty(document.documentElement, "requestFullscreen", {
+    configurable: true,
+    value: vi.fn(() => new Promise<void>(() => {})),
+  });
+  const exitFullscreen = vi.fn(async () => {
+    fullscreenElement = null;
+  });
+  Object.defineProperty(document, "exitFullscreen", {
+    configurable: true,
+    value: exitFullscreen,
+  });
+  render(
+    <PresentationLayout
+      {...makeProps()}
+      onController={(value) => {
+        if (value) {
+          controller = value;
+        }
+      }}
+    />,
+  );
+  let starting!: ReturnType<PresentationController["execute"]>;
+  await act(async () => {
+    starting = controller.execute({ action: "start", slideId: "first" });
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(await starting).toMatchObject({
+    presenting: true,
+    slideId: "first",
+    fullscreen: false,
+  });
+  const player = screen.getByRole("dialog", { name: "Slide show" });
+  fireEvent.keyDown(player, { key: "ArrowRight" });
+  expect(within(player).getByText("2 / 3")).toBeInTheDocument();
+  expect(await controller.execute({ action: "status" })).toMatchObject({
+    presenting: true,
+    slideId: "second",
+    fullscreen: false,
+  });
+  await act(async () => {
+    expect(await controller.execute({ action: "next" })).toMatchObject({
+      slideId: "third",
+    });
+    expect(await controller.execute({ action: "stop" })).toMatchObject({
+      presenting: false,
+      fullscreen: false,
+    });
+  });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  fullscreenElement = document.documentElement;
+  fireEvent(document, new Event("fullscreenchange"));
+  expect(exitFullscreen).toHaveBeenCalledTimes(1);
+  expect(await controller.execute({ action: "status" })).toMatchObject({
+    presenting: false,
+    fullscreen: false,
+  });
+});
+
+it("accepts a real fullscreen event even when its request promise never settles", async () => {
+  vi.useFakeTimers();
+  let controller!: PresentationController;
+  let fullscreenElement: Element | null = null;
+  Object.defineProperty(document, "fullscreenElement", {
+    configurable: true,
+    get: () => fullscreenElement,
+  });
+  Object.defineProperty(document.documentElement, "requestFullscreen", {
+    configurable: true,
+    value: vi.fn(() => new Promise<void>(() => {})),
+  });
+  render(
+    <PresentationLayout
+      {...makeProps()}
+      onController={(value) => {
+        if (value) {
+          controller = value;
+        }
+      }}
+    />,
+  );
+  let starting!: ReturnType<PresentationController["execute"]>;
+  await act(async () => {
+    starting = controller.execute({ action: "start" });
+    fullscreenElement = document.documentElement;
+    fireEvent(document, new Event("fullscreenchange"));
+    await starting;
+  });
+  expect(await starting).toMatchObject({ presenting: true, fullscreen: true });
+  fullscreenElement = null;
+  fireEvent(document, new Event("fullscreenchange"));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(await controller.execute({ action: "status" })).toMatchObject({
+    presenting: false,
+    fullscreen: false,
+  });
+});
+
+it("bounds a pending fullscreen exit and keeps status responsive until the native exit arrives", async () => {
+  vi.useFakeTimers();
+  let controller!: PresentationController;
+  let fullscreenElement: Element | null = null;
+  Object.defineProperty(document, "fullscreenElement", {
+    configurable: true,
+    get: () => fullscreenElement,
+  });
+  Object.defineProperty(document.documentElement, "requestFullscreen", {
+    configurable: true,
+    value: vi.fn(async () => {
+      fullscreenElement = document.documentElement;
+    }),
+  });
+  Object.defineProperty(document, "exitFullscreen", {
+    configurable: true,
+    value: vi.fn(() => new Promise<void>(() => {})),
+  });
+  render(
+    <PresentationLayout
+      {...makeProps()}
+      onController={(value) => {
+        if (value) {
+          controller = value;
+        }
+      }}
+    />,
+  );
+  await act(async () => {
+    await controller.execute({ action: "start" });
+  });
+  await act(async () => {
+    const stopping = controller.execute({ action: "stop" });
+    const rejection = expect(stopping).rejects.toThrow("无法退出演示全屏");
+    await vi.advanceTimersByTimeAsync(1000);
+    await rejection;
+  });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(await controller.execute({ action: "status" })).toMatchObject({
+    presenting: false,
+    fullscreen: true,
+  });
+  fullscreenElement = null;
+  fireEvent(document, new Event("fullscreenchange"));
+  expect(await controller.execute({ action: "status" })).toMatchObject({
+    presenting: false,
+    fullscreen: false,
+  });
+  await act(async () => {
+    expect(await controller.execute({ action: "stop" })).toMatchObject({
+      presenting: false,
+      fullscreen: false,
+    });
+  });
+});
+
+it("tracks native fullscreen exit and rejects a failed controller fullscreen exit", async () => {
+  let controller!: PresentationController;
+  let fullscreenElement: Element | null = null;
+  Object.defineProperty(document, "fullscreenElement", {
+    configurable: true,
+    get: () => fullscreenElement,
+  });
+  Object.defineProperty(document.documentElement, "requestFullscreen", {
+    configurable: true,
+    value: vi.fn(async () => {
+      fullscreenElement = document.documentElement;
+      document.dispatchEvent(new Event("fullscreenchange"));
+    }),
+  });
+  const exitFullscreen = vi.fn().mockRejectedValue(new Error("Exit failed"));
+  Object.defineProperty(document, "exitFullscreen", {
+    configurable: true,
+    value: exitFullscreen,
+  });
+  render(
+    <PresentationLayout
+      {...makeProps()}
+      onController={(value) => {
+        if (value) {
+          controller = value;
+        }
+      }}
+    />,
+  );
+  await act(async () => {
+    await controller.execute({ action: "start" });
+  });
+  fireEvent(document, new Event("fullscreenchange"));
+  fullscreenElement = null;
+  fireEvent(document, new Event("fullscreenchange"));
+  expect(await controller.execute({ action: "status" })).toMatchObject({
+    presenting: false,
+    fullscreen: false,
+  });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await act(async () => {
+    await controller.execute({ action: "start" });
+  });
+  await act(async () => {
+    await expect(controller.execute({ action: "stop" })).rejects.toThrow(
+      "无法退出演示全屏",
+    );
+  });
+  expect(await controller.execute({ action: "status" })).toMatchObject({
+    presenting: false,
+    fullscreen: true,
+  });
 });
 
 it("keeps thumbnails compact and provides rename and delete in the context menu", () => {
@@ -727,6 +1161,7 @@ it("uses the converted canvas bounds in thumbnails and slide shows", async () =>
       1600,
       900,
       document,
+      false,
     ),
   );
 
@@ -739,6 +1174,7 @@ it("uses the converted canvas bounds in thumbnails and slide shows", async () =>
       1600,
       900,
       document,
+      false,
     ),
   );
 
@@ -755,10 +1191,50 @@ it("uses the converted canvas bounds in thumbnails and slide shows", async () =>
       1600,
       900,
       document,
+      false,
     ),
   );
   fireEvent.keyDown(player, { key: "Escape" });
   expect(options).toHaveFocus();
+});
+
+it("refreshes every thumbnail when the theme changes while keeping slide shows in document colors", async () => {
+  vi.mocked(renderSlideSvg).mockImplementation(
+    async (slide, _width, _height, _document, darkMode) => {
+      const svg = svgFor(slide.title);
+      svg.setAttribute("data-preview-theme", darkMode ? "dark" : "light");
+      return svg;
+    },
+  );
+  const props = makeProps();
+  const { container, rerender } = render(
+    <PresentationLayout {...props} theme="light" />,
+  );
+  await waitFor(() =>
+    expect(
+      container.querySelectorAll('[data-preview-theme="light"]'),
+    ).toHaveLength(3),
+  );
+  rerender(<PresentationLayout {...props} theme="dark" />);
+  await waitFor(() =>
+    expect(
+      container.querySelectorAll('[data-preview-theme="dark"]'),
+    ).toHaveLength(3),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Present" }));
+  const player = screen.getByRole("dialog", { name: "Slide show" });
+  await waitFor(() =>
+    expect(
+      player.querySelector('[data-preview-theme="light"]'),
+    ).toBeInTheDocument(),
+  );
+  fireEvent.keyDown(player, { key: "Escape" });
+  rerender(<PresentationLayout {...props} theme="light" />);
+  await waitFor(() =>
+    expect(
+      container.querySelectorAll('[data-preview-theme="light"]'),
+    ).toHaveLength(3),
+  );
 });
 
 it("presents from the current slide, clamps keyboard navigation, and restores editing focus", async () => {

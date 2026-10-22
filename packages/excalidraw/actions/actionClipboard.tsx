@@ -15,7 +15,9 @@ import {
 } from "../clipboard";
 import { DuplicateIcon, cutIcon, pngIcon, svgIcon } from "../components/icons";
 import { exportCanvas, prepareElementsForExport } from "../data/index";
+import { canvasToBlob } from "../data/blob";
 import { t } from "../i18n";
+import { exportToCanvas } from "../scene/export";
 
 import { actionDeleteSelected } from "./actionDeleteSelected";
 import { register } from "./register";
@@ -31,6 +33,9 @@ export const actionCopy = register<ClipboardEvent | null>({
       includeBoundTextElement: true,
       includeElementsInFrames: true,
     });
+    if (!elementsToCopy.length) {
+      return { captureUpdate: CaptureUpdateAction.EVENTUALLY };
+    }
 
     try {
       await copyToClipboard(
@@ -38,6 +43,27 @@ export const actionCopy = register<ClipboardEvent | null>({
         app.files,
         event,
         appState.subscenes,
+        {
+          ownerWindow: app.ownerWindow,
+          image: () => {
+            const { exportedElements, exportingFrame } =
+              prepareElementsForExport(elements, appState, true);
+            return canvasToBlob(
+              exportToCanvas(
+                exportedElements,
+                appState,
+                app.files,
+                { ...appState, exportingFrame },
+                (width, height) => {
+                  const canvas = app.ownerDocument.createElement("canvas");
+                  canvas.width = width * appState.exportScale;
+                  canvas.height = height * appState.exportScale;
+                  return { canvas, scale: appState.exportScale };
+                },
+              ),
+            );
+          },
+        },
       );
     } catch (error: any) {
       return {
@@ -64,7 +90,7 @@ export const actionPaste = register({
   perform: async (elements, appState, data, app) => {
     let types;
     try {
-      types = await readSystemClipboard();
+      types = await readSystemClipboard(app.ownerWindow);
     } catch (error: any) {
       if (error.name === "AbortError" || error.name === "NotAllowedError") {
         // user probably aborted the action. Though not 100% sure, it's best
@@ -94,7 +120,9 @@ export const actionPaste = register({
     }
 
     try {
-      app.clipboard.pasteFromClipboard(createPasteEvent({ types }));
+      app.clipboard.pasteFromClipboard(
+        createPasteEvent({ types }, app.ownerWindow),
+      );
     } catch (error: any) {
       console.error(error);
       return {
@@ -119,12 +147,30 @@ export const actionCut = register<ClipboardEvent | null>({
   label: "labels.cut",
   icon: cutIcon,
   trackEvent: { category: "element" },
-  perform: (elements, appState, event, app) => {
-    actionCopy.perform(elements, appState, event, app);
+  perform: async (elements, appState, event, app) => {
+    const selectedIds = Object.keys(appState.selectedElementIds).filter(
+      (id) => appState.selectedElementIds[id],
+    );
+    const { selectedLinearElement, editingGroupId, editingTextElement } =
+      appState;
+    const copied = await actionCopy.perform(elements, appState, event, app);
+    if (
+      selectedLinearElement !== app.state.selectedLinearElement ||
+      editingGroupId !== app.state.editingGroupId ||
+      editingTextElement !== app.state.editingTextElement ||
+      selectedIds.length !==
+        Object.values(app.state.selectedElementIds).filter(Boolean).length ||
+      selectedIds.some((id) => !app.state.selectedElementIds[id])
+    ) {
+      return { captureUpdate: CaptureUpdateAction.EVENTUALLY };
+    }
+    if (copied && copied.appState?.errorMessage) {
+      return copied;
+    }
     // the cut frame's children are on the clipboard with it, so go with it
     return actionDeleteSelected.perform(
-      elements,
-      appState,
+      app.scene.getElementsIncludingDeleted(),
+      app.state,
       { withFrameChildren: true },
       app,
     );

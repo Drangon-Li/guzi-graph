@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import {
   DEFAULT_TEXT_ALIGN,
   DEFAULT_VERTICAL_ALIGN,
+  MIME_TYPES,
   getFontString,
   getLineHeight,
   isWritableElement,
@@ -48,7 +49,12 @@ import { restoreElements } from "../data/restore";
 
 import { actionCopy, actionCut } from "../actions";
 import { tryParseSpreadsheet } from "../charts";
-import { parseClipboard, parseDataTransferEvent } from "../clipboard";
+import {
+  createPasteEvent,
+  parseClipboard,
+  parseDataTransferEvent,
+  readSystemClipboard,
+} from "../clipboard";
 import { ImageURLToFile, SVGStringToFile } from "../data/blob";
 import { t } from "../i18n";
 import { isMaybeMermaidDefinition } from "../mermaid";
@@ -212,7 +218,7 @@ export class AppClipboard {
       }
     }
 
-    if (imageFiles.length > 0) {
+    if (imageFiles.length > 0 && !data.elements) {
       if (this.app.isToolSupported("image")) {
         await this.app.insertImages(imageFiles, sceneX, sceneY);
       } else {
@@ -397,7 +403,35 @@ export class AppClipboard {
 
       const filesList = dataTransferList.getFiles();
 
-      const data = await parseClipboard(dataTransferList, isPlainPaste);
+      let data = await parseClipboard(dataTransferList, isPlainPaste);
+      // Native paste events expose the PNG, but web custom formats are only
+      // available through the Async Clipboard API.
+      if (
+        event.isTrusted &&
+        !data.elements &&
+        filesList.some(({ file }) => file.type === MIME_TYPES.png)
+      ) {
+        try {
+          const types = await readSystemClipboard(this.app.ownerWindow);
+          const elements = types[MIME_TYPES.excalidrawClipboard];
+          if (typeof elements === "string") {
+            const customData = await parseClipboard(
+              await parseDataTransferEvent(
+                createPasteEvent(
+                  { types: { [MIME_TYPES.excalidrawClipboard]: elements } },
+                  this.app.ownerWindow,
+                ),
+              ),
+              isPlainPaste,
+            );
+            if (customData.elements) {
+              data = customData;
+            }
+          }
+        } catch {
+          // The image remains pasteable when custom clipboard access is denied.
+        }
+      }
 
       if (this.app.props.onPaste) {
         try {

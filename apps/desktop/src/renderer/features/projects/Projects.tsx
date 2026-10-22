@@ -56,8 +56,10 @@ export const Projects = ({
   onRecovery,
   onRemove,
   examples,
+  market,
 }: {
   examples?: ReactNode;
+  market?: ReactNode;
   root: HTMLElement;
   theme: "light" | "dark";
   active?: boolean;
@@ -69,8 +71,11 @@ export const Projects = ({
 }) => {
   const t = (message: string, params?: Record<string, string | number>) =>
     translate(workspace.settings.language, message, params);
-  const [historyVisible, setHistoryVisible] = useState(true);
-  const [examplesVisible, setExamplesVisible] = useState(false);
+  const [view, setView] = useState<"history" | "files" | "examples" | "market">(
+    "history",
+  );
+  const historyVisible = view === "history";
+  const examplesVisible = view === "examples";
   const [category, setCategory] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("modified");
@@ -88,7 +93,7 @@ export const Projects = ({
   }, [
     active,
     historyVisible,
-    examplesVisible,
+    view,
     category,
     query,
     sort,
@@ -146,20 +151,18 @@ export const Projects = ({
         </div>
         <div className="desktop-sidebar-section">{t("本地画布")}</div>
         <Button
-          selected={!examplesVisible && historyVisible}
+          selected={view === "history"}
           onSelect={() => {
-            setExamplesVisible(false);
-            setHistoryVisible(true);
+            setView("history");
           }}
         >
           <span>{t("历史画布")}</span>
           <small>{workspace.index.history.length}</small>
         </Button>
         <Button
-          selected={!examplesVisible && !historyVisible && category === null}
+          selected={view === "files" && category === null}
           onSelect={() => {
-            setExamplesVisible(false);
-            setHistoryVisible(false);
+            setView("files");
             setCategory(null);
           }}
         >
@@ -167,10 +170,9 @@ export const Projects = ({
           <small>{workspace.index.files.length}</small>
         </Button>
         <Button
-          selected={!examplesVisible && !historyVisible && category === ""}
+          selected={view === "files" && category === ""}
           onSelect={() => {
-            setExamplesVisible(false);
-            setHistoryVisible(false);
+            setView("files");
             setCategory("");
           }}
         >
@@ -180,9 +182,17 @@ export const Projects = ({
         {examples && (
           <Button
             selected={examplesVisible}
-            onSelect={() => setExamplesVisible(true)}
+            onSelect={() => setView("examples")}
           >
             <span>{t("示例库")}</span>
+          </Button>
+        )}
+        {market && (
+          <Button
+            selected={view === "market"}
+            onSelect={() => setView("market")}
+          >
+            <span>{t("插件市场")}</span>
           </Button>
         )}
         <div className="desktop-sidebar-heading">
@@ -204,12 +214,9 @@ export const Projects = ({
           {workspace.index.folders.map((folder) => (
             <Button
               key={folder}
-              selected={
-                !examplesVisible && !historyVisible && category === folder
-              }
+              selected={view === "files" && category === folder}
               onSelect={() => {
-                setExamplesVisible(false);
-                setHistoryVisible(false);
+                setView("files");
                 setCategory(folder);
               }}
               title={folder}
@@ -238,7 +245,9 @@ export const Projects = ({
         <header className="desktop-project-heading">
           <div>
             <h1>
-              {examplesVisible
+              {view === "market"
+                ? "Guzi Market"
+                : examplesVisible
                 ? t("示例库")
                 : historyVisible
                 ? t("历史画布")
@@ -247,7 +256,9 @@ export const Projects = ({
                 : category || t("未分类")}
             </h1>
             <p>
-              {examplesVisible
+              {view === "market"
+                ? t("管理内置插件，连接你的画布与 AI 工具。")
+                : examplesVisible
                 ? t("打开示例副本自由编辑，保存时选择自己的位置。")
                 : historyVisible
                 ? t("打开或保存过的画布，随时回来继续。")
@@ -283,7 +294,9 @@ export const Projects = ({
             <Button onSelect={onRecovery}>{t("查看并恢复")}</Button>
           </div>
         )}
-        {examplesVisible ? (
+        {view === "market" ? (
+          market
+        ) : examplesVisible ? (
           examples
         ) : (
           <>

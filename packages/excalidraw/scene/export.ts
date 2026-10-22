@@ -283,11 +283,11 @@ export const exportToCanvas = async (
   return canvas;
 };
 
-const createHTMLComment = (text: string) => {
+const createHTMLComment = (text: string, ownerDocument = document) => {
   // surrounding with spaces to maintain prettified consistency with previous
   // iterations
   // <!-- comment -->
-  return document.createComment(` ${text} `);
+  return ownerDocument.createComment(` ${text} `);
 };
 
 export const exportToSvg = async (
@@ -310,8 +310,10 @@ export const exportToSvg = async (
     exportingFrame?: NonDeleted<ExcalidrawFrameLikeElement> | null;
     skipInliningFonts?: true;
     reuseImages?: boolean;
+    ownerDocument?: Document;
   },
 ): Promise<SVGSVGElement> => {
+  const ownerDocument = opts?.ownerDocument ?? document;
   const frameRendering = getFrameRenderingConfig(
     opts?.exportingFrame ?? null,
     appState.frameRendering ?? null,
@@ -350,7 +352,7 @@ export const exportToSvg = async (
   // initialize SVG root element
   // ---------------------------------------------------------------------------
 
-  const svgRoot = document.createElementNS(SVG_NS, "svg");
+  const svgRoot = ownerDocument.createElementNS(SVG_NS, "svg");
 
   svgRoot.setAttribute("version", "1.1");
   svgRoot.setAttribute("xmlns", SVG_NS);
@@ -365,7 +367,9 @@ export const exportToSvg = async (
     "metadata",
   );
 
-  svgRoot.appendChild(createHTMLComment("svg-source:excalidraw"));
+  svgRoot.appendChild(
+    createHTMLComment("svg-source:excalidraw", ownerDocument),
+  );
   svgRoot.appendChild(metadataElement);
   svgRoot.appendChild(defsElement);
 
@@ -445,7 +449,7 @@ export const exportToSvg = async (
   const style = svgRoot.ownerDocument.createElementNS(SVG_NS, "style");
   style.classList.add("style-fonts");
   style.appendChild(
-    document.createTextNode(`${delimiter}${fontFaces.join(delimiter)}`),
+    ownerDocument.createTextNode(`${delimiter}${fontFaces.join(delimiter)}`),
   );
 
   defsElement.appendChild(style);
@@ -520,12 +524,23 @@ export const encodeSvgBase64Payload = ({
   );
 
   metadataElement.appendChild(
-    createHTMLComment(`payload-type:${MIME_TYPES.excalidraw}`),
+    createHTMLComment(
+      `payload-type:${MIME_TYPES.excalidraw}`,
+      metadataElement.ownerDocument,
+    ),
   );
-  metadataElement.appendChild(createHTMLComment("payload-version:2"));
-  metadataElement.appendChild(createHTMLComment("payload-start"));
-  metadataElement.appendChild(document.createTextNode(base64));
-  metadataElement.appendChild(createHTMLComment("payload-end"));
+  metadataElement.appendChild(
+    createHTMLComment("payload-version:2", metadataElement.ownerDocument),
+  );
+  metadataElement.appendChild(
+    createHTMLComment("payload-start", metadataElement.ownerDocument),
+  );
+  metadataElement.appendChild(
+    metadataElement.ownerDocument.createTextNode(base64),
+  );
+  metadataElement.appendChild(
+    createHTMLComment("payload-end", metadataElement.ownerDocument),
+  );
 };
 
 export const decodeSvgBase64Payload = ({ svg }: { svg: string }) => {

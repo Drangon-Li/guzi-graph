@@ -1,10 +1,13 @@
 import React from "react";
 
+import { resolvablePromise } from "@excalidraw/common";
+import { CaptureUpdateAction, LinearElementEditor } from "@excalidraw/element";
+
 import { Excalidraw } from "../index";
 import { API } from "../tests/helpers/api";
 import { act, assertElements, render } from "../tests/test-utils";
 
-import { actionCut } from "./actionClipboard";
+import { actionCopy, actionCut } from "./actionClipboard";
 import { actionDeleteSelected } from "./actionDeleteSelected";
 
 const { h } = window;
@@ -235,7 +238,7 @@ describe("cutting a selected frame takes its children along", () => {
   };
 
   /** as on ctrl+x, with the clipboard data of the cut event */
-  const cut = () => {
+  const cut = async () => {
     const data = new Map<string, string>();
     const event = {
       clipboardData: {
@@ -243,7 +246,7 @@ describe("cutting a selected frame takes its children along", () => {
         getData: (type: string) => data.get(type),
       },
     } as unknown as ClipboardEvent;
-    act(() => {
+    await act(async () => {
       h.app.actionManager.executeAction(actionCut, "keyboard", event);
     });
   };
@@ -252,7 +255,7 @@ describe("cutting a selected frame takes its children along", () => {
     const { f1, r1, r2, t1 } = createFrameWithChildren();
     API.setSelectedElements([f1]);
 
-    cut();
+    await cut();
 
     assertElements(h.elements, [
       { id: f1.id, isDeleted: true },
@@ -266,7 +269,7 @@ describe("cutting a selected frame takes its children along", () => {
     const { f1, r1, r2, t1 } = createFrameWithChildren();
     API.setSelectedElements([f1, r1, r2]);
 
-    cut();
+    await cut();
 
     assertElements(h.elements, [
       { id: f1.id, isDeleted: true },
@@ -275,4 +278,58 @@ describe("cutting a selected frame takes its children along", () => {
       { id: t1.id, isDeleted: true },
     ]);
   });
+
+  it.each(["selection", "point editing"])(
+    "keeps the copy without deleting when %s changes while copying",
+    async (change) => {
+      const rectangle = API.createElement({ type: "rectangle" });
+      const arrow = API.createElement({ type: "arrow" });
+      API.setElements([rectangle, arrow]);
+      API.setSelectedElements([arrow]);
+      const copying =
+        resolvablePromise<Awaited<ReturnType<typeof actionCopy.perform>>>();
+      const copy = vi.spyOn(actionCopy, "perform").mockReturnValue(copying);
+      try {
+        const cutting = actionCut.perform(
+          h.app.scene.getElementsIncludingDeleted(),
+          h.state,
+          null,
+          h.app,
+        );
+        expect(copy).toHaveBeenCalledTimes(1);
+
+        if (change === "selection") {
+          API.setSelectedElements([rectangle]);
+        } else {
+          API.setAppState({
+            selectedLinearElement: {
+              ...new LinearElementEditor(
+                arrow,
+                h.app.scene.getNonDeletedElementsMap(),
+                true,
+              ),
+              selectedPointsIndices: [0],
+            },
+          });
+        }
+        const currentState = h.state;
+        const points = arrow.points.slice();
+        copying.resolve({ captureUpdate: CaptureUpdateAction.EVENTUALLY });
+
+        expect(await cutting).toEqual({
+          captureUpdate: CaptureUpdateAction.EVENTUALLY,
+        });
+        expect(h.state.selectedElementIds).toEqual(
+          currentState.selectedElementIds,
+        );
+        expect(h.state.selectedLinearElement).toBe(
+          currentState.selectedLinearElement,
+        );
+        expect(arrow.points).toEqual(points);
+        expect(h.elements.every((element) => !element.isDeleted)).toBe(true);
+      } finally {
+        copy.mockRestore();
+      }
+    },
+  );
 });
