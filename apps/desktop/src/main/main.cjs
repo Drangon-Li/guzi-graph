@@ -15,6 +15,8 @@ const {
   shell,
 } = require("electron");
 
+const { buildChannel } = require("../../package.json");
+
 const { translate } = require("./i18n/i18n.cjs");
 const { renderPdf, validatePdfRequest } = require("./pdf.cjs");
 const {
@@ -22,6 +24,7 @@ const {
   atomicWrite,
   fileName,
   EXPORT_EXTENSIONS,
+  DOCUMENT_EXTENSIONS,
 } = require("./storage.cjs");
 
 if (process.env.EXCALIDRAW_DESKTOP_USER_DATA) {
@@ -31,8 +34,10 @@ if (process.env.EXCALIDRAW_DESKTOP_USER_DATA) {
   }
   app.setPath("userData", userData);
 } else {
-  // Keep the legacy profile name so product renames preserve local data.
-  const userData = path.join(app.getPath("appData"), "Excalidraw Local");
+  // Normal builds keep the legacy profile; test builds must not reuse it.
+  const profileName =
+    buildChannel === "dev-ppt" ? "Excalidraw-Guzi Dev PPT" : "Excalidraw Local";
+  const userData = path.join(app.getPath("appData"), profileName);
   mkdirSync(userData, { recursive: true });
   app.setPath("userData", userData);
 }
@@ -154,7 +159,7 @@ async function receiveFiles(paths) {
     if (
       typeof candidate === "string" &&
       path.isAbsolute(candidate) &&
-      path.extname(candidate).toLowerCase() === ".excalidraw"
+      DOCUMENT_EXTENSIONS.has(path.extname(candidate).toLowerCase())
     ) {
       pendingPaths.add(candidate);
     }
@@ -172,27 +177,48 @@ function nativeDialogOptions(options) {
 }
 
 async function saveDocument(request) {
-  if (!request || typeof request !== "object") {
+  if (
+    !request ||
+    typeof request !== "object" ||
+    (request.format !== undefined && request.format !== "presentation")
+  ) {
     throw new Error(t("保存请求无效。"));
   }
   let target = request.path;
   let overwrite = false;
+  const presentation = request.format === "presentation";
+  const extension = presentation ? "guzi-presentation" : "excalidraw";
   if (request.saveAs || !target) {
-    const name = fileName(request.name);
+    const name = fileName(request.name, extension);
     const root = storage.getSettings().rootDirectory;
     const result = await dialog.showSaveDialog(
       ...nativeDialogOptions({
-        title: request.saveAs ? t("画布另存为") : t("保存画布"),
+        title: presentation
+          ? request.saveAs
+            ? t("演示文稿另存为")
+            : t("保存演示文稿")
+          : request.saveAs
+          ? t("画布另存为")
+          : t("保存画布"),
         defaultPath: target || (root ? path.join(root, name) : name),
-        filters: [{ name: t("Excalidraw 画布"), extensions: ["excalidraw"] }],
+        filters: [
+          {
+            name: presentation ? t("Guzi 演示文稿") : t("Excalidraw 画布"),
+            extensions: [extension],
+          },
+        ],
         properties: ["createDirectory", "showOverwriteConfirmation"],
       }),
     );
     if (result.canceled || !result.filePath) {
       return null;
     }
-    if (path.extname(result.filePath).toLowerCase() !== ".excalidraw") {
-      throw new Error(t("画布文件名需要以 .excalidraw 结尾。"));
+    if (path.extname(result.filePath).toLowerCase() !== `.${extension}`) {
+      throw new Error(
+        presentation
+          ? t("演示文稿文件名需要以 .guzi-presentation 结尾。")
+          : t("画布文件名需要以 .excalidraw 结尾。"),
+      );
     }
     target = result.filePath;
     target = await storage.grantFile(target);
@@ -305,7 +331,12 @@ function installIPC() {
     const result = await dialog.showOpenDialog(
       ...nativeDialogOptions({
         title: t("打开画布"),
-        filters: [{ name: t("Excalidraw 画布"), extensions: ["excalidraw"] }],
+        filters: [
+          {
+            name: t("Guzi 文档"),
+            extensions: ["excalidraw", "guzi-presentation"],
+          },
+        ],
         properties: ["openFile", "multiSelections"],
       }),
     );
@@ -683,6 +714,7 @@ function installMenu() {
       label: t("文件"),
       submenu: [
         command(t("新建画布"), "new", "CmdOrCtrl+N"),
+        command(t("新建演示文稿"), "new-presentation"),
         command(t("打开画布…"), "open"),
         command(t("保存"), "save"),
         command(t("另存为…"), "save-as"),

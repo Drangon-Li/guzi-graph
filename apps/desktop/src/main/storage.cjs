@@ -7,6 +7,7 @@ const { translate } = require("./i18n/i18n.cjs");
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const THEMES = new Set(["light", "dark", "system"]);
+const DOCUMENT_EXTENSIONS = new Set([".excalidraw", ".guzi-presentation"]);
 const EXPORT_EXTENSIONS = new Set([
   "png",
   "svg",
@@ -67,9 +68,11 @@ function documentPath(value, language = "zh-CN") {
   if (
     typeof value !== "string" ||
     !path.isAbsolute(value) ||
-    path.extname(value).toLowerCase() !== ".excalidraw"
+    !DOCUMENT_EXTENSIONS.has(path.extname(value).toLowerCase())
   ) {
-    throw fail(translate(language, "请选择 .excalidraw 文件。"));
+    throw fail(
+      translate(language, "请选择 .excalidraw 或 .guzi-presentation 文件。"),
+    );
   }
   return path.resolve(value);
 }
@@ -700,7 +703,7 @@ class DesktopStorage {
         } else if (
           entry.isFile() &&
           !this.hiddenPaths.has(absolute) &&
-          path.extname(entry.name).toLowerCase() === ".excalidraw"
+          DOCUMENT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())
         ) {
           const stat = await fs.stat(absolute);
           files.push({
@@ -728,12 +731,20 @@ class DesktopStorage {
     if (
       !request ||
       !UUID.test(request.documentId) ||
-      typeof request.content !== "string"
+      typeof request.content !== "string" ||
+      (request.format !== undefined && request.format !== "presentation")
     ) {
       throw this.fail("保存请求无效。");
     }
     return this.serialize(async () => {
       const target = await this.allowedPath(request.path, { writing: true });
+      const extension =
+        request.format === "presentation"
+          ? ".guzi-presentation"
+          : ".excalidraw";
+      if (path.extname(target).toLowerCase() !== extension) {
+        throw this.fail("保存格式与文件扩展名不一致。");
+      }
       if (this.hiddenPaths.has(target)) {
         throw this.fail(
           "画布已从项目移除，请重新打开后再保存。",
@@ -935,19 +946,25 @@ class DesktopStorage {
   }
 
   renameFile(candidate, name) {
-    const nextName = fileName(name, "excalidraw", this.settings.language);
+    fileName(name, undefined, this.settings.language);
     return this.serialize(async () => {
       const source = await this.allowedPath(candidate);
+      const nextName = fileName(
+        name,
+        path.extname(source).slice(1).toLowerCase(),
+        this.settings.language,
+      );
       return this.relocate(source, path.join(path.dirname(source), nextName));
     });
   }
 
   moveFile(candidate, category) {
     return this.serialize(async () => {
+      const source = await this.allowedPath(candidate);
       const destination = await this.categoryDirectory(category);
       return this.relocate(
-        candidate,
-        path.join(destination, path.basename(this.documentPath(candidate))),
+        source,
+        path.join(destination, path.basename(source)),
       );
     });
   }
@@ -1128,4 +1145,5 @@ module.exports = {
   fileName,
   categoryParts,
   EXPORT_EXTENSIONS,
+  DOCUMENT_EXTENSIONS,
 };

@@ -196,7 +196,6 @@ const LayerUI = ({
   const [toolPanelWidth, setToolPanelWidth] = React.useState(
     toolPanel?.width ?? 280,
   );
-  const [toolPanelCollapsed, setToolPanelCollapsed] = React.useState(false);
   const [toolPanelResizing, setToolPanelResizing] = React.useState(false);
 
   const toolPanelSelectionKey = getSelectedElements(elements, appState)
@@ -208,6 +207,9 @@ const LayerUI = ({
         : [],
     )
     .join(",");
+  const [toolPanelCollapsed, setToolPanelCollapsed] = React.useState(
+    () => !toolPanel?.pinned && !toolPanelSelectionKey,
+  );
   React.useEffect(() => {
     setToolPanelCollapsed(!toolPanel?.pinned && !toolPanelSelectionKey);
   }, [toolPanelSelectionKey, toolPanel?.pinned]);

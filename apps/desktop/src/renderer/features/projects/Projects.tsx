@@ -255,6 +255,10 @@ export const Projects = ({
             </p>
           </div>
           <div className="desktop-project-actions">
+            <Button onSelect={() => workspace.newPresentation()}>
+              {PlusIcon}
+              <span>{t("新建演示文稿")}</span>
+            </Button>
             <Button onSelect={workspace.openFiles}>
               {LoadIcon}
               <span>{t("打开文件")}</span>

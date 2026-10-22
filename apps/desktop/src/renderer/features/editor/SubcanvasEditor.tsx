@@ -35,8 +35,12 @@ const savedChildState = (state: AppState): SubcanvasScene["appState"] => ({
 
 export const SubcanvasEditor = ({
   document,
+  historyCache,
   ...props
-}: ExcalidrawProps & { document: CanvasDocument }) => {
+}: ExcalidrawProps & {
+  document: CanvasDocument;
+  historyCache?: Map<string, HistoryCheckpoint>;
+}) => {
   const [path, setPath] = useState<string[]>([]);
   const root = useRef<ExcalidrawImperativeAPI | null>(null);
   const child = useRef<ExcalidrawImperativeAPI | null>(null);
@@ -45,7 +49,9 @@ export const SubcanvasEditor = ({
   const files = useRef<BinaryFiles>({});
   const lastRootMap = useRef<SubcanvasScenes | null>(null);
   const lastChildMap = useRef<SubcanvasScenes | null>(null);
-  const checkpoints = useRef(new Map<string, HistoryCheckpoint>());
+  const checkpoints = useRef(
+    historyCache ?? new Map<string, HistoryCheckpoint>(),
+  );
   const latest = useRef(props);
   latest.current = props;
   const activeId = path.at(-1);
@@ -193,7 +199,7 @@ export const SubcanvasEditor = ({
   useEffect(() => {
     document.flushEditing = () => {
       flushChild();
-      root.current?.commitEditing();
+      flushSync(() => root.current?.commitEditing());
     };
     document.getSnapshot = snapshot;
     document.activeEditor = () =>

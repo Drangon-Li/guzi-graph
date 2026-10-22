@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
 import { loadFromBlob, CaptureUpdateAction } from "@excalidraw/excalidraw";
+import { getCommonBounds, getNonDeletedElements } from "@excalidraw/element";
 
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
+import type { HistoryCheckpoint } from "@excalidraw/excalidraw/history";
 
 import {
   createSceneTracker,
@@ -20,6 +22,15 @@ import {
   getPreferenceColorTopPicks,
 } from "../../shared/config/editorPreferences";
 import { translate } from "../../shared/i18n/i18n";
+import {
+  copyPresentationScene,
+  createPresentation,
+  getSlideBounds,
+  parsePresentation,
+  serializePresentation,
+} from "../presentation/model";
+
+import type { Presentation } from "../presentation/model";
 
 import type { SceneSnapshot } from "../../shared/model/document";
 import type {
@@ -32,6 +43,18 @@ import type {
 } from "../../../shared/desktop-api";
 
 export interface CanvasDocument {
+  presentation?: Presentation;
+  activeSlideId?: string;
+  activeSlideContent?: string;
+  presenting?: boolean;
+  slideRuntime?: Map<
+    string,
+    {
+      snapshot?: SceneSnapshot;
+      history?: HistoryCheckpoint;
+      children: Map<string, HistoryCheckpoint>;
+    }
+  >;
   id: string;
   path: string | null;
   title: string;
@@ -182,11 +205,15 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
   };
 
   const createDocument = (
-    initialData: ExcalidrawInitialDataState = {},
+    initialData: ExcalidrawInitialDataState & {
+      presentation?: Presentation;
+    } = {},
     file?: DiskDocument,
     draft?: RecoveryDraft,
     activateOnOpen = true,
   ) => {
+    const { presentation, ...sceneData } = initialData;
+    initialData = sceneData;
     const preferences = resolveEditorPreferences(
       settingsRef.current.editorPreferences,
     );
@@ -222,6 +249,9 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       };
     }
     const document: CanvasDocument = {
+      presentation,
+      activeSlideId: presentation?.slides[0].id,
+      slideRuntime: presentation ? new Map() : undefined,
       id: draft?.id || ownerWindow.crypto.randomUUID(),
       path: file?.path || null,
       title: draft
@@ -259,8 +289,12 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     return document;
   };
 
-  const parse = (content: string) =>
-    loadFromBlob(new ownerWindow.Blob([content]), null, null);
+  const parse = async (content: string) => {
+    const presentation = await parsePresentation(content, ownerWindow);
+    return presentation
+      ? { ...presentation.slides[0].scene, presentation }
+      : loadFromBlob(new ownerWindow.Blob([content]), null, null);
+  };
 
   const openUnsavedCopy = async (title: string, content: string) => {
     if (closingRef.current) {
@@ -406,14 +440,13 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     }, 750);
   };
 
-  const capture = (document: CanvasDocument, snapshot: SceneSnapshot) => {
+  const recordContent = (document: CanvasDocument, content: string) => {
     if (
       !documentsRef.current.includes(document) ||
       document.removalPhase === "removing"
     ) {
       return;
     }
-    const content = document.tracker(snapshot);
     if (content === document.content) {
       return;
     }
@@ -425,8 +458,25 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     const wasDirty = document.dirty;
     document.dirty = content !== document.savedContent;
     scheduleDraft(document);
-    if (wasDirty !== document.dirty) {
+    if (wasDirty !== document.dirty || document.presentation) {
       refresh();
+    }
+  };
+
+  const capture = (document: CanvasDocument, snapshot: SceneSnapshot) => {
+    const sceneContent = document.tracker(snapshot);
+    if (document.presentation) {
+      const slide = document.presentation.slides.find(
+        (item) => item.id === document.activeSlideId,
+      );
+      if (!slide || sceneContent === document.activeSlideContent) {
+        return;
+      }
+      document.activeSlideContent = sceneContent;
+      slide.scene = snapshot;
+      recordContent(document, serializePresentation(document.presentation));
+    } else {
+      recordContent(document, sceneContent);
     }
   };
 
@@ -450,6 +500,10 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
   ) => {
     document.api = api;
     captureAPI(document);
+    if (document.initialized) {
+      refresh();
+      return;
+    }
     document.initialized = true;
     const unsaved = document.recovered || !!document.unsavedCopy;
     document.savedContent = unsaved ? null : document.content;
@@ -493,6 +547,7 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     const performSave = async () => {
       try {
         const file = await desktop.saveFile({
+          ...(document.presentation ? { format: "presentation" as const } : {}),
           documentId: document.id,
           path: document.path,
           name: document.title,
@@ -566,6 +621,238 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       ? document.flushEditing()
       : document.api?.commitEditing();
     captureAPI(document);
+  };
+
+  const newPresentation = (source?: CanvasDocument) => {
+    if (closingRef.current) {
+      return;
+    }
+    if (source) {
+      commitText(source);
+    }
+    const snapshot =
+      source?.getSnapshot?.() ??
+      (source?.api
+        ? {
+            elements: source.api.getSceneElementsIncludingDeleted(),
+            appState: source.api.getAppState(),
+            files: source.api.getFiles(),
+          }
+        : undefined);
+    const pageTitle =
+      settingsRef.current.language === "en" ? "Slide 1" : "第 1 页";
+    const deck = createPresentation(
+      ownerWindow.crypto.randomUUID(),
+      pageTitle,
+      snapshot ? JSON.parse(source!.tracker(snapshot)) : {},
+    );
+    const live = getNonDeletedElements(snapshot?.elements ?? []);
+    if (live.length) {
+      const [x1, y1, x2, y2] = getCommonBounds(live);
+      const width = Math.max(x2 - x1, ((y2 - y1) * 16) / 9, 128) / 0.9;
+      const height = (width * 9) / 16;
+      deck.slides[0].bounds = {
+        x: (x1 + x2 - width) / 2,
+        y: (y1 + y2 - height) / 2,
+        width,
+        height,
+      };
+    }
+    const document = createDocument({
+      ...deck.slides[0].scene,
+      presentation: deck,
+    });
+    document.title =
+      source?.title ||
+      (settingsRef.current.language === "en"
+        ? "Untitled presentation"
+        : "未命名演示文稿");
+    document.unsavedCopy = true;
+    document.dirty = true;
+    refresh();
+    return document;
+  };
+
+  const checkpointSlide = (document: CanvasDocument) => {
+    commitText(document);
+    if (!document.activeSlideId || !document.api || document.api.isDestroyed) {
+      return;
+    }
+    const previous = document.slideRuntime!.get(document.activeSlideId);
+    document.slideRuntime!.set(document.activeSlideId, {
+      children: previous?.children ?? new Map(),
+      snapshot: document.getSnapshot?.() ?? {
+        elements: document.api.getSceneElementsIncludingDeleted(),
+        appState: document.api.getAppState(),
+        files: document.api.getFiles(),
+      },
+      history: document.api.history.checkpoint?.(),
+    });
+  };
+
+  const selectSlide = (document: CanvasDocument, id: string) => {
+    const slide = document.presentation?.slides.find((item) => item.id === id);
+    if (!slide || document.activeSlideId === id || document.presenting) {
+      return;
+    }
+    checkpointSlide(document);
+    const cached = document.slideRuntime!.get(id);
+    document.activeSlideId = id;
+    document.initialData = cached?.snapshot ?? slide.scene;
+    document.tracker = createSceneTracker();
+    document.activeSlideContent = undefined;
+    document.api = null;
+    delete document.getSnapshot;
+    delete document.flushEditing;
+    delete document.activeEditor;
+    refresh();
+  };
+
+  const changeSlides = (
+    document: CanvasDocument,
+    change: (deck: Presentation) => void,
+  ) => {
+    if (!document.presentation || document.presenting) {
+      return;
+    }
+    commitText(document);
+    change(document.presentation);
+    recordContent(document, serializePresentation(document.presentation));
+  };
+
+  const addSlide = (document: CanvasDocument, duplicateId?: string) => {
+    let id = "";
+    changeSlides(document, (deck) => {
+      const source = deck.slides.find((slide) => slide.id === duplicateId);
+      id = ownerWindow.crypto.randomUUID();
+      const index = deck.slides.findIndex(
+        (slide) => slide.id === (duplicateId ?? document.activeSlideId),
+      );
+      const title = settingsRef.current.language === "en" ? "Slide" : "页面";
+      const slide = {
+        id,
+        ...(source?.bounds ? { bounds: { ...source.bounds } } : {}),
+        title: source
+          ? `${source.title} ${
+              settingsRef.current.language === "en" ? "copy" : "副本"
+            }`
+          : `${title} ${deck.slides.length + 1}`,
+        scene: source
+          ? copyPresentationScene(source.scene)
+          : {
+              appState: {
+                ...document.initialData.appState,
+                subscenes: {},
+                selectedElementIds: {},
+                viewBackgroundColor: "#ffffff",
+              },
+              elements: [],
+              files: {},
+            },
+      };
+      deck.slides = [
+        ...deck.slides.slice(0, index + 1),
+        slide,
+        ...deck.slides.slice(index + 1),
+      ];
+    });
+    if (id) {
+      selectSlide(document, id);
+    }
+  };
+
+  const copySlide = (document: CanvasDocument, id: string): string | null => {
+    if (
+      !document.presentation ||
+      !documentsRef.current.includes(document) ||
+      document.presenting ||
+      document.removalPhase ||
+      closingRef.current
+    ) {
+      return null;
+    }
+    const slide = document.presentation.slides.find((slide) => slide.id === id);
+    if (!slide) {
+      return null;
+    }
+    commitText(document);
+    return serializePresentation({ ...document.presentation, slides: [slide] });
+  };
+
+  const pasteSlide = async (document: CanvasDocument, content: string) => {
+    const deck = document.presentation;
+    const canPaste = () =>
+      !!deck &&
+      document.presentation === deck &&
+      documentsRef.current.includes(document) &&
+      !document.presenting &&
+      !document.removalPhase &&
+      !closingRef.current;
+    if (!canPaste()) {
+      return;
+    }
+    const source = await parsePresentation(content, ownerWindow);
+    if (!source || !canPaste()) {
+      return;
+    }
+    const slides = source.slides.map((slide) => ({
+      id: ownerWindow.crypto.randomUUID(),
+      title: `${slide.title} ${
+        settingsRef.current.language === "en" ? "copy" : "副本"
+      }`,
+      bounds: { ...getSlideBounds(slide, source.width, source.height) },
+      scene: copyPresentationScene(slide.scene),
+    }));
+    changeSlides(document, (deck) => {
+      const index = deck.slides.findIndex(
+        (slide) => slide.id === document.activeSlideId,
+      );
+      deck.slides.splice(index + 1, 0, ...slides);
+    });
+    selectSlide(document, slides[0].id);
+  };
+
+  const deleteSlide = (document: CanvasDocument, id: string) => {
+    const deck = document.presentation;
+    if (!deck || deck.slides.length <= 1 || document.presenting) {
+      return;
+    }
+    const index = deck.slides.findIndex((slide) => slide.id === id);
+    if (index < 0) {
+      return;
+    }
+    if (document.activeSlideId === id) {
+      selectSlide(
+        document,
+        deck.slides[index + 1]?.id ?? deck.slides[index - 1].id,
+      );
+    }
+    changeSlides(document, () => {
+      deck.slides = deck.slides.filter((slide) => slide.id !== id);
+      document.slideRuntime!.delete(id);
+    });
+  };
+
+  const renameSlide = (document: CanvasDocument, id: string, title: string) => {
+    if (title.trim()) {
+      changeSlides(document, (deck) => {
+        deck.slides = deck.slides.map((slide) =>
+          slide.id === id ? { ...slide, title: title.trim() } : slide,
+        );
+      });
+    }
+  };
+
+  const moveSlide = (document: CanvasDocument, id: string, toIndex: number) => {
+    changeSlides(document, (deck) => {
+      const fromIndex = deck.slides.findIndex((slide) => slide.id === id);
+      if (fromIndex < 0 || toIndex < 0 || toIndex >= deck.slides.length) {
+        return;
+      }
+      const slides = [...deck.slides];
+      slides.splice(toIndex, 0, slides.splice(fromIndex, 1)[0]);
+      deck.slides = slides;
+    });
   };
 
   const guardClose = async (
@@ -959,6 +1246,12 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       }
     },
     command: (command) => {
+      const presenting = documentsRef.current.some(
+        (document) => document.presenting,
+      );
+      if (presenting && command !== "close-window") {
+        return;
+      }
       if (command === "undo" || command === "redo") {
         void handleDesktopEditingCommand(root, command, {
           canvasActive: !!activeRef.current && !projectRef.current,
@@ -984,6 +1277,9 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       switch (command) {
         case "new":
           createDocument();
+          break;
+        case "new-presentation":
+          newPresentation();
           break;
         case "open":
           void openFiles();
@@ -1130,6 +1426,15 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     showProjects,
     refreshProjects,
     newDocument: () => createDocument(),
+    newPresentation,
+    selectSlide,
+    addSlide,
+    copySlide,
+    pasteSlide,
+    deleteSlide,
+    renameSlide,
+    moveSlide,
+    commitText,
     openFiles,
     openProject,
     openUnsavedCopy,

@@ -9,7 +9,13 @@ const { EventEmitter } = require("node:events");
 
 async function harness(
   t,
-  { developmentURL, argv = [], userDataOverride, legacySettings } = {},
+  {
+    developmentURL,
+    argv = [],
+    userDataOverride,
+    legacySettings,
+    buildChannel,
+  } = {},
 ) {
   const base = await fs.realpath(
     await fs.mkdtemp(path.join(os.tmpdir(), "excalidraw-main-")),
@@ -183,6 +189,8 @@ async function harness(
       require: (name) =>
         name === "electron"
           ? electron
+          : name === "../../package.json"
+          ? { buildChannel }
           : name === "./pdf.cjs"
           ? {
               validatePdfRequest: require("./pdf.cjs").validatePdfRequest,
@@ -291,6 +299,34 @@ test("new installations create the stable legacy profile directory", async (t) =
   );
   assert.equal((await fs.stat(app.getPath("userData"))).isDirectory(), true);
   assert.equal((await invoke("get-settings")).theme, "system");
+});
+
+test("dev-ppt builds use an independent profile and preserve legacy settings", async (t) => {
+  const legacySettings = { theme: "dark", language: "en" };
+  const { app, invoke } = await harness(t, {
+    buildChannel: "dev-ppt",
+    userDataOverride: null,
+    legacySettings,
+  });
+  const profile = path.join(app.getPath("appData"), "Excalidraw-Guzi Dev PPT");
+  assert.equal(app.getPath("userData"), profile);
+  assert.equal((await fs.stat(profile)).isDirectory(), true);
+  assert.equal((await invoke("get-settings")).theme, "system");
+  await invoke("update-settings", { theme: "light" });
+  assert.deepEqual(
+    JSON.parse(
+      await fs.readFile(
+        path.join(app.getPath("appData"), "Excalidraw Local", "settings.json"),
+      ),
+    ),
+    legacySettings,
+  );
+});
+
+test("explicit userData overrides take priority for dev-ppt builds", async (t) => {
+  const { app, base } = await harness(t, { buildChannel: "dev-ppt" });
+  assert.equal(app.getPath("userData"), path.join(base, "userData"));
+  await assert.rejects(fs.stat(app.getPath("appData")), { code: "ENOENT" });
 });
 
 test("relative isolated profile overrides are rejected", async (t) => {
@@ -491,6 +527,73 @@ test("save dialog rejects occupied document before writing disk", async (t) => {
     { code: "OPEN_DOCUMENT_CONFLICT" },
   );
   assert.equal(await fs.readFile(target, "utf8"), "another tab");
+});
+
+test("presentation Save As uses its native extension and rejects drawing destinations", async (t) => {
+  const { base, calls, invoke } = await harness(t);
+  const drawing = path.join(base, "existing.excalidraw");
+  await fs.writeFile(drawing, "keep drawing");
+  const request = {
+    documentId: require("node:crypto").randomUUID(),
+    path: null,
+    name: "talk",
+    content: '{"type":"guzi-presentation","slides":[]}',
+    format: "presentation",
+    saveAs: true,
+  };
+  assert.equal(await invoke("save-file", request), null);
+  assert.equal(calls.saveDialog.title, "演示文稿另存为");
+  assert.equal(calls.saveDialog.defaultPath, "talk.guzi-presentation");
+  assert.deepEqual(Array.from(calls.saveDialog.filters[0].extensions), [
+    "guzi-presentation",
+  ]);
+  calls.saveResult = { canceled: false, filePath: drawing };
+  await assert.rejects(invoke("save-file", request), /\.guzi-presentation/);
+  assert.equal(await fs.readFile(drawing, "utf8"), "keep drawing");
+  const target = path.join(base, "talk.guzi-presentation");
+  calls.saveResult = { canceled: false, filePath: target };
+  const saved = await invoke("save-file", request);
+  assert.equal(saved.path, target);
+  assert.equal(saved.content, request.content);
+  assert.equal((await invoke("list-projects")).history[0].path, target);
+  await assert.rejects(
+    invoke("save-file", { ...request, format: undefined }),
+    /\.excalidraw/,
+  );
+  assert.equal(await fs.readFile(target, "utf8"), request.content);
+});
+
+test("native open events and dialogs accept presentations alongside drawings", async (t) => {
+  const { base, app, calls, invoke } = await harness(t);
+  const presentation = path.join(base, "talk.GUZI-PRESENTATION");
+  const content = '{"type":"guzi-presentation","slides":[]}';
+  await fs.writeFile(presentation, content);
+  app.emit("open-file", { preventDefault() {} }, presentation);
+  const pending = await invoke("take-pending-files");
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].path, presentation);
+  assert.equal(pending[0].content, content);
+  calls.openResult = { canceled: false, filePaths: [presentation] };
+  const opened = await invoke("open-files");
+  assert.equal(opened[0].content, content);
+  assert.deepEqual(Array.from(calls.openDialog.filters[0].extensions), [
+    "excalidraw",
+    "guzi-presentation",
+  ]);
+});
+
+test("native File menu creates a presentation without changing the drawing shortcut", async (t) => {
+  const { calls } = await harness(t);
+  const fileMenu = calls.menu.find((item) => item.label === "文件").submenu;
+  assert.equal(
+    fileMenu.find((item) => item.label === "新建画布").accelerator,
+    "CmdOrCtrl+N",
+  );
+  const presentation = fileMenu.find((item) => item.label === "新建演示文稿");
+  presentation.click();
+  assert.deepEqual(calls.commands, [
+    { channel: "desktop:command", value: "new-presentation" },
+  ]);
 });
 
 test("macOS clipboard menu uses native roles and preserves editor keyboard ownership", async (t) => {

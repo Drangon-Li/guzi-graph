@@ -20,13 +20,21 @@ import {
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type {
+  ExcalidrawImperativeAPI,
+  SocketId,
+} from "@excalidraw/excalidraw/types";
 
 import { createSceneTracker } from "../../shared/model/document";
 import { DEFAULT_EDITOR_PREFERENCES } from "../../shared/config/editorPreferences";
 import { Projects } from "../projects/Projects";
 
 import { bundledExamples } from "../examples/catalog";
+import {
+  createPresentation,
+  parsePresentation,
+  serializePresentation,
+} from "../presentation/model";
 
 import { useWorkspace } from "./workspace";
 
@@ -247,6 +255,656 @@ describe("desktop document workspace", () => {
       });
     return { document, api, edit };
   };
+
+  const attachSlide = (
+    hook: Awaited<ReturnType<typeof mount>>,
+    document: CanvasDocument,
+  ) => {
+    let scene: SceneSnapshot = {
+      elements: document.initialData.elements ?? [],
+      appState: { ...snapshot().appState, ...document.initialData.appState },
+      files: document.initialData.files ?? {},
+    };
+    const api = {
+      isDestroyed: false,
+      getSceneElementsIncludingDeleted: () => scene.elements,
+      getAppState: () => scene.appState,
+      getFiles: () => scene.files,
+      commitEditing: vi.fn(),
+      history: { checkpoint: vi.fn() },
+      desktopSave: (saveAs: boolean) =>
+        hook.result.current.editorSave(document, scene, saveAs),
+    } as unknown as ExcalidrawImperativeAPI;
+    act(() => hook.result.current.initialize(document, api));
+    const edit = (next: SceneSnapshot) =>
+      act(() => {
+        scene = next;
+        hook.result.current.capture(document, scene);
+      });
+    return { api, edit };
+  };
+
+  const presentationContent = () => {
+    const deck = createPresentation("first", "Opening", snapshot(11));
+    deck.slides.push({ id: "second", title: "Details", scene: snapshot(22) });
+    return serializePresentation(deck);
+  };
+
+  it("creates a presentation from the native command and saves every edited page with its own images", async () => {
+    const hook = await mount();
+    act(() => command("new-presentation"));
+    const document = hook.result.current.documents[0];
+    expect(document).toMatchObject({
+      path: null,
+      title: "未命名演示文稿",
+      dirty: true,
+      unsavedCopy: true,
+      presentation: { width: 1280, height: 720, slides: [{}] },
+    });
+    const firstId = document.activeSlideId!;
+    const first = attachSlide(hook, document);
+    const imageScene = (version: number): SceneSnapshot => {
+      const scene = snapshot(version);
+      return {
+        ...scene,
+        elements: [
+          {
+            ...scene.elements[0],
+            type: "image",
+            fileId: "image",
+            status: "saved",
+            scale: [1, 1],
+          } as ExcalidrawElement,
+        ],
+        files: {
+          image: {
+            id: "image" as any,
+            mimeType: "image/png",
+            dataURL: `data:image/png;base64,page${version}` as any,
+            created: 1,
+          },
+        },
+      };
+    };
+    first.edit(imageScene(11));
+    act(() => hook.result.current.addSlide(document));
+    const secondId = document.activeSlideId!;
+    expect(secondId).not.toBe(firstId);
+    const second = attachSlide(hook, document);
+    second.edit(imageScene(22));
+    act(() => hook.result.current.selectSlide(document, firstId));
+    const firstAgain = attachSlide(hook, document);
+    firstAgain.edit(imageScene(33));
+    vi.mocked(desktop.saveFile).mockImplementation(async (request) =>
+      disk("/drawings/talk.guzi-presentation", request.content),
+    );
+    await act(async () => {
+      expect(await hook.result.current.requestSave(document)).toBe(true);
+    });
+    const request = vi.mocked(desktop.saveFile).mock.calls[0][0];
+    expect(request).toMatchObject({ format: "presentation", path: null });
+    const saved = await parsePresentation(
+      request.content,
+      root.ownerDocument.defaultView!,
+    );
+    expect(saved!.slides.map((slide) => slide.id)).toEqual([firstId, secondId]);
+    expect(saved!.slides.map((slide) => slide.scene.elements![0].x)).toEqual([
+      33, 22,
+    ]);
+    expect(
+      saved!.slides.map((slide) => slide.scene.files!.image.dataURL),
+    ).toEqual(["data:image/png;base64,page33", "data:image/png;base64,page22"]);
+    expect(document.dirty).toBe(false);
+    expect(document.path).toBe("/drawings/talk.guzi-presentation");
+    expect(document.title).toBe("talk");
+  });
+
+  it("retains edits made on another page while an earlier complete presentation save is pending", async () => {
+    const hook = await mount();
+    vi.mocked(desktop.openFiles).mockResolvedValue([
+      disk("/drawings/talk.guzi-presentation", presentationContent()),
+    ]);
+    await act(async () => hook.result.current.openFiles());
+    const document = hook.result.current.documents[0];
+    const first = attachSlide(hook, document);
+    first.edit(snapshot(33));
+    let finish!: (file: DiskDocument) => void;
+    vi.mocked(desktop.saveFile).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    let saving!: Promise<boolean>;
+    act(() => {
+      saving = hook.result.current.requestSave(document);
+    });
+    const submitted = vi.mocked(desktop.saveFile).mock.calls[0][0].content;
+    act(() => hook.result.current.selectSlide(document, "second"));
+    const second = attachSlide(hook, document);
+    second.edit(snapshot(44));
+    await act(async () => {
+      finish(disk("/drawings/talk.guzi-presentation", submitted));
+      expect(await saving).toBe(true);
+    });
+    expect(document.savedContent).toBe(submitted);
+    expect(document.dirty).toBe(true);
+    expect(
+      JSON.parse(document.savedContent!).slides.map(
+        (slide: any) => slide.scene.elements[0].x,
+      ),
+    ).toEqual([33, 22]);
+    expect(
+      JSON.parse(document.content).slides.map(
+        (slide: any) => slide.scene.elements[0].x,
+      ),
+    ).toEqual([33, 44]);
+    await waitFor(() => expect(desktop.writeDraft).toHaveBeenCalled());
+    expect(vi.mocked(desktop.writeDraft).mock.calls.at(-1)![0]).toMatchObject({
+      path: "/drawings/talk.guzi-presentation",
+      content: document.content,
+    });
+    expect(desktop.deleteDraft).not.toHaveBeenCalled();
+  });
+
+  it("reopens all presentation pages and preserves the saved baseline when switching pages", async () => {
+    const hook = await mount();
+    vi.mocked(desktop.openFiles).mockResolvedValue([
+      disk("/drawings/talk.guzi-presentation", presentationContent()),
+    ]);
+    await act(async () => hook.result.current.openFiles());
+    const document = hook.result.current.documents[0];
+    const first = attachSlide(hook, document);
+    expect(document.dirty).toBe(false);
+    expect(document.initialData.elements![0].x).toBe(11);
+    const saved = document.savedContent;
+    act(() => hook.result.current.selectSlide(document, "second"));
+    attachSlide(hook, document);
+    expect(document.initialData.elements![0].x).toBe(22);
+    expect(document.savedContent).toBe(saved);
+    expect(document.dirty).toBe(false);
+    act(() => hook.result.current.selectSlide(document, "first"));
+    const firstAgain = attachSlide(hook, document);
+    firstAgain.edit(snapshot(33));
+    expect(first.api.commitEditing).toHaveBeenCalled();
+    act(() => hook.result.current.selectSlide(document, "second"));
+    attachSlide(hook, document);
+    expect(document.savedContent).toBe(saved);
+    expect(document.dirty).toBe(true);
+    act(() => hook.result.current.selectSlide(document, "first"));
+    attachSlide(hook, document);
+    expect(document.initialData.elements![0].x).toBe(33);
+  });
+
+  it("recovers complete presentation drafts as independent unsaved documents", async () => {
+    const draft = {
+      id: "presentation-recovery",
+      path: "/drawings/talk.guzi-presentation",
+      title: "Recovered talk",
+      content: presentationContent(),
+      modifiedAt: 100,
+    };
+    vi.mocked(desktop.listDrafts).mockResolvedValue([draft]);
+    const hook = await mount();
+    await act(async () => {
+      expect(await hook.result.current.recover(draft)).toBe(true);
+    });
+    const document = hook.result.current.documents[0];
+    attachSlide(hook, document);
+    expect(document).toMatchObject({
+      id: draft.id,
+      path: null,
+      title: draft.title,
+      dirty: true,
+      recovered: true,
+      savedContent: null,
+    });
+    expect(desktop.writeDraft).toHaveBeenCalledWith({ ...draft, path: null });
+    expect(document.presentation!.slides.map((slide) => slide.title)).toEqual([
+      "Opening",
+      "Details",
+    ]);
+    act(() => hook.result.current.selectSlide(document, "second"));
+    attachSlide(hook, document);
+    expect(document.initialData.elements![0].x).toBe(22);
+    expect(document.dirty).toBe(true);
+    expect(document.savedContent).toBeNull();
+    vi.mocked(desktop.saveFile).mockImplementation(async (request) =>
+      disk("/drawings/recovered.guzi-presentation", request.content),
+    );
+    await act(async () => {
+      expect(await hook.result.current.requestSave(document)).toBe(true);
+    });
+    expect(desktop.saveFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: null,
+        format: "presentation",
+      }),
+    );
+    expect(hook.result.current.drafts).toHaveLength(0);
+  });
+
+  it("renames, orders, duplicates and deletes pages while retaining at least one page", async () => {
+    const hook = await mount();
+    let document!: CanvasDocument;
+    act(() => {
+      document = hook.result.current.newPresentation()!;
+    });
+    attachSlide(hook, document).edit(snapshot(11));
+    const first = document.activeSlideId!;
+    act(() => hook.result.current.addSlide(document));
+    attachSlide(hook, document).edit(snapshot(22));
+    const second = document.activeSlideId!;
+    act(() => {
+      hook.result.current.renameSlide(document, first, "  Opening  ");
+      hook.result.current.renameSlide(document, second, "   ");
+      hook.result.current.moveSlide(document, second, 0);
+    });
+    expect(document.presentation!.slides.map((slide) => slide.id)).toEqual([
+      second,
+      first,
+    ]);
+    expect(document.presentation!.slides[1].title).toBe("Opening");
+    expect(document.presentation!.slides[0].title.trim()).not.toBe("");
+    act(() => hook.result.current.addSlide(document, first));
+    attachSlide(hook, document).edit(snapshot(33));
+    const duplicate = document.activeSlideId!;
+    expect(document.presentation!.slides.map((slide) => slide.id)).toEqual([
+      second,
+      first,
+      duplicate,
+    ]);
+    expect(document.presentation!.slides[1].scene.elements![0].x).toBe(11);
+    expect(document.presentation!.slides[2].scene.elements![0].x).toBe(33);
+    act(() => hook.result.current.deleteSlide(document, duplicate));
+    attachSlide(hook, document);
+    expect(document.activeSlideId).toBe(first);
+    act(() => hook.result.current.deleteSlide(document, first));
+    attachSlide(hook, document);
+    expect(document.activeSlideId).toBe(second);
+    const content = document.content;
+    act(() => hook.result.current.deleteSlide(document, second));
+    expect(document.presentation!.slides).toHaveLength(1);
+    expect(document.content).toBe(content);
+    expect(document.dirty).toBe(true);
+  });
+
+  it("duplicates a renamed saved slide without corrupting live runtime state", async () => {
+    const hook = await mount();
+    vi.mocked(desktop.openFiles).mockResolvedValue([
+      disk("/drawings/talk.guzi-presentation", presentationContent()),
+    ]);
+    await act(async () => hook.result.current.openFiles());
+    const document = hook.result.current.documents[0];
+    const first = attachSlide(hook, document);
+    const live = snapshot(33);
+    live.appState.collaborators.set("peer" as SocketId, { username: "Peer" });
+    live.appState.selectedElementIds = { rectangle: true };
+    live.appState.hoveredElementIds = { rectangle: true };
+    first.edit(live);
+    const checkpoint = { undo: [], redo: [] };
+    vi.mocked(first.api.history.checkpoint!).mockReturnValue(checkpoint);
+    act(() => hook.result.current.renameSlide(document, "first", "中文名称"));
+    expect(
+      document.presentation!.slides[0].scene.appState?.collaborators,
+    ).toBeInstanceOf(Map);
+
+    act(() => hook.result.current.addSlide(document, "first"));
+    expect(document.initialData.appState).not.toHaveProperty("collaborators");
+    expect(document.initialData.appState).not.toHaveProperty(
+      "selectedElementIds",
+    );
+    expect(document.initialData.appState).not.toHaveProperty(
+      "hoveredElementIds",
+    );
+    const copy = attachSlide(hook, document);
+    expect(copy.api.getAppState().collaborators).toBeInstanceOf(Map);
+    expect(() =>
+      copy.api.getAppState().collaborators.forEach(() => {}),
+    ).not.toThrow();
+    expect(copy.api.getSceneElementsIncludingDeleted()[0].x).toBe(33);
+    const originalRuntime = document.slideRuntime!.get("first")!;
+    expect(originalRuntime.snapshot?.appState.collaborators).toBe(
+      live.appState.collaborators,
+    );
+    expect(originalRuntime.history).toBe(checkpoint);
+
+    act(() => hook.result.current.selectSlide(document, "first"));
+    const reopened = attachSlide(hook, document);
+    expect(reopened.api.getAppState().collaborators).toBe(
+      live.appState.collaborators,
+    );
+    expect(reopened.api.getAppState().selectedElementIds).toEqual({
+      rectangle: true,
+    });
+    expect(document.presentation!.slides[0].title).toBe("中文名称");
+  });
+
+  it("copies a frozen page without changing the deck and pastes it after the current page even after the source is deleted", async () => {
+    const hook = await mount();
+    const source = createPresentation("first", "Opening", snapshot(11));
+    source.slides.push(
+      { id: "second", title: "Details", scene: snapshot(22) },
+      { id: "last", title: "Ending", scene: snapshot(66) },
+    );
+    vi.mocked(desktop.openFiles).mockResolvedValue([
+      disk("/drawings/talk.guzi-presentation", serializePresentation(source)),
+    ]);
+    await act(async () => hook.result.current.openFiles());
+    const document = hook.result.current.documents[0];
+    const first = attachSlide(hook, document);
+    const original = document.presentation!.slides[0].scene;
+    const content = document.content;
+    const revision = document.revision;
+    let clipboard!: string;
+    act(() => {
+      clipboard = hook.result.current.copySlide(document, "first")!;
+    });
+    expect(JSON.parse(clipboard).slides).toHaveLength(1);
+    expect(document.presentation!.slides.map((slide) => slide.id)).toEqual([
+      "first",
+      "second",
+      "last",
+    ]);
+    expect(document.content).toBe(content);
+    expect(document.revision).toBe(revision);
+    expect(document.dirty).toBe(false);
+    first.edit(snapshot(33));
+    act(() => hook.result.current.deleteSlide(document, "first"));
+    attachSlide(hook, document);
+    await act(async () => hook.result.current.pasteSlide(document, clipboard));
+    const pasted = document.presentation!.slides[1];
+    expect(document.presentation!.slides.map((slide) => slide.id)).toEqual([
+      "second",
+      pasted.id,
+      "last",
+    ]);
+    expect(document.activeSlideId).toBe(pasted.id);
+    expect(pasted.id).not.toBe("first");
+    expect(pasted.title).toBe("Opening 副本");
+    expect(pasted.scene).not.toBe(original);
+    expect(pasted.scene.elements![0].x).toBe(11);
+    attachSlide(hook, document).edit(snapshot(44));
+    await act(async () => hook.result.current.pasteSlide(document, clipboard));
+    expect(document.presentation!.slides[1].scene.elements![0].x).toBe(44);
+    expect(document.presentation!.slides[2].scene.elements![0].x).toBe(11);
+    expect(document.presentation!.slides[2].id).not.toBe(pasted.id);
+  });
+
+  it("flushes the latest composite scene before copying and retains nested scenes, images, tables and rich text", async () => {
+    const hook = await mount();
+    let document!: CanvasDocument;
+    act(() => {
+      document = hook.result.current.newPresentation()!;
+    });
+    attachSlide(hook, document);
+    let composite = snapshot(1);
+    const table = createTableElements(createTableData(1, 1), 0, 0);
+    table.elements = table.elements.map((element) => ({
+      ...element,
+      id: `table-${element.id}`,
+      boundElements:
+        element.boundElements?.map((bound) => ({
+          ...bound,
+          id: `table-${bound.id}`,
+        })) ?? null,
+      ...(element.type === "text" && element.containerId
+        ? { containerId: `table-${element.containerId}` }
+        : {}),
+    }));
+    const nested = JSON.parse(bundledExamples[0].content);
+    const committed: SceneSnapshot = {
+      ...snapshot(55),
+      elements: [
+        ...table.elements.map((element) =>
+          element.type === "text"
+            ? {
+                ...element,
+                text: "Latest cell",
+                originalText: "Latest cell",
+                richText: {
+                  version: 1 as const,
+                  paragraphs: [{ runs: [{ text: "Latest cell", bold: true }] }],
+                },
+              }
+            : element,
+        ),
+        ...nested.elements,
+        {
+          ...snapshot().elements[0],
+          id: "image",
+          type: "image",
+          fileId: "image" as any,
+          groupIds: [],
+          status: "saved",
+          scale: [1, 1],
+          crop: null,
+        } as ExcalidrawElement,
+      ],
+      appState: { ...snapshot().appState, ...nested.appState },
+      files: {
+        ...nested.files,
+        image: {
+          id: "image" as any,
+          dataURL: "data:image/png;base64,AAAA" as any,
+          mimeType: "image/png",
+          created: 1,
+        },
+      },
+    };
+    document.getSnapshot = () => composite;
+    document.flushEditing = vi.fn(() => {
+      composite = committed;
+    });
+    let clipboard!: string;
+    act(() => {
+      clipboard = hook.result.current.copySlide(
+        document,
+        document.activeSlideId!,
+      )!;
+    });
+    expect(document.flushEditing).toHaveBeenCalledTimes(1);
+    expect(document.presentation!.slides).toHaveLength(1);
+    await act(async () => hook.result.current.pasteSlide(document, clipboard));
+    const pasted = document.presentation!.slides[1].scene;
+    const cell = pasted.elements!.find(
+      (element) => element.type === "text" && element.text === "Latest cell",
+    )!;
+    expect(
+      cell.type === "text" && cell.richText?.paragraphs[0].runs[0],
+    ).toEqual({
+      text: "Latest cell",
+      bold: true,
+    });
+    expect(
+      pasted.elements!.find((element) => element.id === table.elements[0].id)
+        ?.customData?.table,
+    ).toMatchObject({
+      rows: table.elements[0].customData!.table.rows,
+      columns: table.elements[0].customData!.table.columns,
+      cells: [
+        {
+          text: "Latest cell",
+          richText: cell.type === "text" && cell.richText,
+        },
+      ],
+    });
+    expect(pasted.appState?.subscenes).toEqual(
+      JSON.parse(clipboard).slides[0].scene.appState.subscenes,
+    );
+    expect(Object.keys(pasted.appState!.subscenes!)).not.toHaveLength(0);
+    expect(pasted.files!.image.dataURL).toBe("data:image/png;base64,AAAA");
+    expect(pasted.files!.image).not.toBe(committed.files.image);
+  });
+
+  it.each([undefined, { x: -900, y: -500, width: 1600, height: 900 }])(
+    "retains source page bounds when pasting into a differently sized presentation: %j",
+    async (bounds) => {
+      const hook = await mount();
+      const source = createPresentation("source", "Wide page", snapshot());
+      source.width = 1920;
+      source.height = 1080;
+      source.slides[0].bounds = bounds;
+      let document!: CanvasDocument;
+      act(() => {
+        document = hook.result.current.newPresentation()!;
+      });
+      attachSlide(hook, document);
+      await act(async () =>
+        hook.result.current.pasteSlide(document, serializePresentation(source)),
+      );
+      expect(document.presentation!.width).toBe(1280);
+      expect(document.presentation!.slides[1].bounds).toEqual(
+        bounds ?? { x: 0, y: 0, width: 1920, height: 1080 },
+      );
+    },
+  );
+
+  it("ignores other clipboard text and propagates damaged presentation errors without changing pages", async () => {
+    const hook = await mount();
+    let document!: CanvasDocument;
+    act(() => {
+      document = hook.result.current.newPresentation()!;
+    });
+    attachSlide(hook, document);
+    const content = document.content;
+    const target = document;
+    for (const text of ["plain text", "null", '{"type":"excalidraw"}']) {
+      await act(async () => hook.result.current.pasteSlide(target, text));
+    }
+    await expect(
+      hook.result.current.pasteSlide(document, '{"type":"guzi-presentation"}'),
+    ).rejects.toThrow();
+    expect(document.presentation!.slides).toHaveLength(1);
+    expect(document.content).toBe(content);
+    expect(hook.result.current.copySlide(document, "missing")).toBeNull();
+  });
+
+  it.each(["presenting", "closed"] as const)(
+    "abandons a pending paste when its document becomes %s",
+    async (state) => {
+      const hook = await mount();
+      vi.mocked(desktop.openFiles).mockResolvedValue([
+        disk("/drawings/talk.guzi-presentation", presentationContent()),
+      ]);
+      await act(async () => hook.result.current.openFiles());
+      const document = hook.result.current.documents[0];
+      attachSlide(hook, document);
+      const clipboard = hook.result.current.copySlide(document, "first")!;
+      const scene = document.presentation!.slides[0].scene;
+      let finish!: (scene: Awaited<ReturnType<typeof loadFromBlob>>) => void;
+      vi.mocked(loadFromBlob).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      let pasting!: Promise<void>;
+      act(() => {
+        pasting = hook.result.current.pasteSlide(document, clipboard);
+      });
+      if (state === "closed") {
+        await act(async () => {
+          expect(await hook.result.current.closeDocument(document.id)).toBe(
+            true,
+          );
+        });
+      } else {
+        document.presenting = true;
+      }
+      await act(async () => {
+        finish(scene as Awaited<ReturnType<typeof loadFromBlob>>);
+        await pasting;
+      });
+      expect(document.presentation!.slides).toHaveLength(2);
+      expect(document.activeSlideId).toBe("first");
+    },
+  );
+
+  it("captures committed drawing edits when converting a canvas into a separate presentation", async () => {
+    const hook = await mount();
+    const source = addDocument(hook);
+    vi.mocked(source.api.commitEditing).mockImplementation(() =>
+      source.edit(55),
+    );
+    let converted!: CanvasDocument;
+    act(() => {
+      converted = hook.result.current.newPresentation(source.document)!;
+    });
+    attachSlide(hook, converted);
+    expect(converted.id).not.toBe(source.document.id);
+    expect(converted.path).toBeNull();
+    expect(converted.initialData.elements![0].x).toBe(55);
+    expect(converted.dirty).toBe(true);
+    expect(source.document.presentation).toBeUndefined();
+    expect(source.document.dirty).toBe(true);
+    expect(desktop.saveFile).not.toHaveBeenCalled();
+  });
+
+  it("flushes a composite subcanvas snapshot before changing pages without leaking it into a new page", async () => {
+    const source = JSON.parse(bundledExamples[0].content);
+    const content = serializePresentation(
+      createPresentation("first", "Opening", source),
+    );
+    const hook = await mount();
+    vi.mocked(desktop.openFiles).mockResolvedValue([
+      disk("/drawings/nested.guzi-presentation", content),
+    ]);
+    await act(async () => hook.result.current.openFiles());
+    const document = hook.result.current.documents[0];
+    attachSlide(hook, document);
+    let composite: SceneSnapshot = {
+      elements: document.initialData.elements!,
+      appState: { ...snapshot().appState, ...document.initialData.appState },
+      files: document.initialData.files ?? {},
+    };
+    const [childId, child] = Object.entries(composite.appState.subscenes).find(
+      ([, child]) => child.elements.length,
+    )!;
+    const originalX = child.elements[0].x;
+    const committed = {
+      ...composite,
+      appState: {
+        ...composite.appState,
+        subscenes: {
+          ...composite.appState.subscenes,
+          [childId]: {
+            ...child,
+            elements: child.elements.map((element, index) =>
+              index
+                ? element
+                : {
+                    ...element,
+                    x: originalX + 100,
+                    version: element.version + 1,
+                    versionNonce: element.versionNonce + 1,
+                  },
+            ),
+          },
+        },
+      },
+    };
+    document.getSnapshot = () => composite;
+    const flush = vi.fn(() => {
+      composite = committed;
+    });
+    document.flushEditing = flush;
+    act(() => hook.result.current.addSlide(document));
+    expect(flush).toHaveBeenCalled();
+    attachSlide(hook, document);
+    const saved = JSON.parse(document.content);
+    expect(
+      saved.slides[0].scene.appState.subscenes[childId].elements[0].x,
+    ).toBe(originalX + 100);
+    expect(saved.slides[1].scene.elements).toHaveLength(0);
+    expect(saved.slides[1].scene.appState.subscenes ?? {}).toEqual({});
+    act(() => hook.result.current.selectSlide(document, "first"));
+    attachSlide(hook, document);
+    expect(
+      document.initialData.appState!.subscenes![childId].elements[0].x,
+    ).toBe(originalX + 100);
+    expect(document.dirty).toBe(true);
+  });
 
   it("opens a complete unsaved copy, drafts its subscenes and saves only to the chosen location", async () => {
     const hook = await mount();

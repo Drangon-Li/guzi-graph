@@ -13,6 +13,7 @@
     "typecheck": "tsc --project tsconfig.json",
     "test": "node --test src/main/*.test.cjs src/main/i18n/*.test.cjs && npm run test:renderer",
     "package": "npm run build && electron-builder --mac dmg --arm64",
+    "package:dev-ppt": "VITE_DESKTOP_BUILD_CHANNEL=dev-ppt npm run build && electron-builder --config electron-builder.dev-ppt.cjs --mac dmg --arm64",
     "package:dir": "npm run build && electron-builder --mac dir --arm64",
     "test:renderer": "cd ../.. && vitest --config tooling/config/test/vitest.config.mts run apps/desktop/src/renderer --reporter=dot"
   },
@@ -70,6 +71,12 @@
         "name": "Excalidraw 画布",
         "role": "Editor",
         "mimeType": "application/vnd.excalidraw+json"
+      },
+      {
+        "ext": "guzi-presentation",
+        "name": "Guzi 演示文稿",
+        "role": "Editor",
+        "mimeType": "application/vnd.guzi.presentation+json"
       }
     ]
   },

@@ -106,6 +106,40 @@ describe("desktop tool panel", () => {
     localStorage.removeItem("excalidraw.desktopUIMode");
   });
 
+  it.each([false, true])(
+    "commits the initial collapse state before paint when pinned is %s, including after remount",
+    async (pinned) => {
+      const commits: { collapsed: boolean; width: string }[] = [];
+      const onRender = () => {
+        const panel = screen.queryByRole("complementary", {
+          name: labels.title,
+        });
+        if (panel) {
+          commits.push({
+            collapsed: panel.classList.contains("tool-panel--collapsed"),
+            width: panel.style.width,
+          });
+        }
+      };
+      const renderHarness = (key: number) => (
+        <React.Profiler id="tool-panel" onRender={onRender}>
+          <Harness key={key} initialDock="left" initialPinned={pinned} />
+        </React.Profiler>
+      );
+      const expected = {
+        collapsed: !pinned,
+        width: pinned ? "280px" : "0px",
+      };
+
+      const { rerender } = await render(renderHarness(0));
+      expect(commits[0]).toEqual(expected);
+
+      commits.length = 0;
+      rerender(renderHarness(1));
+      await waitFor(() => expect(commits[0]).toEqual(expected));
+    },
+  );
+
   it("changes dock position independently from pinning and collapse", async () => {
     await render(<Harness initialDock="left" initialPinned={false} />);
     const panel = screen.getByRole("complementary", { name: labels.title });
