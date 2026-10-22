@@ -1444,6 +1444,8 @@ export interface ExcalidrawImperativeAPI {
   >["getSceneElementsMapIncludingDeleted"];
   history: {
     clear: InstanceType<typeof App>["resetHistory"];
+    undo?: () => void;
+    redo?: () => void;
     checkpoint?: () => import("./history").HistoryCheckpoint;
     restoreCheckpoint?: (
       checkpoint: import("./history").HistoryCheckpoint,

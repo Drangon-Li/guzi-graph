@@ -74,6 +74,7 @@ const getThumbnail = (
         presentation.width,
         presentation.height,
         ownerDocument,
+        theme === "dark",
       );
       return cancelled()
         ? null

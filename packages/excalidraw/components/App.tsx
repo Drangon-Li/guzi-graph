@@ -820,6 +820,10 @@ class App extends React.Component<AppProps, AppState> {
         this.getSceneElementsMapIncludingDeleted,
       history: {
         clear: this.resetHistory,
+        undo: () =>
+          this.actionManager.executeAction(createUndoAction(this.history)),
+        redo: () =>
+          this.actionManager.executeAction(createRedoAction(this.history)),
         checkpoint: () => this.history.checkpoint(),
         restoreCheckpoint: (checkpoint) =>
           this.history.restoreCheckpoint(checkpoint),

@@ -64,6 +64,7 @@ describe("desktop nested canvas lifecycle", () => {
     act(() =>
       firstChild.updateScene({
         elements: [shape],
+        appState: { gridSize: 50, objectsSnapModeEnabled: true },
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       }),
     );
@@ -94,6 +95,10 @@ describe("desktop nested canvas lifecycle", () => {
     const reopened = document.activeEditor!()!;
     expect(reopened).not.toBe(parent);
     expect(reopened.getSceneElements()[0].id).toBe(shape.id);
+    expect(reopened.getAppState()).toMatchObject({
+      gridSize: 50,
+      objectsSnapModeEnabled: true,
+    });
     await waitFor(() =>
       expect(reopened.history.checkpoint!().undo.length).toBeGreaterThan(0),
     );

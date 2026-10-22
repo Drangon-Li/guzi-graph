@@ -1,4 +1,8 @@
-import { registerCustomFontRegistry, SVG_NS } from "@excalidraw/common";
+import {
+  applyDarkModeFilter,
+  registerCustomFontRegistry,
+  SVG_NS,
+} from "@excalidraw/common";
 import {
   getCommonBounds,
   getNonDeletedElements,
@@ -52,6 +56,7 @@ export const renderSlideSvg = async (
   width: number,
   height: number,
   ownerDocument: Document,
+  darkMode = false,
 ): Promise<SVGSVGElement> => {
   if (
     !Number.isFinite(width) ||
@@ -79,7 +84,10 @@ export const renderSlideSvg = async (
   background.setAttribute("y", String(bounds.y));
   background.setAttribute("width", String(bounds.width));
   background.setAttribute("height", String(bounds.height));
-  background.setAttribute("fill", appState.viewBackgroundColor);
+  background.setAttribute(
+    "fill",
+    applyDarkModeFilter(appState.viewBackgroundColor, darkMode),
+  );
   svg.appendChild(background);
 
   const elements = getNonDeletedElements(
@@ -99,11 +107,11 @@ export const renderSlideSvg = async (
         exportPadding: 0,
         exportScale: 1,
         exportEmbedScene: false,
-        exportWithDarkMode: false,
+        exportWithDarkMode: darkMode,
         frameRendering: { ...appState.frameRendering, name: false },
       },
       slide.scene.files ?? {},
-      { reuseImages: true },
+      { reuseImages: true, ownerDocument },
     );
     const imported = ownerDocument.importNode(content, true);
     const contentWidth = Math.max(1, Number(imported.getAttribute("width")));
@@ -120,17 +128,61 @@ export const renderSlideSvg = async (
   return svg;
 };
 
-export const exportPresentationPdf = async (
-  deck: Presentation,
-  title: string,
-  desktop: DesktopAPI,
+export const renderSlidePng = async (
+  slide: PresentationSlide,
+  width: number,
+  height: number,
   ownerDocument: Document,
-): Promise<boolean> => {
+): Promise<Blob> => {
+  const snapshot: PresentationSlide = JSON.parse(JSON.stringify(slide));
+  const svg = await renderSlideSvg(snapshot, width, height, ownerDocument);
+  const ownerWindow = ownerDocument.defaultView;
+  if (!ownerWindow) {
+    throw new Error("演示页面没有可用的渲染窗口。");
+  }
+  const image = new ownerWindow.Image();
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("演示页面图像渲染失败。"));
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+      svg.outerHTML,
+    )}`;
+  });
+  const canvas = ownerDocument.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("无法创建演示页面画布。");
+  }
+  context.drawImage(image, 0, 0, width, height);
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+      } else {
+        reject(new Error("演示页面 PNG 导出失败。"));
+      }
+    }, "image/png");
+  });
+};
+
+export type PresentationPdfPage = {
+  title: string;
+  svg: string;
+  width: number;
+  height: number;
+};
+
+export const renderPresentationPdfPages = async (
+  deck: Presentation,
+  ownerDocument: Document,
+): Promise<PresentationPdfPage[]> => {
   if (!deck.slides.length) {
     throw new Error("演示文稿至少需要一页。");
   }
   const snapshot: Presentation = JSON.parse(serializePresentation(deck));
-  const pages: NonNullable<Parameters<DesktopAPI["savePdf"]>[0]["pages"]> = [];
+  const pages: PresentationPdfPage[] = [];
   for (const slide of snapshot.slides) {
     const svg = await renderSlideSvg(
       slide,
@@ -145,12 +197,24 @@ export const exportPresentationPdf = async (
       height: snapshot.height,
     });
   }
-  const [first, ...remaining] = pages;
+  return pages;
+};
+
+export const exportPresentationPdf = async (
+  deck: Presentation,
+  title: string,
+  desktop: DesktopAPI,
+  ownerDocument: Document,
+): Promise<boolean> => {
+  const [first, ...remaining] = await renderPresentationPdfPages(
+    deck,
+    ownerDocument,
+  );
   return desktop.savePdf({
     name: title,
     svg: first.svg,
-    width: snapshot.width,
-    height: snapshot.height,
+    width: first.width,
+    height: first.height,
     ...(remaining.length ? { pages: remaining } : {}),
   });
 };

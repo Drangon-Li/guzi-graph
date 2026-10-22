@@ -66,7 +66,13 @@ export interface ClipboardData {
   subscenes?: SubcanvasScenes;
 }
 
-type AllowedPasteMimeTypes = typeof ALLOWED_PASTE_MIME_TYPES[number];
+type PasteMimeTypeList = typeof ALLOWED_PASTE_MIME_TYPES;
+type AllowedPasteMimeTypes =
+  | PasteMimeTypeList[number]
+  | typeof MIME_TYPES.excalidrawClipboard;
+
+const WEB_EXCALIDRAW_CLIPBOARD_TYPE =
+  `web ${MIME_TYPES.excalidrawClipboard}` as const;
 
 type ParsedClipboardEventTextData =
   | { type: "text"; value: string }
@@ -87,6 +93,7 @@ export const probablySupportsClipboardBlob =
 const clipboardContainsElements = (
   contents: any,
 ): contents is {
+  type: string;
   elements: ExcalidrawElement[];
   files?: BinaryFiles;
   subscenes?: SubcanvasScenes;
@@ -104,19 +111,22 @@ const clipboardContainsElements = (
   return false;
 };
 
-export const createPasteEvent = ({
-  types,
-  files,
-}: {
-  types?: { [key in AllowedPasteMimeTypes]?: string | File };
-  files?: File[];
-}) => {
+export const createPasteEvent = (
+  {
+    types,
+    files,
+  }: {
+    types?: { [key in AllowedPasteMimeTypes]?: string | File };
+    files?: File[];
+  },
+  ownerWindow: Window & typeof globalThis = window,
+) => {
   if (!types && !files) {
     console.warn("createPasteEvent: no types or files provided");
   }
 
-  const event = new ClipboardEvent(EVENT.PASTE, {
-    clipboardData: new DataTransfer(),
+  const event = new ownerWindow.ClipboardEvent(EVENT.PASTE, {
+    clipboardData: new ownerWindow.DataTransfer(),
   });
 
   if (types) {
@@ -229,8 +239,29 @@ export const copyToClipboard = async (
   /** supply if available to make the operation more certain to succeed */
   clipboardEvent?: ClipboardEvent | null,
   subscenes?: SubcanvasScenes,
+  options?: {
+    ownerWindow: Window & typeof globalThis;
+    image: () => Promise<Blob>;
+  },
 ) => {
   const json = serializeAsClipboardJSON({ elements, files, subscenes });
+
+  if (
+    options?.ownerWindow.ClipboardItem?.supports?.(
+      WEB_EXCALIDRAW_CLIPBOARD_TYPE,
+    )
+  ) {
+    const { ownerWindow } = options;
+    await ownerWindow.navigator.clipboard.write([
+      new ownerWindow.ClipboardItem({
+        [MIME_TYPES.png]: options.image(),
+        [WEB_EXCALIDRAW_CLIPBOARD_TYPE]: new ownerWindow.Blob([json], {
+          type: MIME_TYPES.excalidrawClipboard,
+        }),
+      }),
+    ]);
+    return;
+  }
 
   await copyTextToSystemClipboard(
     {
@@ -263,7 +294,7 @@ function parseHTMLTree(el: ChildNode) {
 }
 
 const maybeParseHTMLDataItem = (
-  dataItem: ParsedDataTransferItemType<typeof MIME_TYPES["html"]>,
+  dataItem: ParsedDataTransferItemType<typeof MIME_TYPES.html>,
 ): { type: "mixedContent"; value: PastedMixedContent } | null => {
   const html = dataItem.value;
 
@@ -286,7 +317,10 @@ const maybeParseHTMLDataItem = (
  * Reads OS clipboard programmatically. May not work on all browsers.
  * Will prompt user for permission if not granted.
  */
-export const readSystemClipboard = async () => {
+export const readSystemClipboard = async (
+  ownerWindow: Window & typeof globalThis = window,
+) => {
+  const { navigator } = ownerWindow;
   const types: { [key in AllowedPasteMimeTypes]?: string | File } = {};
 
   let clipboardItems: ClipboardItems;
@@ -326,11 +360,22 @@ export const readSystemClipboard = async () => {
 
   for (const item of clipboardItems) {
     for (const type of item.types) {
-      if (!isMemberOf(ALLOWED_PASTE_MIME_TYPES, type)) {
+      if (
+        type !== WEB_EXCALIDRAW_CLIPBOARD_TYPE &&
+        type !== MIME_TYPES.excalidrawClipboard &&
+        !isMemberOf(ALLOWED_PASTE_MIME_TYPES, type)
+      ) {
         continue;
       }
       try {
-        if (type === MIME_TYPES.text || type === MIME_TYPES.html) {
+        if (
+          type === WEB_EXCALIDRAW_CLIPBOARD_TYPE ||
+          type === MIME_TYPES.excalidrawClipboard
+        ) {
+          types[MIME_TYPES.excalidrawClipboard] = await (
+            await item.getType(type)
+          ).text();
+        } else if (type === MIME_TYPES.text || type === MIME_TYPES.html) {
           types[type] = await (await item.getType(type)).text();
         } else if (isSupportedImageFileType(type)) {
           const imageBlob = await item.getType(type);
@@ -549,6 +594,31 @@ export const parseDataTransferEvent = async (
   });
 };
 
+const parseClipboardElements = (
+  value: string | null,
+  isPlainPaste: boolean,
+): ClipboardData | null => {
+  if (!value) {
+    return null;
+  }
+  try {
+    const contents = JSON.parse(value);
+    if (clipboardContainsElements(contents)) {
+      return {
+        elements: contents.elements,
+        files: contents.files,
+        subscenes: contents.subscenes,
+        text: isPlainPaste
+          ? JSON.stringify(contents.elements, null, 2)
+          : undefined,
+        programmaticAPI:
+          contents.type === EXPORT_DATA_TYPES.excalidrawClipboardWithAPI,
+      };
+    }
+  } catch {}
+  return null;
+};
+
 /**
  * Attempts to parse clipboard event.
  */
@@ -556,6 +626,14 @@ export const parseClipboard = async (
   dataList: ParsedDataTranferList,
   isPlainPaste = false,
 ): Promise<ClipboardData> => {
+  const customElements = parseClipboardElements(
+    dataList.getData(MIME_TYPES.excalidrawClipboard),
+    isPlainPaste,
+  );
+  if (customElements) {
+    return customElements;
+  }
+
   const html = !isPlainPaste ? dataList.getData(MIME_TYPES.html) : undefined;
   const parsedEventData = await parseClipboardEventTextData(
     dataList,
@@ -569,22 +647,13 @@ export const parseClipboard = async (
     };
   }
 
-  try {
-    const systemClipboardData = JSON.parse(parsedEventData.value);
-    const programmaticAPI =
-      systemClipboardData.type === EXPORT_DATA_TYPES.excalidrawClipboardWithAPI;
-    if (clipboardContainsElements(systemClipboardData)) {
-      return {
-        elements: systemClipboardData.elements,
-        files: systemClipboardData.files,
-        subscenes: systemClipboardData.subscenes,
-        text: isPlainPaste
-          ? JSON.stringify(systemClipboardData.elements, null, 2)
-          : undefined,
-        programmaticAPI,
-      };
-    }
-  } catch {}
+  const textElements = parseClipboardElements(
+    parsedEventData.value,
+    isPlainPaste,
+  );
+  if (textElements) {
+    return textElements;
+  }
 
   const rawText = dataList.getData(MIME_TYPES.text);
   return {

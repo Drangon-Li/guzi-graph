@@ -278,3 +278,24 @@ it("shows the example slot without a default directory and can return to local h
   ).not.toBeInTheDocument();
   expect(view.getByPlaceholderText("搜索画布、分类或文件夹")).toBeVisible();
 });
+
+it("keeps market, examples and file navigation mutually exclusive", () => {
+  const view = mount();
+  view.rerender(
+    <Projects
+      {...view.props}
+      examples={<p>Example content</p>}
+      market={<p>Market content</p>}
+    />,
+  );
+  fireEvent.click(view.getByRole("button", { name: "插件市场" }));
+  expect(view.getByText("Market content")).toBeInTheDocument();
+  expect(view.queryByText("Example content")).not.toBeInTheDocument();
+  fireEvent.click(view.getByRole("button", { name: "示例库" }));
+  expect(view.queryByText("Market content")).not.toBeInTheDocument();
+  expect(view.getByText("Example content")).toBeInTheDocument();
+  fireEvent.click(view.getByRole("button", { name: /全部画布/ }));
+  expect(view.queryByText("Market content")).not.toBeInTheDocument();
+  expect(view.queryByText("Example content")).not.toBeInTheDocument();
+  expect(view.root.querySelectorAll(".desktop-file-card")).toHaveLength(2);
+});

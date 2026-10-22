@@ -31,3 +31,4 @@ meta*.json
 # Local desktop outputs
 apps/desktop/release/
 apps/desktop/resources/icon.iconset/
+/output/

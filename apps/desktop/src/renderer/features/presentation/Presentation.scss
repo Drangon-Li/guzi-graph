@@ -317,6 +317,13 @@
     overflow: hidden;
   }
 
+  .desktop-slide-preview {
+    background: var(--color-surface-lowest);
+    > span {
+      color: var(--desktop-muted);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .desktop-presentation-filmstrip {
       transition: none;

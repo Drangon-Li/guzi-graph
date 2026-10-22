@@ -30,6 +30,8 @@ import { DEFAULT_EDITOR_PREFERENCES } from "../../shared/config/editorPreference
 import { Projects } from "../projects/Projects";
 
 import { bundledExamples } from "../examples/catalog";
+import * as slideRenderer from "../presentation/renderSlide";
+import * as canvasCommands from "../plugins/canvasCommands";
 import {
   createPresentation,
   parsePresentation,
@@ -48,6 +50,7 @@ import type {
   RecentFile,
 } from "../../../shared/desktop-api";
 import type { CanvasDocument } from "./workspace";
+import type { PluginRequest, PluginResponse } from "../../../shared/plugins";
 
 vi.mock("@excalidraw/excalidraw", async (original) => {
   const actual = await original<typeof import("@excalidraw/excalidraw")>();
@@ -177,13 +180,31 @@ describe("desktop document workspace", () => {
   let root: HTMLDivElement;
   let desktop: DesktopAPI;
   let command: (command: DesktopCommand) => void;
+  let plugin: (request: PluginRequest) => void;
+  let cancelPlugin: (requestId: string) => void;
 
   beforeEach(() => {
     root = document.createElement("div");
     document.body.append(root);
     command = () => {};
+    plugin = () => {};
+    cancelPlugin = () => {};
     desktop = {
       getSettings: vi.fn().mockResolvedValue(settings),
+      getPlugins: vi.fn().mockResolvedValue([]),
+      setPluginEnabled: vi.fn().mockResolvedValue([]),
+      configurePlugin: vi.fn().mockResolvedValue([]),
+      onPluginState: vi.fn(() => () => {}),
+      onPluginRequest: vi.fn((callback) => {
+        plugin = callback;
+        return () => {};
+      }),
+      onPluginRequestCancelled: vi.fn((callback) => {
+        cancelPlugin = callback;
+        return () => {};
+      }),
+      respondPluginRequest: vi.fn(),
+      setPluginHostReady: vi.fn().mockResolvedValue(undefined),
       updateSettings: vi.fn(),
       chooseDirectory: vi.fn(),
       listProjects: vi.fn().mockResolvedValue({
@@ -198,6 +219,7 @@ describe("desktop document workspace", () => {
       saveFile: vi.fn(),
       saveExport: vi.fn(),
       savePdf: vi.fn(),
+      exportPdf: vi.fn(),
       editText: vi.fn().mockResolvedValue(undefined),
       removeFile: vi.fn().mockResolvedValue(undefined),
       renameFile: vi.fn(),
@@ -240,6 +262,13 @@ describe("desktop document workspace", () => {
       getSceneElementsIncludingDeleted: () => scene.elements,
       getAppState: () => scene.appState,
       getFiles: () => scene.files,
+      updateScene: vi.fn((update) => {
+        scene = {
+          ...scene,
+          elements: update.elements ?? scene.elements,
+          appState: { ...scene.appState, ...update.appState },
+        };
+      }),
       commitEditing: vi.fn(),
       desktopSave: (saveAs: boolean) =>
         hook.result.current.editorSave(document, scene, saveAs),
@@ -253,8 +282,561 @@ describe("desktop document workspace", () => {
         scene = snapshot(version);
         hook.result.current.capture(document, scene);
       });
-    return { document, api, edit };
+    return {
+      document,
+      api,
+      edit,
+      setState: (update: Partial<SceneSnapshot["appState"]>) => {
+        scene = { ...scene, appState: { ...scene.appState, ...update } };
+      },
+      changeWithoutCapture: (version: number) => {
+        scene = snapshot(version);
+      },
+    };
   };
+
+  let pluginSequence = 0;
+  const sendPlugin = async (
+    command: string,
+    args: Record<string, unknown>,
+    requestId = `transport-${++pluginSequence}`,
+  ): Promise<PluginResponse> => {
+    const previousResponses = vi.mocked(desktop.respondPluginRequest).mock.calls
+      .length;
+    await act(async () => plugin({ requestId, command, arguments: args }));
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(desktop.respondPluginRequest)
+          .mock.calls.slice(previousResponses)
+          .some(([response]) => response.requestId === requestId),
+      ).toBe(true),
+    );
+    return vi
+      .mocked(desktop.respondPluginRequest)
+      .mock.calls.slice(previousResponses)
+      .find(([response]) => response.requestId === requestId)![0];
+  };
+
+  it("captures unsaved edits before checking plugin revisions and submits once per requestId", async () => {
+    const hook = await mount();
+    const item = addDocument(hook);
+    const read = await sendPlugin("read_canvas", {
+      documentId: item.document.id,
+    });
+    const revision = (read.result as any).revision;
+    item.changeWithoutCapture(5);
+    const conflict = await sendPlugin("apply_operations", {
+      documentId: item.document.id,
+      expectedRevision: revision,
+      requestId: "stale",
+      operations: [{ type: "patch", id: "rectangle", patch: { x: 42 } }],
+    });
+    expect(conflict.error?.code).toBe("REVISION_CONFLICT");
+    expect(item.api.updateScene).not.toHaveBeenCalled();
+    const args = {
+      documentId: item.document.id,
+      expectedRevision: item.document.revision,
+      requestId: "write-once",
+      operations: [{ type: "patch", id: "rectangle", patch: { x: 42 } }],
+    };
+    const response = await sendPlugin("apply_operations", args);
+    expect(response.error).toBeUndefined();
+    expect((response.result as any).revision).toBeGreaterThan(
+      args.expectedRevision,
+    );
+    expect(item.api.updateScene).toHaveBeenCalledTimes(1);
+    expect(item.api.updateScene).toHaveBeenCalledWith(
+      expect.objectContaining({ captureUpdate: "IMMEDIATELY" }),
+    );
+    expect(item.api.getSceneElementsIncludingDeleted()[0].x).toBe(42);
+    expect((await sendPlugin("apply_operations", args)).result).toEqual(
+      response.result,
+    );
+    expect(item.api.updateScene).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        await sendPlugin("apply_operations", {
+          ...args,
+          operations: [{ type: "delete", id: "rectangle" }],
+        })
+      ).error?.code,
+    ).toBe("REQUEST_ID_CONFLICT");
+    hook.unmount();
+    expect(desktop.setPluginHostReady).toHaveBeenLastCalledWith(false);
+  });
+
+  it("deduplicates ordinary requests only until the current task settles", async () => {
+    const hook = await mount();
+    let finish!: (
+      index: Awaited<ReturnType<DesktopAPI["listProjects"]>>,
+    ) => void;
+    const projects = vi.mocked(desktop.listProjects);
+    projects.mockClear();
+    projects.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const request = {
+      requestId: "reused-read",
+      command: "list_canvases",
+      arguments: {},
+    };
+    await act(async () => {
+      plugin(request);
+      plugin(request);
+    });
+    expect(projects).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish({
+        rootDirectory: "/drawings",
+        files: [],
+        folders: [],
+        history: [],
+      });
+    });
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(desktop.respondPluginRequest)
+          .mock.calls.filter(
+            ([response]) => response.requestId === "reused-read",
+          ),
+      ).toHaveLength(2),
+    );
+    expect(projects).toHaveBeenCalledTimes(1);
+    await sendPlugin("list_canvases", {}, "reused-read");
+    expect(projects).toHaveBeenCalledTimes(2);
+    hook.unmount();
+  });
+
+  it("allows the same mutation request ID to retry after a failed task", async () => {
+    const hook = await mount();
+    const item = addDocument(hook);
+    const loadFonts = vi
+      .spyOn(canvasCommands, "loadCanvasOperationFonts")
+      .mockRejectedValueOnce(new Error("Font loading failed"))
+      .mockResolvedValue(undefined);
+    const args = {
+      documentId: item.document.id,
+      expectedRevision: item.document.revision,
+      requestId: "retry-failed-mutation",
+      operations: [{ type: "patch", id: "rectangle", patch: { x: 42 } }],
+    };
+    try {
+      const failed = await sendPlugin("apply_operations", args);
+      expect(failed.error?.message).toBe("Font loading failed");
+      expect(item.api.updateScene).not.toHaveBeenCalled();
+      const retried = await sendPlugin("apply_operations", args);
+      expect(retried.error).toBeUndefined();
+      expect(item.api.updateScene).toHaveBeenCalledTimes(1);
+      expect((await sendPlugin("apply_operations", args)).result).toEqual(
+        retried.result,
+      );
+      expect(item.api.updateScene).toHaveBeenCalledTimes(1);
+    } finally {
+      loadFonts.mockRestore();
+    }
+  });
+
+  it("clears a closed document's idempotent results while retaining another open document's results", async () => {
+    const hook = await mount();
+    const first = addDocument(hook);
+    const second = addDocument(hook);
+    const sets = vi.spyOn(Map.prototype, "set");
+    const args = {
+      documentId: first.document.id,
+      expectedRevision: first.document.revision,
+      requestId: "closed-document-result",
+      operations: [{ type: "patch", id: "rectangle", patch: { x: 42 } }],
+    };
+    const secondArgs = {
+      ...args,
+      documentId: second.document.id,
+      expectedRevision: second.document.revision,
+      requestId: "open-document-result",
+    };
+    const firstKey = `apply_operations:${first.document.id}:${args.requestId}`;
+    const secondKey = `apply_operations:${second.document.id}:${secondArgs.requestId}`;
+    try {
+      expect(
+        (await sendPlugin("apply_operations", args)).error,
+      ).toBeUndefined();
+      expect(
+        (await sendPlugin("apply_operations", secondArgs)).error,
+      ).toBeUndefined();
+      const index = sets.mock.calls.findIndex(([key]) => key === firstKey);
+      const cache = sets.mock.contexts[index] as Map<string, unknown>;
+      expect(cache.has(firstKey)).toBe(true);
+      expect(cache.has(secondKey)).toBe(true);
+      vi.mocked(desktop.saveFile).mockImplementation(async (request) =>
+        disk("/drawings/closed.excalidraw", request.content),
+      );
+      expect(
+        (await sendPlugin("save_canvas", { documentId: first.document.id }))
+          .error,
+      ).toBeUndefined();
+      expect(
+        (await sendPlugin("close_document", { documentId: first.document.id }))
+          .error,
+      ).toBeUndefined();
+      expect(cache.has(firstKey)).toBe(false);
+      expect(cache.has(secondKey)).toBe(true);
+      expect((await sendPlugin("apply_operations", args)).error?.code).toBe(
+        "NOT_FOUND",
+      );
+      expect(
+        (await sendPlugin("apply_operations", secondArgs)).error,
+      ).toBeUndefined();
+      expect(second.api.updateScene).toHaveBeenCalledTimes(1);
+    } finally {
+      sets.mockRestore();
+    }
+  });
+
+  it("keeps read, save and close available when persistent mutation history is full", async () => {
+    const hook = await mount();
+    const item = addDocument(hook);
+    const sets = vi.spyOn(Map.prototype, "set");
+    try {
+      await sendPlugin(
+        "read_canvas",
+        { documentId: item.document.id },
+        "history-cache",
+      );
+      const index = sets.mock.calls.findIndex(
+        ([key]) => key === "request:history-cache",
+      );
+      const cache = sets.mock.contexts[index] as Map<string, unknown>;
+      for (let index = 0; index < 10000; index++) {
+        cache.set(`apply_operations:${item.document.id}:history-${index}`, {
+          fingerprint: `history-${index}`,
+          task: Promise.resolve({}),
+          documentId: item.document.id,
+        });
+      }
+      expect(cache.size).toBe(10000);
+      const mutation = await sendPlugin("apply_operations", {
+        documentId: item.document.id,
+        expectedRevision: item.document.revision,
+        requestId: "new-history",
+        operations: [{ type: "patch", id: "rectangle", patch: { x: 42 } }],
+      });
+      expect(mutation.error?.code).toBe("BUSY");
+      expect(mutation.error?.message).toContain("Save and close");
+      expect(item.api.updateScene).not.toHaveBeenCalled();
+      expect(
+        (await sendPlugin("read_canvas", { documentId: item.document.id }))
+          .error,
+      ).toBeUndefined();
+      vi.mocked(desktop.saveFile).mockImplementation(async (request) =>
+        disk("/drawings/full-history.excalidraw", request.content),
+      );
+      expect(
+        (await sendPlugin("save_canvas", { documentId: item.document.id }))
+          .error,
+      ).toBeUndefined();
+      expect(desktop.saveFile).toHaveBeenCalledTimes(1);
+      expect(cache.size).toBe(10000);
+      expect(
+        (await sendPlugin("close_document", { documentId: item.document.id }))
+          .error,
+      ).toBeUndefined();
+      expect(cache.size).toBe(0);
+      expect(hook.result.current.documents).not.toContain(item.document);
+    } finally {
+      sets.mockRestore();
+    }
+  });
+
+  it("does not remove a replacement cache entry when an older ordinary request finishes", async () => {
+    const hook = await mount();
+    let finish!: (
+      index: Awaited<ReturnType<DesktopAPI["listProjects"]>>,
+    ) => void;
+    vi.mocked(desktop.listProjects).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const sets = vi.spyOn(Map.prototype, "set");
+    try {
+      await act(async () =>
+        plugin({
+          requestId: "late-read",
+          command: "list_canvases",
+          arguments: {},
+        }),
+      );
+      expect(typeof finish).toBe("function");
+      const index = sets.mock.calls.findIndex(
+        ([key]) => key === "request:late-read",
+      );
+      const cache = sets.mock.contexts[index] as Map<string, unknown>;
+      const replacement = {
+        fingerprint: "new task",
+        task: Promise.resolve({}),
+      };
+      cache.set("request:late-read", replacement);
+      await act(async () => {
+        finish({
+          rootDirectory: "/drawings",
+          files: [],
+          folders: [],
+          history: [],
+        });
+      });
+      await waitFor(() =>
+        expect(desktop.respondPluginRequest).toHaveBeenCalledWith(
+          expect.objectContaining({ requestId: "late-read" }),
+        ),
+      );
+      expect(cache.get("request:late-read")).toBe(replacement);
+      cache.delete("request:late-read");
+    } finally {
+      sets.mockRestore();
+      hook.unmount();
+    }
+  });
+
+  it("rechecks unsaved edits after waiting for operation fonts", async () => {
+    const hook = await mount();
+    const item = addDocument(hook);
+    let finishFonts!: () => void;
+    const fonts = vi
+      .spyOn(canvasCommands, "loadCanvasOperationFonts")
+      .mockImplementationOnce(
+        () => new Promise<void>((resolve) => (finishFonts = resolve)),
+      );
+    try {
+      await act(async () =>
+        plugin({
+          requestId: "font-race",
+          command: "apply_operations",
+          arguments: {
+            documentId: item.document.id,
+            expectedRevision: item.document.revision,
+            requestId: "font-race-write",
+            operations: [{ type: "patch", id: "rectangle", patch: { x: 42 } }],
+          },
+        }),
+      );
+      expect(fonts).toHaveBeenCalledWith(expect.any(Array), root.ownerDocument);
+      expect(item.api.updateScene).not.toHaveBeenCalled();
+      item.changeWithoutCapture(5);
+      await act(async () => finishFonts());
+      await waitFor(() =>
+        expect(desktop.respondPluginRequest).toHaveBeenCalledWith(
+          expect.objectContaining({
+            requestId: "font-race",
+            error: expect.objectContaining({ code: "REVISION_CONFLICT" }),
+          }),
+        ),
+      );
+      expect(item.api.updateScene).not.toHaveBeenCalled();
+      expect(item.api.getSceneElementsIncludingDeleted()[0].version).toBe(5);
+    } finally {
+      fonts.mockRestore();
+      hook.unmount();
+    }
+  });
+
+  it("rejects plugin writes while typing, dragging or editing a subcanvas", async () => {
+    const hook = await mount();
+    const item = addDocument(hook);
+    for (const update of [
+      { cursorButton: "down" as const },
+      { cursorButton: "up" as const, editingTextElement: {} as any },
+    ]) {
+      item.setState(update);
+      expect(
+        (
+          await sendPlugin("apply_operations", {
+            documentId: item.document.id,
+            expectedRevision: item.document.revision,
+            requestId: `busy-${pluginSequence}`,
+            operations: [{ type: "delete", id: "rectangle" }],
+          })
+        ).error?.code,
+      ).toBe("BUSY");
+    }
+    item.setState({ editingTextElement: null });
+    item.document.activeEditor = () => null;
+    expect(
+      (await sendPlugin("save_canvas", { documentId: item.document.id })).error
+        ?.code,
+    ).toBe("BUSY");
+    expect(item.api.updateScene).not.toHaveBeenCalled();
+    expect(item.api.commitEditing).not.toHaveBeenCalled();
+  });
+
+  it("saves plugin canvases through automation and propagates write errors", async () => {
+    const hook = await mount();
+    const item = addDocument(hook);
+    vi.mocked(desktop.saveFile).mockResolvedValue(
+      disk("/drawings/automation.excalidraw", item.document.content),
+    );
+    const saved = await sendPlugin("save_canvas", {
+      documentId: item.document.id,
+    });
+    expect(saved.error).toBeUndefined();
+    expect(desktop.saveFile).toHaveBeenCalledWith(
+      expect.objectContaining({ automation: true, path: null }),
+    );
+    expect((saved.result as any).path).toBe("/drawings/automation.excalidraw");
+    vi.mocked(desktop.saveFile).mockRejectedValue(
+      new Error("File changed on disk"),
+    );
+    const failed = await sendPlugin("save_canvas", {
+      documentId: item.document.id,
+    });
+    expect(failed.error?.message).toBe("File changed on disk");
+  });
+
+  it("acknowledges create_canvas only after the mounted canvas initializes", async () => {
+    const hook = await mount();
+    await act(async () =>
+      plugin({
+        requestId: "create-mounted",
+        command: "create_canvas",
+        arguments: { title: "Automation drawing" },
+      }),
+    );
+    const document = hook.result.current.documents[0];
+    expect(document.title).toBe("Automation drawing");
+    expect(desktop.respondPluginRequest).not.toHaveBeenCalled();
+    const scene = snapshot();
+    const api = {
+      isDestroyed: false,
+      getSceneElementsIncludingDeleted: () => scene.elements,
+      getAppState: () => scene.appState,
+      getFiles: () => scene.files,
+    } as ExcalidrawImperativeAPI;
+    act(() => hook.result.current.initialize(document, api));
+    await waitFor(() =>
+      expect(desktop.respondPluginRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestId: "create-mounted",
+          result: expect.objectContaining({
+            documentId: document.id,
+            initialized: true,
+            dirty: true,
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("opens authorized canvas files and waits for initialization", async () => {
+    const hook = await mount();
+    const scene = snapshot();
+    vi.mocked(desktop.readFile).mockResolvedValue(
+      disk("/drawings/known.excalidraw", createSceneTracker()(scene)),
+    );
+    await act(async () =>
+      plugin({
+        requestId: "open-mounted",
+        command: "open_canvas",
+        arguments: { path: "/drawings/known.excalidraw" },
+      }),
+    );
+    await waitFor(() => expect(hook.result.current.documents).toHaveLength(1));
+    const document = hook.result.current.documents[0];
+    const api = {
+      isDestroyed: false,
+      getSceneElementsIncludingDeleted: () => scene.elements,
+      getAppState: () => scene.appState,
+      getFiles: () => scene.files,
+    } as ExcalidrawImperativeAPI;
+    act(() => hook.result.current.initialize(document, api));
+    await waitFor(() =>
+      expect(desktop.respondPluginRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestId: "open-mounted",
+          result: expect.objectContaining({
+            path: "/drawings/known.excalidraw",
+            initialized: true,
+          }),
+        }),
+      ),
+    );
+    expect(desktop.readFile).toHaveBeenCalledWith("/drawings/known.excalidraw");
+  });
+
+  it("does not open a canvas after the pending plugin request is cancelled", async () => {
+    const hook = await mount();
+    let finishRead!: (file: DiskDocument) => void;
+    vi.mocked(desktop.readFile).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    await act(async () =>
+      plugin({
+        requestId: "cancel-open",
+        command: "open_canvas",
+        arguments: { path: "/drawings/cancel.excalidraw" },
+      }),
+    );
+    cancelPlugin("cancel-open");
+    await act(async () =>
+      finishRead(
+        disk("/drawings/cancel.excalidraw", createSceneTracker()(snapshot())),
+      ),
+    );
+    expect(hook.result.current.documents).toHaveLength(0);
+    expect(desktop.respondPluginRequest).not.toHaveBeenCalled();
+  });
+
+  it("rejects expired writes before touching the live canvas", async () => {
+    const hook = await mount();
+    const item = addDocument(hook);
+    await act(async () =>
+      plugin({
+        requestId: "expired-write",
+        expiresAt: Date.now() - 1,
+        command: "apply_operations",
+        arguments: {
+          documentId: item.document.id,
+          expectedRevision: item.document.revision,
+          requestId: "expired",
+          operations: [{ type: "delete", id: "rectangle" }],
+        },
+      }),
+    );
+    expect(desktop.respondPluginRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: "expired-write",
+        error: expect.objectContaining({ code: "TIMEOUT" }),
+      }),
+    );
+    expect(item.api.updateScene).not.toHaveBeenCalled();
+  });
+
+  it("does not start another automatic save after cancellation while waiting for an existing save", async () => {
+    const hook = await mount();
+    const item = addDocument(hook);
+    let finishSave!: (saved: boolean) => void;
+    item.document.saving = new Promise((resolve) => {
+      finishSave = resolve;
+    });
+    await act(async () =>
+      plugin({
+        requestId: "cancel-save",
+        command: "save_canvas",
+        arguments: { documentId: item.document.id },
+      }),
+    );
+    cancelPlugin("cancel-save");
+    await act(async () => {
+      item.document.saving = null;
+      finishSave(true);
+    });
+    expect(desktop.saveFile).not.toHaveBeenCalled();
+    expect(desktop.respondPluginRequest).not.toHaveBeenCalled();
+  });
 
   const attachSlide = (
     hook: Awaited<ReturnType<typeof mount>>,
@@ -272,6 +854,19 @@ describe("desktop document workspace", () => {
       getFiles: () => scene.files,
       commitEditing: vi.fn(),
       history: { checkpoint: vi.fn() },
+      updateScene: vi.fn((update) => {
+        scene = {
+          ...scene,
+          elements: update.elements ?? scene.elements,
+          appState: { ...scene.appState, ...update.appState },
+        };
+      }),
+      addFiles: vi.fn((files) => {
+        scene.files = {
+          ...scene.files,
+          ...Object.fromEntries(files.map((file: any) => [file.id, file])),
+        };
+      }),
       desktopSave: (saveAs: boolean) =>
         hook.result.current.editorSave(document, scene, saveAs),
     } as unknown as ExcalidrawImperativeAPI;
@@ -289,6 +884,516 @@ describe("desktop document workspace", () => {
     deck.slides.push({ id: "second", title: "Details", scene: snapshot(22) });
     return serializePresentation(deck);
   };
+
+  const sendMountedPlugin = async (
+    hook: Awaited<ReturnType<typeof mount>>,
+    command: string,
+    args: Record<string, unknown>,
+  ): Promise<PluginResponse> => {
+    const requestId = `mounted-${++pluginSequence}`;
+    await act(async () => plugin({ requestId, command, arguments: args }));
+    await waitFor(() => {
+      for (const document of hook.result.current.documents) {
+        if (!document.api) {
+          attachSlide(hook, document);
+        }
+      }
+      expect(
+        vi
+          .mocked(desktop.respondPluginRequest)
+          .mock.calls.some(([response]) => response.requestId === requestId),
+      ).toBe(true);
+    });
+    return vi
+      .mocked(desktop.respondPluginRequest)
+      .mock.calls.find(([response]) => response.requestId === requestId)![0];
+  };
+
+  it("runs the MCP presentation lifecycle with idempotent page operations and genuine close/reopen", async () => {
+    const hook = await mount();
+    const created = await sendMountedPlugin(hook, "create_presentation", {
+      title: "MCP deck",
+    });
+    expect(created.error).toBeUndefined();
+    const document = hook.result.current.documents[0];
+    const first = document.activeSlideId!;
+    const addArgs = {
+      documentId: document.id,
+      expectedRevision: document.revision,
+      requestId: "add-once",
+      operation: { type: "add", title: "Methods" },
+    };
+    const added = await sendMountedPlugin(hook, "update_presentation", addArgs);
+    expect(added.error).toBeUndefined();
+    const second = document.activeSlideId!;
+    expect(document.presentation!.slides.map((slide) => slide.title)).toEqual([
+      "第 1 页",
+      "Methods",
+    ]);
+    expect(
+      (await sendMountedPlugin(hook, "update_presentation", addArgs)).result,
+    ).toEqual(added.result);
+    expect(document.presentation!.slides).toHaveLength(2);
+    const update = (operation: Record<string, unknown>) =>
+      sendMountedPlugin(hook, "update_presentation", {
+        documentId: document.id,
+        expectedRevision: document.revision,
+        requestId: `change-${pluginSequence}`,
+        operation,
+      });
+    expect(
+      (await update({ type: "duplicate", slideId: second })).error,
+    ).toBeUndefined();
+    const third = document.activeSlideId!;
+    expect(
+      (await update({ type: "rename", slideId: third, title: "Results" }))
+        .error,
+    ).toBeUndefined();
+    expect(
+      (await update({ type: "move", slideId: third, toIndex: 0 })).error,
+    ).toBeUndefined();
+    expect(document.presentation!.slides.map((slide) => slide.id)).toEqual([
+      third,
+      first,
+      second,
+    ]);
+    expect(
+      (await update({ type: "delete", slideId: second })).error,
+    ).toBeUndefined();
+    expect(
+      (await update({ type: "select", slideId: first })).error,
+    ).toBeUndefined();
+    const dirtyClose = await sendPlugin("close_document", {
+      documentId: document.id,
+    });
+    expect(dirtyClose.error?.code).toBe("UNSAVED_CHANGES");
+    expect(hook.result.current.closePrompt).toBeNull();
+    vi.mocked(desktop.saveFile).mockImplementation(async (request) =>
+      disk("/drawings/MCP deck.guzi-presentation", request.content),
+    );
+    const saved = await sendPlugin("save_presentation", {
+      documentId: document.id,
+    });
+    expect(saved.error).toBeUndefined();
+    expect(document.dirty).toBe(false);
+    expect(desktop.saveFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ format: "presentation", automation: true }),
+    );
+    const persisted = document.content;
+    expect(
+      (await sendPlugin("close_document", { documentId: document.id })).result,
+    ).toMatchObject({ closed: true });
+    expect(hook.result.current.documents).toHaveLength(0);
+    vi.mocked(desktop.readFile).mockResolvedValue(
+      disk("/drawings/MCP deck.guzi-presentation", persisted),
+    );
+    const opened = await sendMountedPlugin(hook, "open_canvas", {
+      path: "/drawings/MCP deck.guzi-presentation",
+    });
+    expect(opened.error).toBeUndefined();
+    expect(opened.result).toMatchObject({
+      kind: "presentation",
+      dirty: false,
+      slides: [{ id: third, title: "Results" }, { id: first }],
+    });
+    expect((opened.result as any).documentId).not.toBe(document.id);
+  });
+
+  it("edits an explicit inactive slide without switching or changing another slide", async () => {
+    const hook = await mount();
+    const created = await sendMountedPlugin(hook, "create_presentation", {
+      title: "Targeted edits",
+    });
+    expect(created.error).toBeUndefined();
+    const document = hook.result.current.documents[0];
+    const first = document.activeSlideId!;
+    await sendMountedPlugin(hook, "update_presentation", {
+      documentId: document.id,
+      expectedRevision: document.revision,
+      requestId: "add-target",
+      operation: { type: "add" },
+    });
+    const second = document.activeSlideId!;
+    const currentApi = document.api!;
+    const args = {
+      documentId: document.id,
+      slideId: first,
+      expectedRevision: document.revision,
+      requestId: "inactive-edit",
+      operations: [
+        {
+          type: "create",
+          tempId: "shape",
+          element: {
+            type: "rectangle",
+            x: 100,
+            y: 100,
+            width: 120,
+            height: 60,
+            label: { text: "Only first" },
+          },
+        },
+      ],
+    };
+    const edited = await sendPlugin("apply_operations", args);
+    expect(edited.error).toBeUndefined();
+    expect(document.activeSlideId).toBe(second);
+    expect(currentApi.updateScene).not.toHaveBeenCalled();
+    expect(
+      (
+        await sendPlugin("read_canvas", {
+          documentId: document.id,
+          slideId: first,
+        })
+      ).result,
+    ).toMatchObject({
+      elements: [
+        expect.objectContaining({ type: "rectangle" }),
+        expect.objectContaining({ originalText: "Only first" }),
+      ],
+    });
+    expect(
+      (
+        await sendPlugin("read_canvas", {
+          documentId: document.id,
+          slideId: second,
+        })
+      ).result,
+    ).toMatchObject({ elements: [] });
+    expect((await sendPlugin("apply_operations", args)).result).toEqual(
+      edited.result,
+    );
+    const invalid = await sendPlugin("apply_operations", {
+      ...args,
+      requestId: "missing-slide",
+      slideId: "missing",
+    });
+    expect(invalid.error?.code).toBe("NOT_FOUND");
+    expect(
+      (
+        await sendPlugin("apply_operations", {
+          ...args,
+          requestId: "stale-page",
+        })
+      ).error?.code,
+    ).toBe("REVISION_CONFLICT");
+  });
+
+  it("copies a slide across documents while preserving source content and file identity", async () => {
+    const hook = await mount();
+    await sendMountedPlugin(hook, "create_presentation", {
+      title: "Source deck",
+    });
+    const source = hook.result.current.documents[0];
+    const sourceSlide = source.activeSlideId!;
+    await sendPlugin("apply_operations", {
+      documentId: source.id,
+      expectedRevision: source.revision,
+      requestId: "source-content",
+      operations: [
+        {
+          type: "create",
+          element: { type: "text", text: "Cross-deck", x: 10, y: 10 },
+        },
+      ],
+    });
+    const original = source.content;
+    await sendMountedPlugin(hook, "create_presentation", {
+      title: "Destination deck",
+    });
+    const target = hook.result.current.documents[1];
+    const result = await sendMountedPlugin(hook, "update_presentation", {
+      documentId: target.id,
+      expectedRevision: target.revision,
+      requestId: "cross-deck-copy",
+      operation: {
+        type: "copy_from",
+        sourceDocumentId: source.id,
+        sourceSlideId: sourceSlide,
+      },
+    });
+    expect(result.error).toBeUndefined();
+    expect(target.presentation!.slides).toHaveLength(2);
+    expect(target.activeSlideId).not.toBe(sourceSlide);
+    expect(
+      (await sendPlugin("read_canvas", { documentId: target.id })).result,
+    ).toMatchObject({
+      elements: [expect.objectContaining({ originalText: "Cross-deck" })],
+    });
+    expect(source.content).toBe(original);
+  });
+
+  it("routes presentation controls to the mounted UI and blocks content edits during playback", async () => {
+    const hook = await mount();
+    await sendMountedPlugin(hook, "create_presentation", { title: "Playback" });
+    const document = hook.result.current.documents[0];
+    const execute = vi.fn(async (command) => {
+      if (command.action === "start") {
+        document.presenting = true;
+      }
+      if (command.action === "stop") {
+        document.presenting = false;
+      }
+      return {
+        presenting: !!document.presenting,
+        slideId: document.activeSlideId!,
+        index: 0,
+        slideCount: 1,
+        fullscreen: false,
+      };
+    });
+    document.presentationController = { execute };
+    expect(
+      (
+        await sendPlugin("control_presentation", {
+          documentId: document.id,
+          action: "start",
+        })
+      ).result,
+    ).toMatchObject({ presenting: true });
+    expect(execute).toHaveBeenCalledWith({ action: "start" });
+    expect(
+      (
+        await sendPlugin("update_presentation", {
+          documentId: document.id,
+          expectedRevision: document.revision,
+          requestId: "playing-add",
+          operation: { type: "add" },
+        })
+      ).error?.code,
+    ).toBe("BUSY");
+    expect(
+      (
+        await sendPlugin("control_presentation", {
+          documentId: document.id,
+          action: "status",
+        })
+      ).result,
+    ).toMatchObject({ presenting: true });
+    expect(
+      (
+        await sendPlugin("control_presentation", {
+          documentId: document.id,
+          action: "stop",
+        })
+      ).result,
+    ).toMatchObject({ presenting: false });
+    expect(
+      (
+        await sendPlugin("update_presentation", {
+          documentId: document.id,
+          expectedRevision: document.revision,
+          requestId: "last-slide",
+          operation: { type: "delete", slideId: document.activeSlideId },
+        })
+      ).error?.code,
+    ).toBe("INVALID_ARGUMENT");
+  });
+
+  it("rejects controls when a user switches away while the requested slide is mounting", async () => {
+    const hook = await mount();
+    await sendMountedPlugin(hook, "create_presentation", {
+      title: "Switch race",
+    });
+    const document = hook.result.current.documents[0];
+    const first = document.activeSlideId!;
+    await sendMountedPlugin(hook, "update_presentation", {
+      documentId: document.id,
+      expectedRevision: document.revision,
+      requestId: "race-add",
+      operation: { type: "add" },
+    });
+    const second = document.activeSlideId!;
+    await act(async () =>
+      plugin({
+        requestId: "race-control",
+        command: "control_canvas",
+        arguments: {
+          documentId: document.id,
+          slideId: first,
+          action: "zoom",
+          zoom: 2,
+        },
+      }),
+    );
+    expect(document.api).toBeNull();
+    act(() => hook.result.current.selectSlide(document, second));
+    const other = attachSlide(hook, document);
+    await waitFor(() =>
+      expect(desktop.respondPluginRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestId: "race-control",
+          error: expect.objectContaining({ code: "BUSY" }),
+        }),
+      ),
+    );
+    expect(other.api.updateScene).not.toHaveBeenCalled();
+  });
+
+  it("keeps export page metadata stable and bounds large PNG output without cropping", async () => {
+    const hook = await mount();
+    await sendMountedPlugin(hook, "create_presentation", {
+      title: "Export snapshot",
+    });
+    const document = hook.result.current.documents[0];
+    const first = document.activeSlideId!;
+    await sendMountedPlugin(hook, "update_presentation", {
+      documentId: document.id,
+      expectedRevision: document.revision,
+      requestId: "export-add",
+      operation: { type: "add" },
+    });
+    const second = document.activeSlideId!;
+    let finish!: (blob: Blob) => void;
+    const render = vi.spyOn(slideRenderer, "renderSlidePng").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    try {
+      const pending = sendPlugin("export_presentation", {
+        documentId: document.id,
+        format: "png",
+      });
+      await waitFor(() => expect(render).toHaveBeenCalledTimes(1));
+      act(() => hook.result.current.selectSlide(document, first));
+      attachSlide(hook, document);
+      finish(new Blob(["png"], { type: "image/png" }));
+      expect((await pending).result).toMatchObject({ slideId: second });
+      document.presentation!.width = 8192;
+      document.presentation!.height = 4608;
+      render.mockResolvedValue(new Blob(["png"], { type: "image/png" }));
+      expect(
+        (
+          await sendPlugin("export_presentation", {
+            documentId: document.id,
+            format: "png",
+          })
+        ).error,
+      ).toBeUndefined();
+      expect(render).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          bounds: { x: 0, y: 0, width: 8192, height: 4608 },
+        }),
+        4096,
+        2304,
+        root.ownerDocument,
+      );
+    } finally {
+      render.mockRestore();
+    }
+  });
+
+  it("releases completed large export results and executes a reused transport ID again", async () => {
+    const hook = await mount();
+    await sendMountedPlugin(hook, "create_presentation", {
+      title: "Large export",
+    });
+    const document = hook.result.current.documents[0];
+    const render = vi.spyOn(slideRenderer, "renderSlidePng").mockResolvedValue(
+      new Blob([new Uint8Array(2 * 1024 * 1024).fill(1)], {
+        type: "image/png",
+      }),
+    );
+    const sets = vi.spyOn(Map.prototype, "set");
+    try {
+      const args = { documentId: document.id, format: "png" };
+      const first = await sendPlugin(
+        "export_presentation",
+        args,
+        "large-export",
+      );
+      expect(first.error).toBeUndefined();
+      const index = sets.mock.calls.findIndex(
+        ([key]) => key === "request:large-export",
+      );
+      const cache = sets.mock.contexts[index] as Map<string, unknown>;
+      expect((first.result as any).image.data.length).toBeGreaterThan(
+        2 * 1024 * 1024,
+      );
+      expect(cache.has("request:large-export")).toBe(false);
+      const firstPrefix = (first.result as any).image.data.slice(0, 64);
+      render.mockResolvedValue(
+        new Blob([new Uint8Array(2 * 1024 * 1024).fill(2)], {
+          type: "image/png",
+        }),
+      );
+      const second = await sendPlugin(
+        "export_presentation",
+        args,
+        "large-export",
+      );
+      expect(second.error).toBeUndefined();
+      expect(render).toHaveBeenCalledTimes(2);
+      expect((second.result as any).image.data.slice(0, 64)).not.toBe(
+        firstPrefix,
+      );
+      expect(cache.has("request:large-export")).toBe(false);
+    } finally {
+      sets.mockRestore();
+      render.mockRestore();
+    }
+  });
+
+  it("exports either the complete PDF or an explicit single page without a save dialog", async () => {
+    const hook = await mount();
+    await sendMountedPlugin(hook, "create_presentation", {
+      title: "PDF export",
+    });
+    const document = hook.result.current.documents[0];
+    const first = document.activeSlideId!;
+    await sendMountedPlugin(hook, "update_presentation", {
+      documentId: document.id,
+      expectedRevision: document.revision,
+      requestId: "pdf-add",
+      operation: { type: "add" },
+    });
+    vi.mocked(desktop.exportPdf).mockResolvedValue(
+      new TextEncoder().encode("%PDF-1.7 test").buffer,
+    );
+    const pages = vi
+      .spyOn(slideRenderer, "renderPresentationPdfPages")
+      .mockImplementation(async (deck) =>
+        deck.slides.map((slide) => ({
+          title: slide.title,
+          svg: "<svg/>",
+          width: 1280,
+          height: 720,
+        })),
+      );
+    try {
+      const all = await sendPlugin("export_presentation", {
+        documentId: document.id,
+        format: "pdf",
+      });
+      expect(all.result).toMatchObject({
+        file: { mimeType: "application/pdf", name: "PDF export.pdf" },
+      });
+      expect(pages.mock.lastCall![0].slides).toHaveLength(2);
+      expect(desktop.exportPdf).toHaveBeenLastCalledWith(
+        expect.objectContaining({ pages: [expect.anything()] }),
+      );
+      expect(
+        (
+          await sendPlugin("export_presentation", {
+            documentId: document.id,
+            format: "pdf",
+            slideId: first,
+          })
+        ).error,
+      ).toBeUndefined();
+      expect(pages.mock.lastCall![0].slides.map((slide) => slide.id)).toEqual([
+        first,
+      ]);
+      expect(desktop.exportPdf).toHaveBeenLastCalledWith(
+        expect.not.objectContaining({ pages: expect.anything() }),
+      );
+      expect(desktop.savePdf).not.toHaveBeenCalled();
+    } finally {
+      pages.mockRestore();
+    }
+  });
 
   it("creates a presentation from the native command and saves every edited page with its own images", async () => {
     const hook = await mount();

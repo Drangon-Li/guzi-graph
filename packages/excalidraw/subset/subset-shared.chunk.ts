@@ -73,8 +73,15 @@ export const toBase64 = async (arrayBuffer: ArrayBuffer) => {
     // it's perfectly fine to treat each byte independently,
     // as we care only about turning individual bytes into codepoints,
     // not about multi-byte unicode characters
-    const byteString = String.fromCharCode(...new Uint8Array(arrayBuffer));
-    base64 = btoa(byteString);
+    const bytes = new Uint8Array(arrayBuffer);
+    const chunks: string[] = [];
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      chunks.push(
+        String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)),
+      );
+    }
+    base64 = btoa(chunks.join(""));
   }
 
   return `data:font/woff2;base64,${base64}`;

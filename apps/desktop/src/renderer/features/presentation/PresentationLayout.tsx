@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 
 import {
   PinIcon,
@@ -25,6 +25,7 @@ import "./Presentation.scss";
 
 import type { ReactNode } from "react";
 import type { Presentation, PresentationSlide } from "./model";
+import type { PresentationController } from "./control";
 
 type Props = {
   presentation: Presentation;
@@ -33,6 +34,7 @@ type Props = {
   active: boolean;
   blocked: boolean;
   language: "zh-CN" | "en";
+  theme?: "light" | "dark";
   onSelect: (id: string) => void;
   onAdd: () => void;
   onCopy: (id: string) => string | null;
@@ -43,6 +45,7 @@ type Props = {
   onExportPdf: () => void;
   onFit?: () => void;
   onPresent?: (presenting: boolean) => void;
+  onController?: (controller: PresentationController | null) => void;
   beforePresent: () => void;
   children: ReactNode;
 };
@@ -54,6 +57,7 @@ const SlidePreview = ({
   revision,
   failedLabel,
   immediate = false,
+  darkMode = false,
 }: {
   slide: PresentationSlide;
   width: number;
@@ -61,6 +65,7 @@ const SlidePreview = ({
   revision: number;
   failedLabel: string;
   immediate?: boolean;
+  darkMode?: boolean;
 }) => {
   const container = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
@@ -80,6 +85,7 @@ const SlidePreview = ({
           width,
           height,
           node.ownerDocument,
+          darkMode,
         ).then(
           (svg) => {
             if (!cancelled) {
@@ -95,7 +101,7 @@ const SlidePreview = ({
       cancelled = true;
       ownerWindow.clearTimeout(timer);
     };
-  }, [id, title, scene, bounds, width, height, revision, immediate]);
+  }, [id, title, scene, bounds, width, height, revision, immediate, darkMode]);
   return (
     <div
       className="desktop-slide-preview"
@@ -118,6 +124,33 @@ type Session = {
 
 const PINNED_STORAGE_KEY = "guzi.presentation.filmstrip.pinned";
 
+const waitForFullscreenTransition = (
+  ownerDocument: Document,
+  transition: Promise<void>,
+  reachedState: () => boolean,
+): Promise<void> => {
+  if (reachedState()) {
+    return Promise.resolve();
+  }
+  const ownerWindow = ownerDocument.defaultView!;
+  return new Promise((resolve) => {
+    const finish = () => {
+      ownerWindow.clearTimeout(timer);
+      ownerDocument.removeEventListener("fullscreenchange", onChange);
+      resolve();
+    };
+    const onChange = () => {
+      if (reachedState()) {
+        finish();
+      }
+    };
+    // Electron can leave the Fullscreen API promise pending after the UI changes.
+    const timer = ownerWindow.setTimeout(finish, 1000);
+    ownerDocument.addEventListener("fullscreenchange", onChange);
+    void transition.then(finish, finish);
+  });
+};
+
 export const PresentationLayout = (props: Props) => {
   const {
     presentation,
@@ -126,6 +159,7 @@ export const PresentationLayout = (props: Props) => {
     active,
     blocked,
     language,
+    theme = "light",
     children,
   } = props;
   const t = (zh: string, en: string) => (language === "zh-CN" ? zh : en);
@@ -175,6 +209,13 @@ export const PresentationLayout = (props: Props) => {
   const [session, setSession] = useState<Session | null>(null);
   const sessionRef = useRef<Session | null>(null);
   const [page, setPage] = useState(0);
+  const committed = useRef({ session, page });
+  const fullscreenRequest = useRef<Promise<void>>(Promise.resolve());
+  const fullscreenExit = useRef<Promise<void>>(Promise.resolve());
+  const fullscreenTarget = useRef<HTMLElement | null>(null);
+  const execute = useRef<PresentationController["execute"]>(async () => {
+    throw new Error("演示控制器尚未就绪。");
+  });
   const [fullscreenError, setFullscreenError] = useState(false);
   const disabled = blocked || !active;
   const currentIndex = presentation.slides.findIndex(
@@ -190,6 +231,32 @@ export const PresentationLayout = (props: Props) => {
     !!renaming ||
     !!contextMenu ||
     dragActive;
+
+  useLayoutEffect(() => {
+    committed.current = { session, page };
+  }, [session, page]);
+
+  useLayoutEffect(() => {
+    const onController = props.onController;
+    onController?.({ execute: (command) => execute.current(command) });
+    return () => onController?.(null);
+  }, [props.onController]);
+
+  useLayoutEffect(() => {
+    const ownerDocument = root.current!.ownerDocument;
+    const onFullscreenChange = () => {
+      if (
+        fullscreenTarget.current &&
+        ownerDocument.fullscreenElement === fullscreenTarget.current &&
+        !sessionRef.current
+      ) {
+        fullscreenExit.current = ownerDocument.exitFullscreen().catch(() => {});
+      }
+    };
+    ownerDocument.addEventListener("fullscreenchange", onFullscreenChange);
+    return () =>
+      ownerDocument.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
 
   const resetDrag = useCallback(() => {
     dragging.current = null;
@@ -281,7 +348,7 @@ export const PresentationLayout = (props: Props) => {
         session.fullscreenTarget &&
         ownerDocument.fullscreenElement === session.fullscreenTarget
       ) {
-        void ownerDocument.exitFullscreen().catch(() => {});
+        fullscreenExit.current = ownerDocument.exitFullscreen().catch(() => {});
       }
     };
     const dispose = () => {
@@ -381,6 +448,7 @@ export const PresentationLayout = (props: Props) => {
       return;
     }
     latest.current.beforePresent();
+    fullscreenRequest.current = Promise.resolve();
     const ownerDocument = root.current!.ownerDocument;
     const nextSession: Session = {
       // Freeze the scene before asynchronous SVG rendering starts.
@@ -399,15 +467,19 @@ export const PresentationLayout = (props: Props) => {
     const target = ownerDocument.documentElement;
     if (!ownerDocument.fullscreenElement && target.requestFullscreen) {
       nextSession.fullscreenTarget = target;
+      fullscreenTarget.current = target;
       try {
-        void target
+        fullscreenRequest.current = target
           .requestFullscreen()
-          .then(() => {
+          .then(async () => {
             if (
               !sessionRef.current &&
               ownerDocument.fullscreenElement === target
             ) {
-              void ownerDocument.exitFullscreen().catch(() => {});
+              fullscreenExit.current = ownerDocument
+                .exitFullscreen()
+                .catch(() => {});
+              await fullscreenExit.current;
             }
           })
           .catch(() => {
@@ -421,6 +493,90 @@ export const PresentationLayout = (props: Props) => {
     } else if (!ownerDocument.fullscreenElement) {
       setFullscreenError(true);
     }
+  };
+
+  execute.current = async ({ action, slideId }) => {
+    const node = root.current;
+    if (!node) {
+      throw new Error("演示控制器已卸载。");
+    }
+    const ownerDocument = node.ownerDocument;
+    const current = latest.current;
+    if (
+      action !== "status" &&
+      action !== "stop" &&
+      (!current.active || current.blocked)
+    ) {
+      throw new Error("演示文稿当前不可操作。");
+    }
+    if (action === "start") {
+      const slides = sessionRef.current?.slides ?? current.presentation.slides;
+      const index = slides.findIndex(
+        (slide) => slide.id === (slideId ?? current.activeSlideId),
+      );
+      if (index < 0) {
+        throw new Error("找不到要放映的幻灯片。");
+      }
+      flushSync(() => {
+        if (sessionRef.current) {
+          setPage(index);
+        } else {
+          present(index);
+        }
+      });
+      await waitForFullscreenTransition(
+        ownerDocument,
+        fullscreenRequest.current,
+        () => !!ownerDocument.fullscreenElement,
+      );
+    } else if (action === "stop") {
+      const playing = sessionRef.current;
+      const target = playing?.fullscreenTarget ?? fullscreenTarget.current;
+      flushSync(finish);
+      if (!playing && target && ownerDocument.fullscreenElement === target) {
+        fullscreenExit.current = ownerDocument.exitFullscreen().catch(() => {});
+      }
+      await waitForFullscreenTransition(
+        ownerDocument,
+        fullscreenExit.current,
+        () => !target || ownerDocument.fullscreenElement !== target,
+      );
+      if (target && ownerDocument.fullscreenElement === target) {
+        throw new Error("无法退出演示全屏。");
+      }
+    } else if (action !== "status") {
+      const playing = committed.current;
+      if (!playing.session) {
+        throw new Error("演示尚未开始。");
+      }
+      let index = playing.page;
+      if (action === "goto") {
+        index = playing.session.slides.findIndex(
+          (slide) => slide.id === slideId,
+        );
+        if (index < 0) {
+          throw new Error("请指定有效的幻灯片 ID。");
+        }
+      } else if (action === "next") {
+        index = Math.min(playing.session.slides.length - 1, index + 1);
+      } else if (action === "previous") {
+        index = Math.max(0, index - 1);
+      }
+      flushSync(() => setPage(index));
+    }
+    const playing = committed.current;
+    const slides =
+      playing.session?.slides ?? latest.current.presentation.slides;
+    const index = playing.session
+      ? playing.page
+      : slides.findIndex((slide) => slide.id === latest.current.activeSlideId);
+    return {
+      presenting: !!playing.session,
+      slideId: slides[index]?.id ?? null,
+      index,
+      slideCount: slides.length,
+      fullscreen: !!ownerDocument.fullscreenElement,
+    };
   };
 
   const rename = (slide: PresentationSlide) => {
@@ -847,6 +1003,7 @@ export const PresentationLayout = (props: Props) => {
                       height={presentation.height}
                       revision={slide.id === activeSlideId ? revision : 0}
                       failedLabel={t("预览不可用", "Preview unavailable")}
+                      darkMode={theme === "dark"}
                     />
                   </button>
                   {renaming === slide.id ? (

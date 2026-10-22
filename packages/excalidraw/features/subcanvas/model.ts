@@ -14,6 +14,8 @@ export interface SubcanvasScene {
       | "scrollY"
       | "zoom"
       | "gridModeEnabled"
+      | "gridSize"
+      | "objectsSnapModeEnabled"
       | "fontRegistry"
     >
   >;
@@ -106,6 +108,12 @@ export const restoreSubcanvasScenes = (
           ? { zoom: { value: state.zoom.value } }
           : {}),
         gridModeEnabled: state?.gridModeEnabled === true,
+        ...(Number.isFinite(state?.gridSize) && state.gridSize > 0
+          ? { gridSize: state.gridSize }
+          : {}),
+        ...(typeof state?.objectsSnapModeEnabled === "boolean"
+          ? { objectsSnapModeEnabled: state.objectsSnapModeEnabled }
+          : {}),
         fontRegistry: state?.fontRegistry ?? {},
       },
     };

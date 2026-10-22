@@ -1,5 +1,7 @@
 import type { FontSizePresets } from "@excalidraw/common";
 
+import type { PluginRequest, PluginResponse, PluginState } from "./plugins";
+
 export interface StylePreset {
   id: string;
   name: string;
@@ -79,6 +81,7 @@ export interface SaveRequest {
   name: string;
   content: string;
   saveAs?: boolean;
+  automation?: boolean;
   expectedModifiedAt?: number | null;
   occupiedPaths?: string[];
 }
@@ -109,6 +112,17 @@ export type DesktopCommand =
   | "close-window";
 
 export interface DesktopAPI {
+  getPlugins(): Promise<PluginState[]>;
+  setPluginEnabled(id: string, enabled: boolean): Promise<PluginState[]>;
+  configurePlugin(
+    id: string,
+    configuration: { port: number },
+  ): Promise<PluginState[]>;
+  onPluginState(callback: (plugins: PluginState[]) => void): () => void;
+  onPluginRequest(callback: (request: PluginRequest) => void): () => void;
+  onPluginRequestCancelled(callback: (requestId: string) => void): () => void;
+  respondPluginRequest(response: PluginResponse): void;
+  setPluginHostReady(ready: boolean): Promise<void>;
   getSettings(): Promise<DesktopSettings>;
   updateSettings(settings: Partial<DesktopSettings>): Promise<DesktopSettings>;
   chooseDirectory(): Promise<DesktopSettings | null>;
@@ -131,6 +145,13 @@ export interface DesktopAPI {
     height: number;
     pages?: { title?: string; svg: string; width: number; height: number }[];
   }): Promise<boolean>;
+  exportPdf(request: {
+    name: string;
+    svg: string;
+    width: number;
+    height: number;
+    pages?: { title?: string; svg: string; width: number; height: number }[];
+  }): Promise<ArrayBuffer>;
   editText(command: "undo" | "redo"): Promise<void>;
   removeFile(path: string, mode: "remove" | "trash"): Promise<void>;
   renameFile(path: string, name: string): Promise<DiskDocument>;

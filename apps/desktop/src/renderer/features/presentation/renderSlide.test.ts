@@ -11,7 +11,12 @@ import {
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import { createPresentation } from "./model";
-import { exportPresentationPdf, renderSlideSvg } from "./renderSlide";
+import {
+  exportPresentationPdf,
+  renderPresentationPdfPages,
+  renderSlidePng,
+  renderSlideSvg,
+} from "./renderSlide";
 
 import type { DesktopAPI } from "../../../shared/desktop-api";
 
@@ -22,6 +27,43 @@ const page = (
 ): PresentationSlide => ({ id: "page", title: "Page", scene: { elements } });
 
 describe("presentation SVG", () => {
+  it("renders dark preview colors without filtering raster images or changing subsequent exports", async () => {
+    const slide = page([
+      { ...rectangleFixture, id: "rectangle", strokeColor: "#1e1e1e" },
+      {
+        ...rectangleFixture,
+        id: "image",
+        type: "image",
+        fileId: "image",
+        scale: [1, 1],
+        crop: null,
+        status: "saved",
+      } as ExcalidrawElement,
+    ]);
+    slide.scene.appState = { viewBackgroundColor: "#ffffff" };
+    const dataURL =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCKsAAAAASUVORK5CYII=";
+    slide.scene.files = {
+      image: {
+        id: "image" as any,
+        mimeType: "image/png",
+        dataURL: dataURL as any,
+        created: 1,
+      },
+    };
+    const before = JSON.stringify(slide);
+    const dark = await renderSlideSvg(slide, 1280, 720, document, true);
+    expect(dark.firstElementChild?.getAttribute("fill")).not.toBe("#ffffff");
+    expect(dark.querySelector('[stroke="#1e1e1e"]')).toBeNull();
+    expect(dark.outerHTML).toContain(dataURL);
+    expect(dark.querySelector("[filter]")).toBeNull();
+    expect(dark.style.filter).toBe("");
+    const exported = await renderSlideSvg(slide, 1280, 720, document);
+    expect(exported.firstElementChild?.getAttribute("fill")).toBe("#ffffff");
+    expect(exported.querySelector('[stroke="#1e1e1e"]')).not.toBeNull();
+    expect(JSON.stringify(slide)).toBe(before);
+  });
+
   it("renders a full fixed-size background for an empty page", async () => {
     const slide = page();
     slide.scene.appState = { viewBackgroundColor: "#123456" };
@@ -211,6 +253,20 @@ describe("presentation SVG", () => {
 });
 
 describe("presentation PDF", () => {
+  it("returns all rendered pages without opening a save dialog", async () => {
+    const deck = createPresentation("first", "First");
+    deck.slides.push({ id: "second", title: "Second", scene: {} });
+    const pages = await renderPresentationPdfPages(deck, document);
+    expect(pages.map((item) => item.title)).toEqual(["First", "Second"]);
+    expect(
+      pages.every(
+        (item) =>
+          item.width === 1280 &&
+          item.height === 720 &&
+          item.svg.includes("<svg"),
+      ),
+    ).toBe(true);
+  });
   it("exports a stable snapshot while the live deck is edited and reordered", async () => {
     const deck = createPresentation("first", "First", {
       elements: [rectangleFixture],
@@ -313,5 +369,106 @@ describe("presentation PDF", () => {
       exportPresentationPdf(deck, "Deck", desktop, document),
     ).rejects.toThrow();
     expect(savePdf).not.toHaveBeenCalled();
+  });
+});
+
+describe("presentation PNG", () => {
+  it("rasterizes the fixed slide viewport and preserves a snapshot during asynchronous rendering", async () => {
+    const slide = page([rectangleFixture]);
+    slide.bounds = { x: -900, y: -500, width: 1600, height: 900 };
+    slide.scene.appState = { viewBackgroundColor: "#123456" };
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original = sceneExport.exportToSvg;
+    const exportSvg = vi
+      .spyOn(sceneExport, "exportToSvg")
+      .mockImplementationOnce(async (...args) => {
+        await gate;
+        return original(...args);
+      });
+    let imageSource = "";
+    const Image = vi.spyOn(window, "Image").mockImplementation(() => {
+      const image = document.createElement("img");
+      Object.defineProperty(image, "src", {
+        set(value: string) {
+          imageSource = decodeURIComponent(value.slice(value.indexOf(",") + 1));
+          queueMicrotask(() => image.dispatchEvent(new Event("load")));
+        },
+      });
+      return image;
+    });
+    const blob = new Blob(["png"], { type: "image/png" });
+    let outputCanvas!: HTMLCanvasElement;
+    const toBlob = vi
+      .spyOn(HTMLCanvasElement.prototype, "toBlob")
+      .mockImplementation(function (this: HTMLCanvasElement, callback, type) {
+        outputCanvas = this;
+        expect(type).toBe("image/png");
+        callback(blob);
+      });
+    try {
+      const pending = renderSlidePng(slide, 1280, 720, document);
+      slide.bounds.x = 100;
+      slide.scene.appState = { viewBackgroundColor: "#ffffff" };
+      release();
+      expect(await pending).toBe(blob);
+      expect(imageSource).toContain('viewBox="-900 -500 1600 900"');
+      expect(imageSource).toContain('fill="#123456"');
+      expect(outputCanvas.width).toBe(1280);
+      expect(outputCanvas.height).toBe(720);
+      expect(outputCanvas.getContext("2d")!.drawImage).toHaveBeenCalledWith(
+        expect.any(HTMLImageElement),
+        0,
+        0,
+        1280,
+        720,
+      );
+    } finally {
+      release();
+      exportSvg.mockRestore();
+      Image.mockRestore();
+      toBlob.mockRestore();
+    }
+  });
+
+  it("propagates image decoding and PNG encoding failures", async () => {
+    const image = document.createElement("img");
+    const Image = vi.spyOn(window, "Image").mockImplementation(() => {
+      Object.defineProperty(image, "src", {
+        configurable: true,
+        set() {
+          queueMicrotask(() => image.dispatchEvent(new Event("error")));
+        },
+      });
+      return image;
+    });
+    try {
+      await expect(renderSlidePng(page(), 1280, 720, document)).rejects.toThrow(
+        "图像渲染失败",
+      );
+      Image.mockImplementation(() => {
+        Object.defineProperty(image, "src", {
+          configurable: true,
+          set() {
+            queueMicrotask(() => image.dispatchEvent(new Event("load")));
+          },
+        });
+        return image;
+      });
+      const toBlob = vi
+        .spyOn(HTMLCanvasElement.prototype, "toBlob")
+        .mockImplementation((callback) => callback(null));
+      try {
+        await expect(
+          renderSlidePng(page(), 1280, 720, document),
+        ).rejects.toThrow("PNG 导出失败");
+      } finally {
+        toBlob.mockRestore();
+      }
+    } finally {
+      Image.mockRestore();
+    }
   });
 });

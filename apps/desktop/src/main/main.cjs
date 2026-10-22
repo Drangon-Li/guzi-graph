@@ -2,6 +2,7 @@ const fs = require("node:fs/promises");
 const { mkdirSync } = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+const { randomUUID } = require("node:crypto");
 
 const {
   app,
@@ -13,12 +14,14 @@ const {
   protocol,
   session,
   shell,
+  utilityProcess,
 } = require("electron");
 
 const { buildChannel } = require("../../package.json");
 
 const { translate } = require("./i18n/i18n.cjs");
 const { renderPdf, validatePdfRequest } = require("./pdf.cjs");
+const { PluginHost } = require("./plugins.cjs");
 const {
   DesktopStorage,
   atomicWrite,
@@ -57,6 +60,7 @@ protocol.registerSchemesAsPrivileged([
 
 let window = null;
 let storage;
+let plugins;
 const t = (message, values) =>
   translate(storage?.getSettings().language || "zh-CN", message, values);
 let closePending = false;
@@ -188,6 +192,29 @@ async function saveDocument(request) {
   let overwrite = false;
   const presentation = request.format === "presentation";
   const extension = presentation ? "guzi-presentation" : "excalidraw";
+  if (request.automation) {
+    if (request.automation !== true || request.saveAs) {
+      throw new Error("自动化仅支持保存当前文档。");
+    }
+    if (!target) {
+      const root = storage.getSettings().rootDirectory;
+      if (!root) {
+        throw Object.assign(new Error("自动保存前请先在设置中选择项目目录。"), {
+          code: "ROOT_REQUIRED",
+        });
+      }
+      const name = fileName(request.name, extension);
+      target = path.join(
+        root,
+        `${path.basename(name, `.${extension}`)}-${randomUUID()}.${extension}`,
+      );
+      return storage.saveFile(
+        { ...request, path: target },
+        { createOnly: true },
+      );
+    }
+    return storage.saveFile(request);
+  }
   if (request.saveAs || !target) {
     const name = fileName(request.name, extension);
     const root = storage.getSettings().rootDirectory;
@@ -309,6 +336,22 @@ function installIPC() {
         throw error;
       }
     });
+  handle("get-plugins", () => plugins.list());
+  handle("set-plugin-enabled", (id, enabled) =>
+    plugins.setEnabled(id, enabled),
+  );
+  handle("configure-plugin", (id, configuration) =>
+    plugins.configure(id, configuration),
+  );
+  handle("set-plugin-host-ready", (ready) => plugins.setReady(ready));
+  ipcMain.on("desktop:plugin-response", (event, response) => {
+    try {
+      assertSender(event);
+      plugins.respond(response);
+    } catch {
+      // Ignore responses from frames that are no longer the trusted workspace.
+    }
+  });
   handle("get-settings", () => storage.getSettings());
   handle("update-settings", async (settings) => {
     const updated = await storage.updateSettings(settings);
@@ -442,13 +485,25 @@ function installIPC() {
       return true;
     });
   });
+  handle("export-pdf", async (request) => {
+    validatePdfRequest(request);
+    const data = await renderPdf(BrowserWindow, request, {
+      language: storage.getSettings().language,
+    });
+    return data.buffer.slice(
+      data.byteOffset,
+      data.byteOffset + data.byteLength,
+    );
+  });
   handle("save-pdf", async (request) => {
     validatePdfRequest(request);
     const destination = await chooseExport(request.name, "pdf");
     if (!destination) {
       return false;
     }
-    const data = await renderPdf(BrowserWindow, request);
+    const data = await renderPdf(BrowserWindow, request, {
+      language: storage.getSettings().language,
+    });
     return storage.serialize(async () => {
       await assertExportPath(destination);
       await atomicWrite(destination, data);
@@ -630,9 +685,11 @@ function createWindow() {
     (_event, _url, _inPlace, isMainFrame) => {
       if (isMainFrame) {
         filesConsumerReady = false;
+        plugins?.setReady(false);
       }
     },
   );
+  window.webContents.on("render-process-gone", () => plugins?.setReady(false));
   window.webContents.on("will-navigate", (event, url) => {
     if (!trustedURL(url)) {
       event.preventDefault();
@@ -653,6 +710,7 @@ function createWindow() {
     }
   });
   window.on("closed", () => {
+    plugins?.setReady(false);
     window = null;
     closePending = false;
     filesConsumerReady = false;
@@ -778,6 +836,8 @@ if (!hasLock) {
     if (!quitApproved && window) {
       event.preventDefault();
       requestClose(true);
+    } else {
+      plugins?.setReady(false);
     }
   });
   app.on("window-all-closed", () => {
@@ -789,6 +849,14 @@ if (!hasLock) {
     .whenReady()
     .then(async () => {
       storage = await new DesktopStorage(app.getPath("userData")).initialize();
+      plugins = await new PluginHost({
+        userData: app.getPath("userData"),
+        fork: (...args) => utilityProcess.fork(...args),
+        send: (channel, value) => {
+          if (window && !window.isDestroyed())
+            window.webContents.send(`desktop:${channel}`, value);
+        },
+      }).initialize();
       secureSession();
       if (!developmentURL) {
         await installLocalProtocol();

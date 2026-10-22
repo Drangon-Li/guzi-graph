@@ -1,4 +1,5 @@
 import path from "node:path";
+
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import svgr from "vite-plugin-svgr";
@@ -15,6 +16,9 @@ const modules = [
 export default defineConfig({
   base: "./",
   publicDir: false,
+  define: {
+    "import.meta.env.VITE_DISABLE_FONT_SUBSETTING": JSON.stringify("true"),
+  },
   resolve: {
     alias: [
       ...modules.flatMap((name) => [
@@ -52,7 +56,9 @@ export default defineConfig({
       transformIndexHtml: {
         order: "pre",
         handler(html, context) {
-          if (!context.server) return html;
+          if (!context.server) {
+            return html;
+          }
           return html
             .replace(
               "script-src 'self' 'wasm-unsafe-eval'",

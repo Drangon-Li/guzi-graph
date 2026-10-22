@@ -733,3 +733,137 @@ body,
     min-height: 34px;
   }
 }
+
+.excalidraw .desktop-market {
+  display: grid;
+  gap: 20px;
+  max-width: 1040px;
+  padding-bottom: 24px;
+
+  .desktop-market-card {
+    padding: 24px;
+    border: 1px solid var(--default-border-color);
+    border-radius: 14px;
+    background: var(--island-bg-color);
+
+    > header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 20px;
+    }
+    h2 small {
+      font-size: 12px;
+      font-weight: normal;
+      color: var(--desktop-muted);
+    }
+    h3 {
+      margin: 20px 0 10px;
+      font-size: 14px;
+    }
+    p {
+      line-height: 1.7;
+      font-size: 13px;
+    }
+    form,
+    label {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    form {
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+    input[type="number"] {
+      width: 100px;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid var(--default-border-color);
+      color: inherit;
+      background: var(--color-surface-lowest);
+    }
+    pre {
+      padding: 12px;
+      border-radius: 8px;
+      background: var(--color-surface-lowest);
+      overflow: auto;
+    }
+    [role="alert"] {
+      color: var(--color-danger);
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .desktop-plugin-toggle {
+    white-space: nowrap;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .desktop-plugin-toggle input {
+    accent-color: var(--color-primary);
+    width: 18px;
+    height: 18px;
+  }
+  .desktop-plugin-status {
+    color: var(--desktop-muted);
+    font-size: 12px;
+  }
+  .desktop-plugin-status.is-running {
+    color: var(--color-success-text);
+  }
+  .desktop-plugin-status.is-error {
+    color: var(--color-danger);
+  }
+  .desktop-plugin-capabilities {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .desktop-plugin-capabilities span {
+    border: 1px solid var(--default-border-color);
+    border-radius: 20px;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+  .desktop-plugin-connection {
+    border-top: 1px solid var(--default-border-color);
+    margin-top: 20px;
+  }
+  .desktop-plugin-value {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 12px 0;
+  }
+  .desktop-plugin-value > span {
+    min-width: 72px;
+    color: var(--desktop-muted);
+    font-size: 12px;
+  }
+  .desktop-plugin-value code {
+    flex: 1;
+    min-width: 120px;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+  }
+  .desktop-plugin-copy-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .desktop-market-hint {
+    color: var(--desktop-muted);
+    font-size: 12px;
+  }
+}
+
+.excalidraw.theme--dark .desktop-market .desktop-plugin-status.is-running {
+  color: var(--color-success);
+}

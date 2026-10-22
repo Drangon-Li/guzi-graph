@@ -1,8 +1,18 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
+const { AsyncLocalStorage } = require("node:async_hooks");
+const { performance } = require("node:perf_hooks");
 
 const { translate } = require("./i18n/i18n.cjs");
+
+const storageOperation = new AsyncLocalStorage();
+const stage = (name) => {
+  const operation = storageOperation.getStore();
+  if (operation) {
+    operation.stage = name;
+  }
+};
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -77,30 +87,45 @@ function documentPath(value, language = "zh-CN") {
   return path.resolve(value);
 }
 
-async function atomicWrite(target, content) {
+async function atomicWrite(
+  target,
+  content,
+  { createOnly = false, kind = "file" } = {},
+) {
   const temporary = path.join(
     path.dirname(target),
     `.${path.basename(target)}.${randomUUID()}.tmp`,
   );
   let handle;
   try {
+    stage(`${kind}:stat`);
     const existing = await fs.stat(target).catch((error) => {
       if (error.code !== "ENOENT") {
         throw error;
       }
       return null;
     });
+    stage(`${kind}:open`);
     handle = await fs.open(
       temporary,
       "wx",
       existing ? existing.mode & 0o777 : 0o600,
     );
+    stage(`${kind}:write`);
     await handle.writeFile(content);
+    stage(`${kind}:sync`);
     await handle.sync();
+    stage(`${kind}:close`);
     await handle.close();
     handle = null;
-    await fs.rename(temporary, target);
+    stage(`${kind}:commit`);
+    if (createOnly) {
+      await fs.link(temporary, target);
+    } else {
+      await fs.rename(temporary, target);
+    }
   } finally {
+    stage(`${kind}:cleanup`);
     await handle?.close();
     await fs.unlink(temporary).catch((error) => {
       if (error.code !== "ENOENT") {
@@ -186,6 +211,7 @@ class DesktopStorage {
     this.authorized = new Set();
     this.copiedVersions = new Map();
     this.queue = Promise.resolve();
+    this.pendingOperations = new Set();
   }
 
   async initialize() {
@@ -301,6 +327,7 @@ class DesktopStorage {
           lastOpenedAt,
         })),
       ),
+      { kind: "recent-files" },
     );
     this.recentFiles = recentFiles;
   }
@@ -326,11 +353,51 @@ class DesktopStorage {
     });
   }
 
-  serialize(action) {
-    const work = this.queue.then(action).catch((error) => {
-      error.message = translate(this.settings.language, error.message);
-      throw error;
-    });
+  getDiagnostics() {
+    const now = performance.now();
+    const operations = [...this.pendingOperations];
+    const active = operations.find((operation) => operation.startedAt !== null);
+    return {
+      pendingCount: operations.length,
+      oldestWaitMs: operations.length
+        ? Math.round(now - operations[0].queuedAt)
+        : 0,
+      active: active
+        ? {
+            operation: active.name,
+            stage: active.stage,
+            elapsedMs: Math.round(now - active.startedAt),
+          }
+        : null,
+    };
+  }
+
+  serialize(action, name = "storage") {
+    const operation = {
+      name,
+      queuedAt: performance.now(),
+      startedAt: null,
+      stage: "queued",
+    };
+    this.pendingOperations.add(operation);
+    const timer = setTimeout(() => {
+      console.warn("[guzi-storage] slow operation", this.getDiagnostics());
+    }, 10000);
+    timer.unref?.();
+    const work = this.queue
+      .then(() => {
+        operation.startedAt = performance.now();
+        operation.stage = "running";
+        return storageOperation.run(operation, action);
+      })
+      .catch((error) => {
+        error.message = translate(this.settings.language, error.message);
+        throw error;
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        this.pendingOperations.delete(operation);
+      });
     this.queue = work.catch(() => {});
     return work;
   }
@@ -727,7 +794,7 @@ class DesktopStorage {
     return { rootDirectory, files, folders, history };
   }
 
-  async saveFile(request, { overwrite = false } = {}) {
+  async saveFile(request, { overwrite = false, createOnly = false } = {}) {
     if (
       !request ||
       !UUID.test(request.documentId) ||
@@ -737,6 +804,7 @@ class DesktopStorage {
       throw this.fail("保存请求无效。");
     }
     return this.serialize(async () => {
+      stage("authorize");
       const target = await this.allowedPath(request.path, { writing: true });
       const extension =
         request.format === "presentation"
@@ -805,13 +873,18 @@ class DesktopStorage {
       ) {
         throw this.fail("文件已被移走或删除。", "EXTERNAL_MODIFICATION");
       }
-      await atomicWrite(target, request.content);
+      await atomicWrite(target, request.content, {
+        createOnly,
+        kind: "document",
+      });
       this.copiedVersions.delete(target);
       this.authorized.add(target);
+      stage("readback");
       const document = await this.readFile(target);
+      stage("recent-files");
       await this.recordRecentFile(target);
       return document;
-    });
+    }, "save-file");
   }
 
   async categoryDirectory(category, create = false) {
@@ -1056,9 +1129,10 @@ class DesktopStorage {
       await atomicWrite(
         path.join(this.userData, "session.json"),
         JSON.stringify(next),
+        { kind: "session" },
       );
       this.session = next;
-    });
+    }, "set-session");
   }
 
   draftPath(id) {
@@ -1123,18 +1197,21 @@ class DesktopStorage {
           content: draft.content,
           modifiedAt: draft.modifiedAt,
         }),
+        { kind: "draft" },
       );
-    });
+    }, "write-draft");
   }
 
   deleteDraft(id) {
     const destination = this.draftPath(id);
-    return this.serialize(() =>
-      fs.unlink(destination).catch((error) => {
-        if (error.code !== "ENOENT") {
-          throw error;
-        }
-      }),
+    return this.serialize(
+      () =>
+        fs.unlink(destination).catch((error) => {
+          if (error.code !== "ENOENT") {
+            throw error;
+          }
+        }),
+      "delete-draft",
     );
   }
 }
