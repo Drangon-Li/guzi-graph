@@ -73,6 +73,7 @@ export interface ProjectIndex {
 }
 
 export interface SaveRequest {
+  format?: "presentation";
   documentId: string;
   path: string | null;
   name: string;
@@ -99,6 +100,7 @@ export type DesktopCommand =
   | "undo"
   | "redo"
   | "new"
+  | "new-presentation"
   | "open"
   | "save"
   | "save-as"

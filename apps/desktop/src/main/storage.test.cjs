@@ -146,6 +146,112 @@ test("atomic save replaces complete content and leaves no temporary files", asyn
   ]);
 });
 
+test("presentations preserve their extension, history, session and recovery content across moves and restart", async (t) => {
+  const { base, root, storage, create } = await fixture(t);
+  const content = JSON.stringify({
+    type: "guzi-presentation",
+    version: 1,
+    width: 1280,
+    height: 720,
+    slides: [
+      {
+        id: "slide-1",
+        title: "Opening",
+        scene: { type: "excalidraw", elements: [], appState: {}, files: {} },
+      },
+    ],
+  });
+  const original = await create("talk.GUZI-PRESENTATION", content);
+  assert.deepEqual(
+    (await storage.listProjects()).files.map((file) => file.path),
+    [original.path],
+  );
+  await storage.recordOpenedFile(original.path);
+  await storage.setSession({
+    paths: [original.path],
+    activePath: original.path,
+  });
+  const renamed = await storage.renameFile(original.path, "renamed");
+  await storage.createFolder("slides");
+  const moved = await storage.moveFile(renamed.path, "slides");
+  assert.equal(
+    moved.path,
+    path.join(root, "slides", "renamed.guzi-presentation"),
+  );
+  const saved = await storage.saveFile({
+    ...request(moved, content),
+    format: "presentation",
+  });
+  assert.equal(saved.content, content);
+  const draft = {
+    id: randomUUID(),
+    path: moved.path,
+    title: "talk",
+    content,
+    modifiedAt: Date.now(),
+  };
+  await storage.writeDraft(draft);
+  const reopened = await new DesktopStorage(
+    path.join(base, "userData"),
+  ).initialize();
+  assert.equal((await reopened.readFile(moved.path)).content, content);
+  assert.deepEqual(reopened.getSession(), {
+    paths: [moved.path],
+    activePath: moved.path,
+  });
+  assert.deepEqual(await reopened.listDrafts(), [draft]);
+  const index = await reopened.listProjects();
+  assert.equal(index.files[0].relativePath, "slides/renamed.guzi-presentation");
+  assert.equal(index.history[0].path, moved.path);
+  assert.deepEqual(await fs.readdir(path.dirname(moved.path)), [
+    "renamed.guzi-presentation",
+  ]);
+});
+
+test("presentation saves reject mismatched formats and symbolic aliases before overwriting", async (t) => {
+  const { root, storage, create } = await fixture(t);
+  const drawing = await create("drawing.excalidraw", "drawing");
+  const presentation = await create("slides.guzi-presentation", "presentation");
+  for (const invalid of [
+    { ...request(drawing, "wrong"), format: "presentation" },
+    request(presentation, "wrong"),
+    { ...request(presentation, "wrong"), format: "pptx" },
+  ]) {
+    await assert.rejects(storage.saveFile(invalid, { overwrite: true }), {
+      code: "INVALID_PATH",
+    });
+  }
+  const alias = path.join(root, "alias.guzi-presentation");
+  await fs.symlink(drawing.path, alias);
+  await assert.rejects(
+    storage.saveFile(
+      { ...request(drawing, "wrong"), path: alias, format: "presentation" },
+      { overwrite: true },
+    ),
+    { code: "INVALID_PATH" },
+  );
+  assert.equal(await fs.readFile(drawing.path, "utf8"), "drawing");
+  assert.equal(await fs.readFile(presentation.path, "utf8"), "presentation");
+});
+
+test("rename and move through symbolic aliases preserve the real document extension", async (t) => {
+  const { root, storage, create } = await fixture(t);
+  const presentation = await create("talk.guzi-presentation", "presentation");
+  const alias = path.join(root, "alias.excalidraw");
+  await fs.symlink(presentation.path, alias);
+  const renamed = await storage.renameFile(alias, "renamed");
+  assert.equal(renamed.path, path.join(root, "renamed.guzi-presentation"));
+  const moveAlias = path.join(root, "move-alias.excalidraw");
+  await fs.symlink(renamed.path, moveAlias);
+  await storage.createFolder("slides");
+  const moved = await storage.moveFile(moveAlias, "slides");
+  assert.equal(
+    moved.path,
+    path.join(root, "slides", "renamed.guzi-presentation"),
+  );
+  assert.equal(moved.content, "presentation");
+});
+
 test("external changes and deletion require explicit overwrite", async (t) => {
   const { storage, create } = await fixture(t);
   const original = await create("drawing.excalidraw", "first");

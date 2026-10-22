@@ -119,7 +119,10 @@ export const createSceneTracker = () => {
 };
 
 export const fileTitle = (path: string) =>
-  (path.split(/[\\/]/).pop() || "未命名").replace(/\.excalidraw$/i, "");
+  (path.split(/[\\/]/).pop() || "未命名").replace(
+    /\.(excalidraw|guzi-presentation)$/i,
+    "",
+  );
 
 export const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);

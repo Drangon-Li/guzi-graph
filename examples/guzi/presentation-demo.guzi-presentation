@@ -1,0 +1,5827 @@
+{
+  "type": "guzi-presentation",
+  "version": 1,
+  "width": 1280,
+  "height": 720,
+  "slides": [
+    {
+      "id": "demo-cover",
+      "title": "把想法讲清楚",
+      "scene": {
+        "type": "excalidraw",
+        "version": 2,
+        "source": "http://localhost:3000",
+        "elements": [
+          {
+            "id": "cover-kicker",
+            "type": "text",
+            "x": 64,
+            "y": 55,
+            "width": 620,
+            "height": 24,
+            "angle": 0,
+            "strokeColor": "#D2643F",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a0",
+            "roundness": null,
+            "seed": 932012040,
+            "version": 2,
+            "versionNonce": 2014999816,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "一场 4 分钟的小演示",
+            "fontSize": 15,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "一场 4 分钟的小演示",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "一场 4 分钟的小演示",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "cover-title",
+            "type": "text",
+            "x": 64,
+            "y": 111,
+            "width": 660,
+            "height": 170,
+            "angle": 0,
+            "strokeColor": "#203248",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a1",
+            "roundness": null,
+            "seed": 1518240888,
+            "version": 2,
+            "versionNonce": 79249272,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "把想法\n讲清楚",
+            "fontSize": 66,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "把想法\n讲清楚",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "把想法",
+                      "bold": true
+                    }
+                  ]
+                },
+                {
+                  "runs": [
+                    {
+                      "text": "讲清楚",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-shape-0",
+            "type": "rectangle",
+            "x": 66,
+            "y": 307,
+            "width": 158,
+            "height": 6,
+            "angle": 0,
+            "strokeColor": "transparent",
+            "backgroundColor": "#D2643F",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a2",
+            "roundness": null,
+            "seed": 1978933000,
+            "version": 2,
+            "versionNonce": 773231624,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false
+          },
+          {
+            "id": "cover-subtitle",
+            "type": "text",
+            "x": 66,
+            "y": 342,
+            "width": 650,
+            "height": 80,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a3",
+            "roundness": null,
+            "seed": 707212664,
+            "version": 2,
+            "versionNonce": 1397919864,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "从一个模糊念头，\n到一段可以行动的表达。",
+            "fontSize": 24,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "从一个模糊念头，\n到一段可以行动的表达。",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "cover-illustration",
+            "type": "image",
+            "x": 766,
+            "y": 85,
+            "width": 450,
+            "height": 319,
+            "angle": 0,
+            "strokeColor": "transparent",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a4",
+            "roundness": null,
+            "seed": 1462435336,
+            "version": 2,
+            "versionNonce": 758567688,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "status": "saved",
+            "fileId": "guzi-demo-clarity-illustration",
+            "scale": [
+              1,
+              1
+            ],
+            "crop": null,
+            "imageBorder": false
+          },
+          {
+            "id": "demo-shape-1",
+            "type": "rectangle",
+            "x": 64,
+            "y": 482,
+            "width": 336,
+            "height": 124,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#FFFFFF",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a5",
+            "roundness": {
+              "type": 3
+            },
+            "seed": 1133627000,
+            "version": 2,
+            "versionNonce": 77185400,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false
+          },
+          {
+            "id": "flow-number-0",
+            "type": "text",
+            "x": 84,
+            "y": 505,
+            "width": 40,
+            "height": 34,
+            "angle": 0,
+            "strokeColor": "#D2643F",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a6",
+            "roundness": null,
+            "seed": 1278082312,
+            "version": 2,
+            "versionNonce": 2079797768,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "01",
+            "fontSize": 22,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "01",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "01",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "flow-title-0",
+            "type": "text",
+            "x": 142,
+            "y": 504,
+            "width": 238,
+            "height": 38,
+            "angle": 0,
+            "strokeColor": "#203248",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a7",
+            "roundness": null,
+            "seed": 1401042808,
+            "version": 2,
+            "versionNonce": 1204998776,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "先说结论",
+            "fontSize": 25,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "先说结论",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "先说结论",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "flow-body-0",
+            "type": "text",
+            "x": 84,
+            "y": 555,
+            "width": 296,
+            "height": 30,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a8",
+            "roundness": null,
+            "seed": 1182342152,
+            "version": 2,
+            "versionNonce": 1901310216,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "一句话回答：你想改变什么？",
+            "fontSize": 16,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "一句话回答：你想改变什么？",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-shape-2",
+            "type": "rectangle",
+            "x": 472,
+            "y": 482,
+            "width": 336,
+            "height": 124,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#FFFFFF",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a9",
+            "roundness": {
+              "type": 3
+            },
+            "seed": 1312589944,
+            "version": 2,
+            "versionNonce": 1136771960,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false
+          },
+          {
+            "id": "flow-number-1",
+            "type": "text",
+            "x": 492,
+            "y": 505,
+            "width": 40,
+            "height": 34,
+            "angle": 0,
+            "strokeColor": "#D2643F",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aA",
+            "roundness": null,
+            "seed": 671636232,
+            "version": 2,
+            "versionNonce": 617107464,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "02",
+            "fontSize": 22,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "02",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "02",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "flow-title-1",
+            "type": "text",
+            "x": 550,
+            "y": 504,
+            "width": 238,
+            "height": 38,
+            "angle": 0,
+            "strokeColor": "#203248",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aB",
+            "roundness": null,
+            "seed": 2139404664,
+            "version": 2,
+            "versionNonce": 648713336,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "再放证据",
+            "fontSize": 25,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "再放证据",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "再放证据",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "flow-body-1",
+            "type": "text",
+            "x": 492,
+            "y": 555,
+            "width": 296,
+            "height": 30,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aC",
+            "roundness": null,
+            "seed": 861387272,
+            "version": 2,
+            "versionNonce": 1582370568,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "让信息直接支持你的判断。",
+            "fontSize": 16,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "让信息直接支持你的判断。",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-shape-3",
+            "type": "rectangle",
+            "x": 880,
+            "y": 482,
+            "width": 336,
+            "height": 124,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#FFFFFF",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aD",
+            "roundness": {
+              "type": 3
+            },
+            "seed": 446614136,
+            "version": 2,
+            "versionNonce": 911295864,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false
+          },
+          {
+            "id": "flow-number-2",
+            "type": "text",
+            "x": 900,
+            "y": 505,
+            "width": 40,
+            "height": 34,
+            "angle": 0,
+            "strokeColor": "#D2643F",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aE",
+            "roundness": null,
+            "seed": 2070100232,
+            "version": 2,
+            "versionNonce": 107605512,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "03",
+            "fontSize": 22,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "03",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "03",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "flow-title-2",
+            "type": "text",
+            "x": 958,
+            "y": 504,
+            "width": 238,
+            "height": 38,
+            "angle": 0,
+            "strokeColor": "#203248",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aF",
+            "roundness": null,
+            "seed": 1246673784,
+            "version": 2,
+            "versionNonce": 1610208888,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "给出下一步",
+            "fontSize": 25,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "给出下一步",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "给出下一步",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "flow-body-2",
+            "type": "text",
+            "x": 900,
+            "y": 555,
+            "width": 296,
+            "height": 30,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aG",
+            "roundness": null,
+            "seed": 1403443208,
+            "version": 2,
+            "versionNonce": 370076936,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "说清谁来做、何时做、怎么做。",
+            "fontSize": 16,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "说清谁来做、何时做、怎么做。",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-line-4",
+            "type": "arrow",
+            "x": 414.5,
+            "y": 544,
+            "width": 42,
+            "height": 0,
+            "angle": 0,
+            "strokeColor": "#D2643F",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aH",
+            "roundness": null,
+            "seed": 1087933560,
+            "version": 2,
+            "versionNonce": 1214793592,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                41,
+                0
+              ]
+            ],
+            "startBinding": null,
+            "endBinding": null,
+            "startArrowhead": null,
+            "endArrowhead": "arrow",
+            "elbowed": false
+          },
+          {
+            "id": "demo-line-5",
+            "type": "arrow",
+            "x": 822.5,
+            "y": 544,
+            "width": 42,
+            "height": 0,
+            "angle": 0,
+            "strokeColor": "#D2643F",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aI",
+            "roundness": null,
+            "seed": 1075746568,
+            "version": 2,
+            "versionNonce": 112987144,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                41,
+                0
+              ]
+            ],
+            "startBinding": null,
+            "endBinding": null,
+            "startArrowhead": null,
+            "endArrowhead": "arrow",
+            "elbowed": false
+          },
+          {
+            "id": "demo-line-6",
+            "type": "line",
+            "x": 64,
+            "y": 656,
+            "width": 1152,
+            "height": 0,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aJ",
+            "roundness": null,
+            "seed": 1207975288,
+            "version": 2,
+            "versionNonce": 1541445752,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                1152,
+                0
+              ]
+            ],
+            "startBinding": null,
+            "endBinding": null,
+            "startArrowhead": null,
+            "endArrowhead": null,
+            "polygon": false
+          },
+          {
+            "id": "footer-1",
+            "type": "text",
+            "x": 64,
+            "y": 675,
+            "width": 650,
+            "height": 20,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aK",
+            "roundness": null,
+            "seed": 1699116552,
+            "version": 2,
+            "versionNonce": 1114458888,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "GUZI  /  IDEAS TO CLARITY",
+            "fontSize": 12,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "GUZI  /  IDEAS TO CLARITY",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "number-1",
+            "type": "text",
+            "x": 1142,
+            "y": 675,
+            "width": 74,
+            "height": 20,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aL",
+            "roundness": null,
+            "seed": 1359597176,
+            "version": 2,
+            "versionNonce": 1579600248,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "01 / 04",
+            "fontSize": 12,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "01 / 04",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          }
+        ],
+        "appState": {
+          "viewBackgroundColor": "#F7F5F0",
+          "gridModeEnabled": false,
+          "subscenes": {}
+        },
+        "files": {
+          "guzi-demo-clarity-illustration": {
+            "id": "guzi-demo-clarity-illustration",
+            "mimeType": "image/svg+xml",
+            "dataURL": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzQwIiB2aWV3Qm94PSIwIDAgNDgwIDM0MCI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNDAiIHJ4PSIyOCIgZmlsbD0iI0U4RjBGMyIvPjxjaXJjbGUgY3g9IjM2NSIgY3k9Ijg1IiByPSI1OCIgZmlsbD0iI0Q5RTVFQiIvPjxjaXJjbGUgY3g9IjEwMiIgY3k9IjI2NCIgcj0iNDIiIGZpbGw9IiNEOUU1RUIiLz48cmVjdCB4PSI1OCIgeT0iODciIHdpZHRoPSIxNzgiIGhlaWdodD0iMTgyIiByeD0iMTYiIGZpbGw9IiNGRkZGRkYiIHRyYW5zZm9ybT0icm90YXRlKC04IDE0NyAxNzgpIi8+PHBhdGggZD0iTTk1IDEzNWg5NE05NSAxNjFoNjhNOTUgMTg3aDg1TTk1IDIxM2g1MiIgc3Ryb2tlPSIjQ0JEN0RGIiBzdHJva2Utd2lkdGg9IjExIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHRyYW5zZm9ybT0icm90YXRlKC04IDE0NyAxNzgpIi8+PHJlY3QgeD0iMjE4IiB5PSI2NSIgd2lkdGg9IjE4OCIgaGVpZ2h0PSIyMDgiIHJ4PSIxOCIgZmlsbD0iIzIwMzI0OCIgdHJhbnNmb3JtPSJyb3RhdGUoNiAzMTIgMTY5KSIvPjxjaXJjbGUgY3g9IjMxMiIgY3k9IjEyMSIgcj0iMjQiIGZpbGw9IiNEMjY0M0YiLz48cGF0aCBkPSJtMzAwIDEyMiA4IDggMTctMjAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0ZGRkZGRiIgc3Ryb2tlLXdpZHRoPSI2IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48cGF0aCBkPSJNMjU3IDE3OWgxMDdNMjU3IDIwNGg3OE0yNTcgMjI5aDk3IiBzdHJva2U9IiNGRkZGRkYiIHN0cm9rZS13aWR0aD0iMTAiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgb3BhY2l0eT0iLjkyIiB0cmFuc2Zvcm09InJvdGF0ZSg2IDMxMiAxNjkpIi8+PHBhdGggZD0iTTE3NSAyOTRjNTYgMjkgMTQxIDIwIDE4MC00IiBmaWxsPSJub25lIiBzdHJva2U9IiNEMjY0M0YiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0ibTM0NSAyODcgMTctMi02IDE3IiBmaWxsPSJub25lIiBzdHJva2U9IiNEMjY0M0YiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+",
+            "created": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "demo-evidence",
+      "title": "用证据建立共识",
+      "scene": {
+        "type": "excalidraw",
+        "version": 2,
+        "source": "http://localhost:3000",
+        "elements": [
+          {
+            "id": "kicker-2",
+            "type": "text",
+            "x": 64,
+            "y": 52,
+            "width": 700,
+            "height": 22,
+            "angle": 0,
+            "strokeColor": "#D2643F",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a0",
+            "roundness": null,
+            "seed": 1367214344,
+            "version": 2,
+            "versionNonce": 1112360200,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "02 / 证据结构",
+            "fontSize": 14,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "02 / 证据结构",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "02 / 证据结构",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "title-2",
+            "type": "text",
+            "x": 64,
+            "y": 98,
+            "width": 1152,
+            "height": 64,
+            "angle": 0,
+            "strokeColor": "#203248",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a1",
+            "roundness": null,
+            "seed": 336128888,
+            "version": 2,
+            "versionNonce": 1205563256,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "让证据接住你的观点",
+            "fontSize": 42,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "让证据接住你的观点",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "让证据接住你的观点",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "subtitle-2",
+            "type": "text",
+            "x": 64,
+            "y": 174,
+            "width": 1152,
+            "height": 34,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a2",
+            "roundness": null,
+            "seed": 1038592008,
+            "version": 2,
+            "versionNonce": 1232036872,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "用一张表，把“我觉得”变成可以比较、验证和决定的信息。",
+            "fontSize": 19,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "用一张表，把“我觉得”变成可以比较、验证和决定的信息。",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-line-7",
+            "type": "line",
+            "x": 64,
+            "y": 656,
+            "width": 1152,
+            "height": 0,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a3",
+            "roundness": null,
+            "seed": 869055608,
+            "version": 2,
+            "versionNonce": 1387184248,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                1152,
+                0
+              ]
+            ],
+            "startBinding": null,
+            "endBinding": null,
+            "startArrowhead": null,
+            "endArrowhead": null,
+            "polygon": false
+          },
+          {
+            "id": "footer-2",
+            "type": "text",
+            "x": 64,
+            "y": 675,
+            "width": 650,
+            "height": 20,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a4",
+            "roundness": null,
+            "seed": 1237673736,
+            "version": 2,
+            "versionNonce": 83206920,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "GUZI  /  IDEAS TO CLARITY",
+            "fontSize": 12,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "GUZI  /  IDEAS TO CLARITY",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "number-2",
+            "type": "text",
+            "x": 1142,
+            "y": 675,
+            "width": 74,
+            "height": 20,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a5",
+            "roundness": null,
+            "seed": 753823096,
+            "version": 2,
+            "versionNonce": 686813560,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "02 / 04",
+            "fontSize": 12,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "02 / 04",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-shape-8",
+            "type": "rectangle",
+            "x": 64,
+            "y": 579,
+            "width": 1152,
+            "height": 48,
+            "angle": 0,
+            "strokeColor": "transparent",
+            "backgroundColor": "#FFF0D8",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a6",
+            "roundness": {
+              "type": 3
+            },
+            "seed": 831735304,
+            "version": 2,
+            "versionNonce": 324796936,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false
+          },
+          {
+            "id": "table-hint",
+            "type": "text",
+            "x": 86,
+            "y": 592,
+            "width": 1108,
+            "height": 27,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a7",
+            "roundness": null,
+            "seed": 1488060024,
+            "version": 2,
+            "versionNonce": 1642267256,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "这里是原生表格：双击单元格改内容，选中后可插入行列。",
+            "fontSize": 17,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "这里是原生表格：双击单元格改内容，选中后可插入行列。",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "id2",
+            "type": "rectangle",
+            "x": 64,
+            "y": 235,
+            "width": 1152,
+            "height": 318,
+            "angle": 0,
+            "strokeColor": "transparent",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "a8",
+            "roundness": null,
+            "seed": 2055133816,
+            "version": 2,
+            "versionNonce": 206304120,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "table": {
+                "version": 1,
+                "rows": [
+                  54,
+                  88,
+                  88,
+                  88
+                ],
+                "columns": [
+                  200,
+                  344,
+                  344,
+                  264
+                ],
+                "cells": [
+                  {
+                    "row": 0,
+                    "column": 0,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "我们要回答",
+                    "backgroundColor": "#203248",
+                    "textColor": "#FFFFFF",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left",
+                    "richText": {
+                      "version": 1,
+                      "paragraphs": [
+                        {
+                          "runs": [
+                            {
+                              "text": "我们要回答",
+                              "bold": true
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "row": 0,
+                    "column": 1,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "观察到的证据",
+                    "backgroundColor": "#203248",
+                    "textColor": "#FFFFFF",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left",
+                    "richText": {
+                      "version": 1,
+                      "paragraphs": [
+                        {
+                          "runs": [
+                            {
+                              "text": "观察到的证据",
+                              "bold": true
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "row": 0,
+                    "column": 2,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "它说明什么",
+                    "backgroundColor": "#203248",
+                    "textColor": "#FFFFFF",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left",
+                    "richText": {
+                      "version": 1,
+                      "paragraphs": [
+                        {
+                          "runs": [
+                            {
+                              "text": "它说明什么",
+                              "bold": true
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "row": 0,
+                    "column": 3,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "下一步验证",
+                    "backgroundColor": "#203248",
+                    "textColor": "#FFFFFF",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left",
+                    "richText": {
+                      "version": 1,
+                      "paragraphs": [
+                        {
+                          "runs": [
+                            {
+                              "text": "下一步验证",
+                              "bold": true
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "row": 1,
+                    "column": 0,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "受众在意什么",
+                    "backgroundColor": "#FFFFFF",
+                    "textColor": "#26364A",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left"
+                  },
+                  {
+                    "row": 1,
+                    "column": 1,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "3 位同事先追问结论，\n再问细节。",
+                    "backgroundColor": "#FFFFFF",
+                    "textColor": "#26364A",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left"
+                  },
+                  {
+                    "row": 1,
+                    "column": 2,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "开场需要先给方向，\n不必先讲背景。",
+                    "backgroundColor": "#FFFFFF",
+                    "textColor": "#26364A",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left"
+                  },
+                  {
+                    "row": 1,
+                    "column": 3,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "先写一句主张",
+                    "backgroundColor": "#FFFFFF",
+                    "textColor": "#26364A",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left"
+                  },
+                  {
+                    "row": 2,
+                    "column": 0,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "哪些信息更有效",
+                    "backgroundColor": "#EFF3F4",
+                    "textColor": "#26364A",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left"
+                  },
+                  {
+                    "row": 2,
+                    "column": 1,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "同一方案放在一张表里，\n更容易比较差异。",
+                    "backgroundColor": "#EFF3F4",
+                    "textColor": "#26364A",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left"
+                  },
+                  {
+                    "row": 2,
+                    "column": 2,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "证据要能直接支持\n下一步决定。",
+                    "backgroundColor": "#EFF3F4",
+                    "textColor": "#26364A",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left"
+                  },
+                  {
+                    "row": 2,
+                    "column": 3,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "保留两条证据",
+                    "backgroundColor": "#EFF3F4",
+                    "textColor": "#26364A",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left"
+                  },
+                  {
+                    "row": 3,
+                    "column": 0,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "怎样推进讨论",
+                    "backgroundColor": "#FFFFFF",
+                    "textColor": "#26364A",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left"
+                  },
+                  {
+                    "row": 3,
+                    "column": 1,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "讨论有负责人和日期，\n才能形成明确行动。",
+                    "backgroundColor": "#FFFFFF",
+                    "textColor": "#26364A",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left"
+                  },
+                  {
+                    "row": 3,
+                    "column": 2,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "结尾应能回答：\n谁，在何时，做什么。",
+                    "backgroundColor": "#FFFFFF",
+                    "textColor": "#26364A",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left"
+                  },
+                  {
+                    "row": 3,
+                    "column": 3,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": "约定一次小验证",
+                    "backgroundColor": "#FFFFFF",
+                    "textColor": "#26364A",
+                    "strokeColor": "#D8DFE3",
+                    "strokeWidth": 1,
+                    "fontSize": 18,
+                    "fontFamily": 2,
+                    "textAlign": "left"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "id4",
+            "type": "rectangle",
+            "x": 64,
+            "y": 235,
+            "width": 200,
+            "height": 54,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#203248",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "a9",
+            "roundness": null,
+            "seed": 357312776,
+            "version": 3,
+            "versionNonce": 624500744,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id5"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 0,
+                "column": 0,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id5",
+            "type": "text",
+            "x": 72,
+            "y": 251.65,
+            "width": 184,
+            "height": 20.7,
+            "angle": 0,
+            "strokeColor": "#FFFFFF",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aA",
+            "roundness": null,
+            "seed": 1403833208,
+            "version": 3,
+            "versionNonce": 1047446648,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 0,
+                "column": 0,
+                "role": "text"
+              }
+            },
+            "text": "我们要回答",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id4",
+            "originalText": "我们要回答",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "我们要回答",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id7",
+            "type": "rectangle",
+            "x": 264,
+            "y": 235,
+            "width": 344,
+            "height": 54,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#203248",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aB",
+            "roundness": null,
+            "seed": 1217103624,
+            "version": 3,
+            "versionNonce": 942137096,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id8"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 0,
+                "column": 1,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id8",
+            "type": "text",
+            "x": 272,
+            "y": 251.65,
+            "width": 328,
+            "height": 20.7,
+            "angle": 0,
+            "strokeColor": "#FFFFFF",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aC",
+            "roundness": null,
+            "seed": 2098875768,
+            "version": 3,
+            "versionNonce": 638547320,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 0,
+                "column": 1,
+                "role": "text"
+              }
+            },
+            "text": "观察到的证据",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id7",
+            "originalText": "观察到的证据",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "观察到的证据",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id10",
+            "type": "rectangle",
+            "x": 608,
+            "y": 235,
+            "width": 344,
+            "height": 54,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#203248",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aD",
+            "roundness": null,
+            "seed": 504063240,
+            "version": 3,
+            "versionNonce": 484883976,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id11"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 0,
+                "column": 2,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id11",
+            "type": "text",
+            "x": 616,
+            "y": 251.65,
+            "width": 328,
+            "height": 20.7,
+            "angle": 0,
+            "strokeColor": "#FFFFFF",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aE",
+            "roundness": null,
+            "seed": 646926200,
+            "version": 3,
+            "versionNonce": 410125944,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 0,
+                "column": 2,
+                "role": "text"
+              }
+            },
+            "text": "它说明什么",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id10",
+            "originalText": "它说明什么",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "它说明什么",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id13",
+            "type": "rectangle",
+            "x": 952,
+            "y": 235,
+            "width": 264,
+            "height": 54,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#203248",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aF",
+            "roundness": null,
+            "seed": 1605092104,
+            "version": 3,
+            "versionNonce": 1685175560,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id14"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 0,
+                "column": 3,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id14",
+            "type": "text",
+            "x": 960,
+            "y": 251.65,
+            "width": 248,
+            "height": 20.7,
+            "angle": 0,
+            "strokeColor": "#FFFFFF",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aG",
+            "roundness": null,
+            "seed": 338415992,
+            "version": 3,
+            "versionNonce": 576354168,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 0,
+                "column": 3,
+                "role": "text"
+              }
+            },
+            "text": "下一步验证",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id13",
+            "originalText": "下一步验证",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "下一步验证",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id16",
+            "type": "rectangle",
+            "x": 64,
+            "y": 289,
+            "width": 200,
+            "height": 88,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#FFFFFF",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aH",
+            "roundness": null,
+            "seed": 1598857480,
+            "version": 3,
+            "versionNonce": 541383688,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id17"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 1,
+                "column": 0,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id17",
+            "type": "text",
+            "x": 72,
+            "y": 322.65,
+            "width": 184,
+            "height": 20.7,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aI",
+            "roundness": null,
+            "seed": 34591608,
+            "version": 3,
+            "versionNonce": 403490936,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 1,
+                "column": 0,
+                "role": "text"
+              }
+            },
+            "text": "受众在意什么",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id16",
+            "originalText": "受众在意什么",
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id19",
+            "type": "rectangle",
+            "x": 264,
+            "y": 289,
+            "width": 344,
+            "height": 88,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#FFFFFF",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aJ",
+            "roundness": null,
+            "seed": 1993211656,
+            "version": 3,
+            "versionNonce": 1381767944,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id20"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 1,
+                "column": 1,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id20",
+            "type": "text",
+            "x": 272,
+            "y": 312.3,
+            "width": 328,
+            "height": 41.4,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aK",
+            "roundness": null,
+            "seed": 609965432,
+            "version": 3,
+            "versionNonce": 625801592,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 1,
+                "column": 1,
+                "role": "text"
+              }
+            },
+            "text": "3 位同事先追问结论，\n再问细节。",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id19",
+            "originalText": "3 位同事先追问结论，\n再问细节。",
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id22",
+            "type": "rectangle",
+            "x": 608,
+            "y": 289,
+            "width": 344,
+            "height": 88,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#FFFFFF",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aL",
+            "roundness": null,
+            "seed": 135257352,
+            "version": 3,
+            "versionNonce": 1563654664,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id23"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 1,
+                "column": 2,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id23",
+            "type": "text",
+            "x": 616,
+            "y": 312.3,
+            "width": 328,
+            "height": 41.4,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aM",
+            "roundness": null,
+            "seed": 657348472,
+            "version": 3,
+            "versionNonce": 1566509688,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 1,
+                "column": 2,
+                "role": "text"
+              }
+            },
+            "text": "开场需要先给方向，\n不必先讲背景。",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id22",
+            "originalText": "开场需要先给方向，\n不必先讲背景。",
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id25",
+            "type": "rectangle",
+            "x": 952,
+            "y": 289,
+            "width": 264,
+            "height": 88,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#FFFFFF",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aN",
+            "roundness": null,
+            "seed": 2096249608,
+            "version": 3,
+            "versionNonce": 1942419720,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id26"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 1,
+                "column": 3,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id26",
+            "type": "text",
+            "x": 960,
+            "y": 322.65,
+            "width": 248,
+            "height": 20.7,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aO",
+            "roundness": null,
+            "seed": 782817656,
+            "version": 3,
+            "versionNonce": 1258748792,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 1,
+                "column": 3,
+                "role": "text"
+              }
+            },
+            "text": "先写一句主张",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id25",
+            "originalText": "先写一句主张",
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id28",
+            "type": "rectangle",
+            "x": 64,
+            "y": 377,
+            "width": 200,
+            "height": 88,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#EFF3F4",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aP",
+            "roundness": null,
+            "seed": 1196759304,
+            "version": 3,
+            "versionNonce": 160602120,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id29"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 2,
+                "column": 0,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id29",
+            "type": "text",
+            "x": 72,
+            "y": 410.65,
+            "width": 184,
+            "height": 20.7,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aQ",
+            "roundness": null,
+            "seed": 1458232184,
+            "version": 3,
+            "versionNonce": 8965240,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 2,
+                "column": 0,
+                "role": "text"
+              }
+            },
+            "text": "哪些信息更有效",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id28",
+            "originalText": "哪些信息更有效",
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id31",
+            "type": "rectangle",
+            "x": 264,
+            "y": 377,
+            "width": 344,
+            "height": 88,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#EFF3F4",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aR",
+            "roundness": null,
+            "seed": 1628993288,
+            "version": 3,
+            "versionNonce": 1116886792,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id32"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 2,
+                "column": 1,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id32",
+            "type": "text",
+            "x": 272,
+            "y": 400.3,
+            "width": 328,
+            "height": 41.4,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aS",
+            "roundness": null,
+            "seed": 873749880,
+            "version": 3,
+            "versionNonce": 665353592,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 2,
+                "column": 1,
+                "role": "text"
+              }
+            },
+            "text": "同一方案放在一张表里，\n更容易比较差异。",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id31",
+            "originalText": "同一方案放在一张表里，\n更容易比较差异。",
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id34",
+            "type": "rectangle",
+            "x": 608,
+            "y": 377,
+            "width": 344,
+            "height": 88,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#EFF3F4",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aT",
+            "roundness": null,
+            "seed": 1276925192,
+            "version": 3,
+            "versionNonce": 1665283592,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id35"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 2,
+                "column": 2,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id35",
+            "type": "text",
+            "x": 616,
+            "y": 400.3,
+            "width": 328,
+            "height": 41.4,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aU",
+            "roundness": null,
+            "seed": 1380278136,
+            "version": 3,
+            "versionNonce": 296357496,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 2,
+                "column": 2,
+                "role": "text"
+              }
+            },
+            "text": "证据要能直接支持\n下一步决定。",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id34",
+            "originalText": "证据要能直接支持\n下一步决定。",
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id37",
+            "type": "rectangle",
+            "x": 952,
+            "y": 377,
+            "width": 264,
+            "height": 88,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#EFF3F4",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aV",
+            "roundness": null,
+            "seed": 306230024,
+            "version": 3,
+            "versionNonce": 1084110088,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id38"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 2,
+                "column": 3,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id38",
+            "type": "text",
+            "x": 960,
+            "y": 410.65,
+            "width": 248,
+            "height": 20.7,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aW",
+            "roundness": null,
+            "seed": 899539320,
+            "version": 3,
+            "versionNonce": 1196523384,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 2,
+                "column": 3,
+                "role": "text"
+              }
+            },
+            "text": "保留两条证据",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id37",
+            "originalText": "保留两条证据",
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id40",
+            "type": "rectangle",
+            "x": 64,
+            "y": 465,
+            "width": 200,
+            "height": 88,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#FFFFFF",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aX",
+            "roundness": null,
+            "seed": 1164284168,
+            "version": 3,
+            "versionNonce": 807556104,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id41"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 3,
+                "column": 0,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id41",
+            "type": "text",
+            "x": 72,
+            "y": 498.65,
+            "width": 184,
+            "height": 20.7,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aY",
+            "roundness": null,
+            "seed": 1514005368,
+            "version": 3,
+            "versionNonce": 417517688,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 3,
+                "column": 0,
+                "role": "text"
+              }
+            },
+            "text": "怎样推进讨论",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id40",
+            "originalText": "怎样推进讨论",
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id43",
+            "type": "rectangle",
+            "x": 264,
+            "y": 465,
+            "width": 344,
+            "height": 88,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#FFFFFF",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aZ",
+            "roundness": null,
+            "seed": 2137714440,
+            "version": 3,
+            "versionNonce": 2009764616,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id44"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 3,
+                "column": 1,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id44",
+            "type": "text",
+            "x": 272,
+            "y": 488.3,
+            "width": 328,
+            "height": 41.4,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "aa",
+            "roundness": null,
+            "seed": 876963192,
+            "version": 3,
+            "versionNonce": 773980536,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 3,
+                "column": 1,
+                "role": "text"
+              }
+            },
+            "text": "讨论有负责人和日期，\n才能形成明确行动。",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id43",
+            "originalText": "讨论有负责人和日期，\n才能形成明确行动。",
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id46",
+            "type": "rectangle",
+            "x": 608,
+            "y": 465,
+            "width": 344,
+            "height": 88,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#FFFFFF",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "ab",
+            "roundness": null,
+            "seed": 1647365384,
+            "version": 3,
+            "versionNonce": 1041429000,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id47"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 3,
+                "column": 2,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id47",
+            "type": "text",
+            "x": 616,
+            "y": 488.3,
+            "width": 328,
+            "height": 41.4,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "ac",
+            "roundness": null,
+            "seed": 802449272,
+            "version": 3,
+            "versionNonce": 374542968,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 3,
+                "column": 2,
+                "role": "text"
+              }
+            },
+            "text": "结尾应能回答：\n谁，在何时，做什么。",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id46",
+            "originalText": "结尾应能回答：\n谁，在何时，做什么。",
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          },
+          {
+            "id": "id49",
+            "type": "rectangle",
+            "x": 952,
+            "y": 465,
+            "width": 264,
+            "height": 88,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#FFFFFF",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "ad",
+            "roundness": null,
+            "seed": 395782920,
+            "version": 3,
+            "versionNonce": 2046259464,
+            "isDeleted": false,
+            "boundElements": [
+              {
+                "type": "text",
+                "id": "id50"
+              }
+            ],
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 3,
+                "column": 3,
+                "role": "background"
+              }
+            }
+          },
+          {
+            "id": "id50",
+            "type": "text",
+            "x": 960,
+            "y": 498.65,
+            "width": 248,
+            "height": 20.7,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 2,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [
+              "id1"
+            ],
+            "frameId": null,
+            "index": "ae",
+            "roundness": null,
+            "seed": 822798712,
+            "version": 3,
+            "versionNonce": 1480196984,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "tableCell": {
+                "row": 3,
+                "column": 3,
+                "role": "text"
+              }
+            },
+            "text": "约定一次小验证",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "middle",
+            "containerId": "id49",
+            "originalText": "约定一次小验证",
+            "autoResize": false,
+            "lineHeight": 1.15,
+            "labelPosition": null
+          }
+        ],
+        "appState": {
+          "viewBackgroundColor": "#F7F5F0",
+          "gridModeEnabled": false,
+          "subscenes": {}
+        },
+        "files": {}
+      }
+    },
+    {
+      "id": "demo-expression",
+      "title": "让表达有层次",
+      "scene": {
+        "type": "excalidraw",
+        "version": 2,
+        "source": "http://localhost:3000",
+        "elements": [
+          {
+            "id": "kicker-3",
+            "type": "text",
+            "x": 64,
+            "y": 52,
+            "width": 700,
+            "height": 22,
+            "angle": 0,
+            "strokeColor": "#D2643F",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a0",
+            "roundness": null,
+            "seed": 1660162056,
+            "version": 2,
+            "versionNonce": 1848633608,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "03 / 表达层次",
+            "fontSize": 14,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "03 / 表达层次",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "03 / 表达层次",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "title-3",
+            "type": "text",
+            "x": 64,
+            "y": 98,
+            "width": 1152,
+            "height": 64,
+            "angle": 0,
+            "strokeColor": "#203248",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a1",
+            "roundness": null,
+            "seed": 35312760,
+            "version": 2,
+            "versionNonce": 1004866424,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "把重点写进句子，而不是堆在屏幕上",
+            "fontSize": 42,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "把重点写进句子，而不是堆在屏幕上",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "把重点写进句子，而不是堆在屏幕上",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "subtitle-3",
+            "type": "text",
+            "x": 64,
+            "y": 174,
+            "width": 1152,
+            "height": 34,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a2",
+            "roundness": null,
+            "seed": 1627705096,
+            "version": 2,
+            "versionNonce": 693995528,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "先给主张，再给理由；每一段都承担一个清楚的任务。",
+            "fontSize": 19,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "先给主张，再给理由；每一段都承担一个清楚的任务。",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-shape-9",
+            "type": "rectangle",
+            "x": 64,
+            "y": 234,
+            "width": 716,
+            "height": 376,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#FFFFFF",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a3",
+            "roundness": {
+              "type": 3
+            },
+            "seed": 968459640,
+            "version": 2,
+            "versionNonce": 1260706936,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false
+          },
+          {
+            "id": "demo-shape-10",
+            "type": "rectangle",
+            "x": 812,
+            "y": 234,
+            "width": 404,
+            "height": 376,
+            "angle": 0,
+            "strokeColor": "transparent",
+            "backgroundColor": "#203248",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a4",
+            "roundness": {
+              "type": 3
+            },
+            "seed": 2091232776,
+            "version": 2,
+            "versionNonce": 192890632,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false
+          },
+          {
+            "id": "demo-rich-text",
+            "type": "text",
+            "x": 96,
+            "y": 266,
+            "width": 652,
+            "height": 284,
+            "angle": 0,
+            "strokeColor": "#26364A",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a5",
+            "roundness": null,
+            "seed": 1280972408,
+            "version": 2,
+            "versionNonce": 1682083192,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "好的表达，先回答一个问题：\n这次讨论，希望大家做出什么决定？\n把主张压缩成一句话。\n用两条证据解释你的判断。\n把下一步写成可执行的动作。\n不必说得更多，要让重点更清楚。",
+            "fontSize": 23,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "好的表达，先回答一个问题：\n这次讨论，希望大家做出什么决定？\n把主张压缩成一句话。\n用两条证据解释你的判断。\n把下一步写成可执行的动作。\n不必说得更多，要让重点更清楚。",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "好的表达，先回答一个问题："
+                    }
+                  ]
+                },
+                {
+                  "runs": [
+                    {
+                      "text": "这次讨论，"
+                    },
+                    {
+                      "text": "希望大家做出什么决定？",
+                      "bold": true,
+                      "underline": true
+                    }
+                  ]
+                },
+                {
+                  "list": {
+                    "kind": "ordered",
+                    "indent": 0
+                  },
+                  "runs": [
+                    {
+                      "text": "把主张压缩成"
+                    },
+                    {
+                      "text": "一句话。",
+                      "bold": true
+                    }
+                  ]
+                },
+                {
+                  "list": {
+                    "kind": "ordered",
+                    "indent": 0
+                  },
+                  "runs": [
+                    {
+                      "text": "用两条证据解释你的判断。"
+                    }
+                  ]
+                },
+                {
+                  "list": {
+                    "kind": "ordered",
+                    "indent": 0
+                  },
+                  "runs": [
+                    {
+                      "text": "把下一步写成可执行的动作。"
+                    }
+                  ]
+                },
+                {
+                  "runs": [
+                    {
+                      "text": "不必说得更多，要让重点更清楚。",
+                      "italic": true,
+                      "background": "#FFF0D8"
+                    }
+                  ]
+                }
+              ]
+            },
+            "paragraphSpacing": 0.42,
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "rich-hint",
+            "type": "text",
+            "x": 96,
+            "y": 572,
+            "width": 652,
+            "height": 24,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a6",
+            "roundness": null,
+            "seed": 1322429704,
+            "version": 2,
+            "versionNonce": 1628513800,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "真实富文本 / 粗体 · 下划线 · 斜体 · 有序列表",
+            "fontSize": 14,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "真实富文本 / 粗体 · 下划线 · 斜体 · 有序列表",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "exercise-kicker",
+            "type": "text",
+            "x": 844,
+            "y": 270,
+            "width": 332,
+            "height": 30,
+            "angle": 0,
+            "strokeColor": "#F4BD99",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a7",
+            "roundness": null,
+            "seed": 1052804984,
+            "version": 2,
+            "versionNonce": 1350704760,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "一句话练习",
+            "fontSize": 19,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "一句话练习",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "一句话练习",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "exercise-title",
+            "type": "text",
+            "x": 844,
+            "y": 327,
+            "width": 332,
+            "height": 100,
+            "angle": 0,
+            "strokeColor": "#FFFFFF",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a8",
+            "roundness": null,
+            "seed": 1896336392,
+            "version": 2,
+            "versionNonce": 118433032,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "我建议先验证 X，\n因为证据显示 Y。",
+            "fontSize": 28,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "我建议先验证 X，\n因为证据显示 Y。",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "我建议先验证 X，",
+                      "bold": true
+                    }
+                  ]
+                },
+                {
+                  "runs": [
+                    {
+                      "text": "因为证据显示 Y。",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-line-11",
+            "type": "line",
+            "x": 844,
+            "y": 448,
+            "width": 340,
+            "height": 0,
+            "angle": 0,
+            "strokeColor": "#526478",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a9",
+            "roundness": null,
+            "seed": 1563482232,
+            "version": 2,
+            "versionNonce": 279416696,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                340,
+                0
+              ]
+            ],
+            "startBinding": null,
+            "endBinding": null,
+            "startArrowhead": null,
+            "endArrowhead": null,
+            "polygon": false
+          },
+          {
+            "id": "exercise-body",
+            "type": "text",
+            "x": 844,
+            "y": 480,
+            "width": 332,
+            "height": 70,
+            "angle": 0,
+            "strokeColor": "#CBD8E1",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aA",
+            "roundness": null,
+            "seed": 1832979208,
+            "version": 2,
+            "versionNonce": 1526023176,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "把背景留给追问，\n把结论留在第一句。",
+            "fontSize": 19,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "把背景留给追问，\n把结论留在第一句。",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-line-12",
+            "type": "line",
+            "x": 64,
+            "y": 656,
+            "width": 1152,
+            "height": 0,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aB",
+            "roundness": null,
+            "seed": 1265568120,
+            "version": 2,
+            "versionNonce": 1828118648,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                1152,
+                0
+              ]
+            ],
+            "startBinding": null,
+            "endBinding": null,
+            "startArrowhead": null,
+            "endArrowhead": null,
+            "polygon": false
+          },
+          {
+            "id": "footer-3",
+            "type": "text",
+            "x": 64,
+            "y": 675,
+            "width": 650,
+            "height": 20,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aC",
+            "roundness": null,
+            "seed": 771385864,
+            "version": 2,
+            "versionNonce": 717193992,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "GUZI  /  IDEAS TO CLARITY",
+            "fontSize": 12,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "GUZI  /  IDEAS TO CLARITY",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "number-3",
+            "type": "text",
+            "x": 1142,
+            "y": 675,
+            "width": 74,
+            "height": 20,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aD",
+            "roundness": null,
+            "seed": 348068472,
+            "version": 2,
+            "versionNonce": 87298424,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "03 / 04",
+            "fontSize": 12,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "03 / 04",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          }
+        ],
+        "appState": {
+          "viewBackgroundColor": "#F7F5F0",
+          "gridModeEnabled": false,
+          "subscenes": {}
+        },
+        "files": {}
+      }
+    },
+    {
+      "id": "demo-action",
+      "title": "让讨论变成行动",
+      "scene": {
+        "type": "excalidraw",
+        "version": 2,
+        "source": "http://localhost:3000",
+        "elements": [
+          {
+            "id": "kicker-4",
+            "type": "text",
+            "x": 64,
+            "y": 52,
+            "width": 700,
+            "height": 22,
+            "angle": 0,
+            "strokeColor": "#D2643F",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a0",
+            "roundness": null,
+            "seed": 1621303928,
+            "version": 2,
+            "versionNonce": 1429876344,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "04 / 从表达走向行动",
+            "fontSize": 14,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "04 / 从表达走向行动",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "04 / 从表达走向行动",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "title-4",
+            "type": "text",
+            "x": 64,
+            "y": 98,
+            "width": 1152,
+            "height": 64,
+            "angle": 0,
+            "strokeColor": "#203248",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a1",
+            "roundness": null,
+            "seed": 1215324424,
+            "version": 2,
+            "versionNonce": 1436554504,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "把细节收起来，让行动走出去",
+            "fontSize": 42,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "把细节收起来，让行动走出去",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "把细节收起来，让行动走出去",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "subtitle-4",
+            "type": "text",
+            "x": 64,
+            "y": 174,
+            "width": 1152,
+            "height": 34,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a2",
+            "roundness": null,
+            "seed": 2114458488,
+            "version": 2,
+            "versionNonce": 1675468664,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "主页面保留方向，子画布容纳证据；讨论才能保持清楚而完整。",
+            "fontSize": 19,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "主页面保留方向，子画布容纳证据；讨论才能保持清楚而完整。",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-shape-13",
+            "type": "rectangle",
+            "x": 64,
+            "y": 238,
+            "width": 700,
+            "height": 340,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "#FFFFFF",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a3",
+            "roundness": {
+              "type": 3
+            },
+            "seed": 1422852104,
+            "version": 2,
+            "versionNonce": 166212616,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false
+          },
+          {
+            "id": "demo-shape-14",
+            "type": "rectangle",
+            "x": 800,
+            "y": 238,
+            "width": 416,
+            "height": 340,
+            "angle": 0,
+            "strokeColor": "transparent",
+            "backgroundColor": "#E8F0F3",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a4",
+            "roundness": {
+              "type": 3
+            },
+            "seed": 1671881848,
+            "version": 2,
+            "versionNonce": 250278008,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false
+          },
+          {
+            "id": "action-kicker",
+            "type": "text",
+            "x": 96,
+            "y": 266,
+            "width": 620,
+            "height": 28,
+            "angle": 0,
+            "strokeColor": "#D2643F",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a5",
+            "roundness": null,
+            "seed": 973192968,
+            "version": 2,
+            "versionNonce": 1574204168,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "下次分享，带走这三件事",
+            "fontSize": 16,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "下次分享，带走这三件事",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "下次分享，带走这三件事",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-shape-15",
+            "type": "rectangle",
+            "x": 96,
+            "y": 325,
+            "width": 20,
+            "height": 20,
+            "angle": 0,
+            "strokeColor": "transparent",
+            "backgroundColor": "#E8F0F3",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a6",
+            "roundness": {
+              "type": 3
+            },
+            "seed": 792958328,
+            "version": 2,
+            "versionNonce": 1847992696,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false
+          },
+          {
+            "id": "action-title-0",
+            "type": "text",
+            "x": 140,
+            "y": 319,
+            "width": 584,
+            "height": 34,
+            "angle": 0,
+            "strokeColor": "#203248",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a7",
+            "roundness": null,
+            "seed": 142908936,
+            "version": 2,
+            "versionNonce": 132174344,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "先让人记住一句话",
+            "fontSize": 24,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "先让人记住一句话",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "先让人记住一句话",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "action-body-0",
+            "type": "text",
+            "x": 140,
+            "y": 358,
+            "width": 584,
+            "height": 27,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a8",
+            "roundness": null,
+            "seed": 639772280,
+            "version": 2,
+            "versionNonce": 13841016,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "会后能被复述，才是有用的主张。",
+            "fontSize": 17,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "会后能被复述，才是有用的主张。",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-shape-16",
+            "type": "rectangle",
+            "x": 96,
+            "y": 405,
+            "width": 20,
+            "height": 20,
+            "angle": 0,
+            "strokeColor": "transparent",
+            "backgroundColor": "#E8F0F3",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "a9",
+            "roundness": {
+              "type": 3
+            },
+            "seed": 1632869640,
+            "version": 2,
+            "versionNonce": 252268808,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false
+          },
+          {
+            "id": "action-title-1",
+            "type": "text",
+            "x": 140,
+            "y": 399,
+            "width": 584,
+            "height": 34,
+            "angle": 0,
+            "strokeColor": "#203248",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aA",
+            "roundness": null,
+            "seed": 1158059896,
+            "version": 2,
+            "versionNonce": 1035346808,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "给出少量可靠证据",
+            "fontSize": 24,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "给出少量可靠证据",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "给出少量可靠证据",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "action-body-1",
+            "type": "text",
+            "x": 140,
+            "y": 438,
+            "width": 584,
+            "height": 27,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aB",
+            "roundness": null,
+            "seed": 1709882376,
+            "version": 2,
+            "versionNonce": 986312712,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "两条可靠证据，胜过十页背景。",
+            "fontSize": 17,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "两条可靠证据，胜过十页背景。",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-shape-17",
+            "type": "rectangle",
+            "x": 96,
+            "y": 485,
+            "width": 20,
+            "height": 20,
+            "angle": 0,
+            "strokeColor": "transparent",
+            "backgroundColor": "#E8F0F3",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aC",
+            "roundness": {
+              "type": 3
+            },
+            "seed": 1345644664,
+            "version": 2,
+            "versionNonce": 588444792,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false
+          },
+          {
+            "id": "action-title-2",
+            "type": "text",
+            "x": 140,
+            "y": 479,
+            "width": 584,
+            "height": 34,
+            "angle": 0,
+            "strokeColor": "#203248",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aD",
+            "roundness": null,
+            "seed": 675674888,
+            "version": 2,
+            "versionNonce": 52342536,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "约定一个明确动作",
+            "fontSize": 24,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "约定一个明确动作",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "约定一个明确动作",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "action-body-2",
+            "type": "text",
+            "x": 140,
+            "y": 518,
+            "width": 584,
+            "height": 27,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aE",
+            "roundness": null,
+            "seed": 1668356472,
+            "version": 2,
+            "versionNonce": 1185785208,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "把讨论变成一个小而明确的实验。",
+            "fontSize": 17,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "把讨论变成一个小而明确的实验。",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "attachment-kicker",
+            "type": "text",
+            "x": 832,
+            "y": 267,
+            "width": 352,
+            "height": 28,
+            "angle": 0,
+            "strokeColor": "#D2643F",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aF",
+            "roundness": null,
+            "seed": 450976264,
+            "version": 2,
+            "versionNonce": 8621576,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "可展开的证据附件",
+            "fontSize": 16,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "可展开的证据附件",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "可展开的证据附件",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-detail-pin",
+            "type": "stickynote",
+            "x": 836,
+            "y": 321,
+            "width": 48,
+            "height": 56,
+            "angle": 0,
+            "strokeColor": "#D2643F",
+            "backgroundColor": "#FFF0D8",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aG",
+            "roundness": null,
+            "seed": 33499768,
+            "version": 4,
+            "versionNonce": 1696545400,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "customData": {
+              "subcanvas": {
+                "sceneId": "demo-detail-workbench",
+                "title": "细节工作台"
+              }
+            },
+            "baseHeight": 56
+          },
+          {
+            "id": "attachment-title",
+            "type": "text",
+            "x": 906,
+            "y": 329,
+            "width": 278,
+            "height": 42,
+            "angle": 0,
+            "strokeColor": "#203248",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aH",
+            "roundness": null,
+            "seed": 648223608,
+            "version": 2,
+            "versionNonce": 1542753544,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "打开细节工作台",
+            "fontSize": 26,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "打开细节工作台",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "打开细节工作台",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "attachment-description",
+            "type": "text",
+            "x": 836,
+            "y": 413,
+            "width": 344,
+            "height": 96,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aI",
+            "roundness": null,
+            "seed": 1565030408,
+            "version": 2,
+            "versionNonce": 1965860728,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "双击便签图钉，进入子画布。\n里面保留访谈摘录、验证清单\n和同一份图片资源。",
+            "fontSize": 18,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "双击便签图钉，进入子画布。\n里面保留访谈摘录、验证清单\n和同一份图片资源。",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "closing-line",
+            "type": "text",
+            "x": 64,
+            "y": 610,
+            "width": 1152,
+            "height": 34,
+            "angle": 0,
+            "strokeColor": "#203248",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aJ",
+            "roundness": null,
+            "seed": 1403055224,
+            "version": 2,
+            "versionNonce": 1055763464,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "清楚表达的终点，是让一件事真正发生。",
+            "fontSize": 24,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "清楚表达的终点，是让一件事真正发生。",
+            "richText": {
+              "version": 1,
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "清楚表达的终点，是让一件事真正发生。",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "demo-line-18",
+            "type": "line",
+            "x": 64,
+            "y": 656,
+            "width": 1152,
+            "height": 0,
+            "angle": 0,
+            "strokeColor": "#D8DFE3",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aK",
+            "roundness": null,
+            "seed": 1686910728,
+            "version": 2,
+            "versionNonce": 823720056,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                1152,
+                0
+              ]
+            ],
+            "startBinding": null,
+            "endBinding": null,
+            "startArrowhead": null,
+            "endArrowhead": null,
+            "polygon": false
+          },
+          {
+            "id": "footer-4",
+            "type": "text",
+            "x": 64,
+            "y": 675,
+            "width": 650,
+            "height": 20,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aL",
+            "roundness": null,
+            "seed": 582786424,
+            "version": 2,
+            "versionNonce": 1131080456,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "GUZI  /  IDEAS TO CLARITY",
+            "fontSize": 12,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "GUZI  /  IDEAS TO CLARITY",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          },
+          {
+            "id": "number-4",
+            "type": "text",
+            "x": 1142,
+            "y": 675,
+            "width": 74,
+            "height": 20,
+            "angle": 0,
+            "strokeColor": "#6F7D89",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": null,
+            "index": "aM",
+            "roundness": null,
+            "seed": 1795167752,
+            "version": 2,
+            "versionNonce": 760424824,
+            "isDeleted": false,
+            "boundElements": null,
+            "updated": 1,
+            "created": 1,
+            "link": null,
+            "locked": false,
+            "text": "04 / 04",
+            "fontSize": 12,
+            "baseFontSize": null,
+            "fontFamily": 2,
+            "textAlign": "left",
+            "verticalAlign": "top",
+            "containerId": null,
+            "originalText": "04 / 04",
+            "autoResize": false,
+            "lineHeight": 1.35,
+            "labelPosition": null
+          }
+        ],
+        "appState": {
+          "viewBackgroundColor": "#F7F5F0",
+          "gridModeEnabled": false,
+          "subscenes": {
+            "demo-detail-workbench": {
+              "version": 1,
+              "title": "细节工作台",
+              "elements": [
+                {
+                  "id": "child-title",
+                  "type": "text",
+                  "x": 80,
+                  "y": 62,
+                  "width": 1100,
+                  "height": 58,
+                  "angle": 0,
+                  "strokeColor": "#203248",
+                  "backgroundColor": "transparent",
+                  "fillStyle": "solid",
+                  "strokeWidth": 1,
+                  "strokeStyle": "solid",
+                  "roughness": 0,
+                  "opacity": 100,
+                  "groupIds": [],
+                  "frameId": null,
+                  "index": "a0",
+                  "roundness": null,
+                  "seed": 254982008,
+                  "version": 2,
+                  "versionNonce": 1762998648,
+                  "isDeleted": false,
+                  "boundElements": null,
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "text": "细节工作台",
+                  "fontSize": 38,
+                  "baseFontSize": null,
+                  "fontFamily": 2,
+                  "textAlign": "left",
+                  "verticalAlign": "top",
+                  "containerId": null,
+                  "originalText": "细节工作台",
+                  "richText": {
+                    "version": 1,
+                    "paragraphs": [
+                      {
+                        "runs": [
+                          {
+                            "text": "细节工作台",
+                            "bold": true
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "autoResize": false,
+                  "lineHeight": 1.35,
+                  "labelPosition": null
+                },
+                {
+                  "id": "child-subtitle",
+                  "type": "text",
+                  "x": 80,
+                  "y": 133,
+                  "width": 1100,
+                  "height": 34,
+                  "angle": 0,
+                  "strokeColor": "#6F7D89",
+                  "backgroundColor": "transparent",
+                  "fillStyle": "solid",
+                  "strokeWidth": 1,
+                  "strokeStyle": "solid",
+                  "roughness": 0,
+                  "opacity": 100,
+                  "groupIds": [],
+                  "frameId": null,
+                  "index": "a1",
+                  "roundness": null,
+                  "seed": 1007721480,
+                  "version": 2,
+                  "versionNonce": 1225734664,
+                  "isDeleted": false,
+                  "boundElements": null,
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "text": "把证据留在这里，让主页面保持轻盈。",
+                  "fontSize": 20,
+                  "baseFontSize": null,
+                  "fontFamily": 2,
+                  "textAlign": "left",
+                  "verticalAlign": "top",
+                  "containerId": null,
+                  "originalText": "把证据留在这里，让主页面保持轻盈。",
+                  "autoResize": false,
+                  "lineHeight": 1.35,
+                  "labelPosition": null
+                },
+                {
+                  "id": "child-checklist",
+                  "type": "text",
+                  "x": 80,
+                  "y": 477,
+                  "width": 716,
+                  "height": 182,
+                  "angle": 0,
+                  "strokeColor": "#26364A",
+                  "backgroundColor": "transparent",
+                  "fillStyle": "solid",
+                  "strokeWidth": 1,
+                  "strokeStyle": "solid",
+                  "roughness": 0,
+                  "opacity": 100,
+                  "groupIds": [],
+                  "frameId": null,
+                  "index": "a2",
+                  "roundness": null,
+                  "seed": 1071450232,
+                  "version": 2,
+                  "versionNonce": 2115979896,
+                  "isDeleted": false,
+                  "boundElements": null,
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "text": "一次小验证\n把主张发给一位同事，请他复述。\n检查两条证据是否都支持同一个判断。\n约定下周一次 15 分钟的验证回看。",
+                  "fontSize": 23,
+                  "baseFontSize": null,
+                  "fontFamily": 2,
+                  "textAlign": "left",
+                  "verticalAlign": "top",
+                  "containerId": null,
+                  "originalText": "一次小验证\n把主张发给一位同事，请他复述。\n检查两条证据是否都支持同一个判断。\n约定下周一次 15 分钟的验证回看。",
+                  "richText": {
+                    "version": 1,
+                    "paragraphs": [
+                      {
+                        "runs": [
+                          {
+                            "text": "一次小验证",
+                            "bold": true
+                          }
+                        ]
+                      },
+                      {
+                        "list": {
+                          "kind": "bullet",
+                          "indent": 0
+                        },
+                        "runs": [
+                          {
+                            "text": "把主张发给一位同事，请他复述。"
+                          }
+                        ]
+                      },
+                      {
+                        "list": {
+                          "kind": "bullet",
+                          "indent": 0
+                        },
+                        "runs": [
+                          {
+                            "text": "检查两条证据是否都支持同一个判断。"
+                          }
+                        ]
+                      },
+                      {
+                        "list": {
+                          "kind": "bullet",
+                          "indent": 0
+                        },
+                        "runs": [
+                          {
+                            "text": "约定下周一次 15 分钟的验证回看。"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "paragraphSpacing": 0.42,
+                  "autoResize": false,
+                  "lineHeight": 1.35,
+                  "labelPosition": null
+                },
+                {
+                  "id": "child-illustration",
+                  "type": "image",
+                  "x": 882,
+                  "y": 470,
+                  "width": 310,
+                  "height": 220,
+                  "angle": 0,
+                  "strokeColor": "transparent",
+                  "backgroundColor": "transparent",
+                  "fillStyle": "solid",
+                  "strokeWidth": 1,
+                  "strokeStyle": "solid",
+                  "roughness": 0,
+                  "opacity": 100,
+                  "groupIds": [],
+                  "frameId": null,
+                  "index": "a3",
+                  "roundness": null,
+                  "seed": 2125454088,
+                  "version": 2,
+                  "versionNonce": 1848293640,
+                  "isDeleted": false,
+                  "boundElements": null,
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "status": "saved",
+                  "fileId": "guzi-demo-clarity-illustration",
+                  "scale": [
+                    1,
+                    1
+                  ],
+                  "crop": null,
+                  "imageBorder": false
+                },
+                {
+                  "id": "id53",
+                  "type": "rectangle",
+                  "x": 80,
+                  "y": 198,
+                  "width": 1120,
+                  "height": 228,
+                  "angle": 0,
+                  "strokeColor": "transparent",
+                  "backgroundColor": "transparent",
+                  "fillStyle": "solid",
+                  "strokeWidth": 2,
+                  "strokeStyle": "solid",
+                  "roughness": 0,
+                  "opacity": 100,
+                  "groupIds": [
+                    "id52"
+                  ],
+                  "frameId": null,
+                  "index": "a4",
+                  "roundness": null,
+                  "seed": 1801570568,
+                  "version": 2,
+                  "versionNonce": 25057288,
+                  "isDeleted": false,
+                  "boundElements": null,
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "customData": {
+                    "table": {
+                      "version": 1,
+                      "rows": [
+                        52,
+                        88,
+                        88
+                      ],
+                      "columns": [
+                        250,
+                        870
+                      ],
+                      "cells": [
+                        {
+                          "row": 0,
+                          "column": 0,
+                          "rowSpan": 1,
+                          "columnSpan": 1,
+                          "text": "证据来源",
+                          "backgroundColor": "#203248",
+                          "textColor": "#FFFFFF",
+                          "strokeColor": "#D8DFE3",
+                          "strokeWidth": 1,
+                          "fontSize": 18,
+                          "fontFamily": 2,
+                          "textAlign": "left"
+                        },
+                        {
+                          "row": 0,
+                          "column": 1,
+                          "rowSpan": 1,
+                          "columnSpan": 1,
+                          "text": "可继续追问的细节",
+                          "backgroundColor": "#203248",
+                          "textColor": "#FFFFFF",
+                          "strokeColor": "#D8DFE3",
+                          "strokeWidth": 1,
+                          "fontSize": 18,
+                          "fontFamily": 2,
+                          "textAlign": "left"
+                        },
+                        {
+                          "row": 1,
+                          "column": 0,
+                          "rowSpan": 1,
+                          "columnSpan": 1,
+                          "text": "访谈摘录 01",
+                          "backgroundColor": "#FFFFFF",
+                          "textColor": "#26364A",
+                          "strokeColor": "#D8DFE3",
+                          "strokeWidth": 1,
+                          "fontSize": 18,
+                          "fontFamily": 2,
+                          "textAlign": "left"
+                        },
+                        {
+                          "row": 1,
+                          "column": 1,
+                          "rowSpan": 1,
+                          "columnSpan": 1,
+                          "text": "“我先想知道你的建议，再决定要不要看更多背景。”",
+                          "backgroundColor": "#FFFFFF",
+                          "textColor": "#26364A",
+                          "strokeColor": "#D8DFE3",
+                          "strokeWidth": 1,
+                          "fontSize": 18,
+                          "fontFamily": 2,
+                          "textAlign": "left"
+                        },
+                        {
+                          "row": 2,
+                          "column": 0,
+                          "rowSpan": 1,
+                          "columnSpan": 1,
+                          "text": "访谈摘录 02",
+                          "backgroundColor": "#FFFFFF",
+                          "textColor": "#26364A",
+                          "strokeColor": "#D8DFE3",
+                          "strokeWidth": 1,
+                          "fontSize": 18,
+                          "fontFamily": 2,
+                          "textAlign": "left"
+                        },
+                        {
+                          "row": 2,
+                          "column": 1,
+                          "rowSpan": 1,
+                          "columnSpan": 1,
+                          "text": "“如果有下一步和时间，我就知道该怎么参与。”",
+                          "backgroundColor": "#FFFFFF",
+                          "textColor": "#26364A",
+                          "strokeColor": "#D8DFE3",
+                          "strokeWidth": 1,
+                          "fontSize": 18,
+                          "fontFamily": 2,
+                          "textAlign": "left"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "id55",
+                  "type": "rectangle",
+                  "x": 80,
+                  "y": 198,
+                  "width": 250,
+                  "height": 52,
+                  "angle": 0,
+                  "strokeColor": "#D8DFE3",
+                  "backgroundColor": "#203248",
+                  "fillStyle": "solid",
+                  "strokeWidth": 1,
+                  "strokeStyle": "solid",
+                  "roughness": 0,
+                  "opacity": 100,
+                  "groupIds": [
+                    "id52"
+                  ],
+                  "frameId": null,
+                  "index": "a5",
+                  "roundness": null,
+                  "seed": 1262562168,
+                  "version": 3,
+                  "versionNonce": 507055224,
+                  "isDeleted": false,
+                  "boundElements": [
+                    {
+                      "type": "text",
+                      "id": "id56"
+                    }
+                  ],
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "customData": {
+                    "tableCell": {
+                      "row": 0,
+                      "column": 0,
+                      "role": "background"
+                    }
+                  }
+                },
+                {
+                  "id": "id56",
+                  "type": "text",
+                  "x": 88,
+                  "y": 213.65,
+                  "width": 234,
+                  "height": 20.7,
+                  "angle": 0,
+                  "strokeColor": "#FFFFFF",
+                  "backgroundColor": "transparent",
+                  "fillStyle": "solid",
+                  "strokeWidth": 2,
+                  "strokeStyle": "solid",
+                  "roughness": 1,
+                  "opacity": 100,
+                  "groupIds": [
+                    "id52"
+                  ],
+                  "frameId": null,
+                  "index": "a6",
+                  "roundness": null,
+                  "seed": 1699964936,
+                  "version": 3,
+                  "versionNonce": 1191581448,
+                  "isDeleted": false,
+                  "boundElements": null,
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "customData": {
+                    "tableCell": {
+                      "row": 0,
+                      "column": 0,
+                      "role": "text"
+                    }
+                  },
+                  "text": "证据来源",
+                  "fontSize": 18,
+                  "baseFontSize": null,
+                  "fontFamily": 2,
+                  "textAlign": "left",
+                  "verticalAlign": "middle",
+                  "containerId": "id55",
+                  "originalText": "证据来源",
+                  "autoResize": false,
+                  "lineHeight": 1.15,
+                  "labelPosition": null
+                },
+                {
+                  "id": "id58",
+                  "type": "rectangle",
+                  "x": 330,
+                  "y": 198,
+                  "width": 870,
+                  "height": 52,
+                  "angle": 0,
+                  "strokeColor": "#D8DFE3",
+                  "backgroundColor": "#203248",
+                  "fillStyle": "solid",
+                  "strokeWidth": 1,
+                  "strokeStyle": "solid",
+                  "roughness": 0,
+                  "opacity": 100,
+                  "groupIds": [
+                    "id52"
+                  ],
+                  "frameId": null,
+                  "index": "a7",
+                  "roundness": null,
+                  "seed": 588688760,
+                  "version": 3,
+                  "versionNonce": 626048376,
+                  "isDeleted": false,
+                  "boundElements": [
+                    {
+                      "type": "text",
+                      "id": "id59"
+                    }
+                  ],
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "customData": {
+                    "tableCell": {
+                      "row": 0,
+                      "column": 1,
+                      "role": "background"
+                    }
+                  }
+                },
+                {
+                  "id": "id59",
+                  "type": "text",
+                  "x": 338,
+                  "y": 213.65,
+                  "width": 854,
+                  "height": 20.7,
+                  "angle": 0,
+                  "strokeColor": "#FFFFFF",
+                  "backgroundColor": "transparent",
+                  "fillStyle": "solid",
+                  "strokeWidth": 2,
+                  "strokeStyle": "solid",
+                  "roughness": 1,
+                  "opacity": 100,
+                  "groupIds": [
+                    "id52"
+                  ],
+                  "frameId": null,
+                  "index": "a8",
+                  "roundness": null,
+                  "seed": 1091503624,
+                  "version": 3,
+                  "versionNonce": 591263240,
+                  "isDeleted": false,
+                  "boundElements": null,
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "customData": {
+                    "tableCell": {
+                      "row": 0,
+                      "column": 1,
+                      "role": "text"
+                    }
+                  },
+                  "text": "可继续追问的细节",
+                  "fontSize": 18,
+                  "baseFontSize": null,
+                  "fontFamily": 2,
+                  "textAlign": "left",
+                  "verticalAlign": "middle",
+                  "containerId": "id58",
+                  "originalText": "可继续追问的细节",
+                  "autoResize": false,
+                  "lineHeight": 1.15,
+                  "labelPosition": null
+                },
+                {
+                  "id": "id61",
+                  "type": "rectangle",
+                  "x": 80,
+                  "y": 250,
+                  "width": 250,
+                  "height": 88,
+                  "angle": 0,
+                  "strokeColor": "#D8DFE3",
+                  "backgroundColor": "#FFFFFF",
+                  "fillStyle": "solid",
+                  "strokeWidth": 1,
+                  "strokeStyle": "solid",
+                  "roughness": 0,
+                  "opacity": 100,
+                  "groupIds": [
+                    "id52"
+                  ],
+                  "frameId": null,
+                  "index": "a9",
+                  "roundness": null,
+                  "seed": 15970168,
+                  "version": 3,
+                  "versionNonce": 810176120,
+                  "isDeleted": false,
+                  "boundElements": [
+                    {
+                      "type": "text",
+                      "id": "id62"
+                    }
+                  ],
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "customData": {
+                    "tableCell": {
+                      "row": 1,
+                      "column": 0,
+                      "role": "background"
+                    }
+                  }
+                },
+                {
+                  "id": "id62",
+                  "type": "text",
+                  "x": 88,
+                  "y": 283.65,
+                  "width": 234,
+                  "height": 20.7,
+                  "angle": 0,
+                  "strokeColor": "#26364A",
+                  "backgroundColor": "transparent",
+                  "fillStyle": "solid",
+                  "strokeWidth": 2,
+                  "strokeStyle": "solid",
+                  "roughness": 1,
+                  "opacity": 100,
+                  "groupIds": [
+                    "id52"
+                  ],
+                  "frameId": null,
+                  "index": "aA",
+                  "roundness": null,
+                  "seed": 2096833544,
+                  "version": 3,
+                  "versionNonce": 186774792,
+                  "isDeleted": false,
+                  "boundElements": null,
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "customData": {
+                    "tableCell": {
+                      "row": 1,
+                      "column": 0,
+                      "role": "text"
+                    }
+                  },
+                  "text": "访谈摘录 01",
+                  "fontSize": 18,
+                  "baseFontSize": null,
+                  "fontFamily": 2,
+                  "textAlign": "left",
+                  "verticalAlign": "middle",
+                  "containerId": "id61",
+                  "originalText": "访谈摘录 01",
+                  "autoResize": false,
+                  "lineHeight": 1.15,
+                  "labelPosition": null
+                },
+                {
+                  "id": "id64",
+                  "type": "rectangle",
+                  "x": 330,
+                  "y": 250,
+                  "width": 870,
+                  "height": 88,
+                  "angle": 0,
+                  "strokeColor": "#D8DFE3",
+                  "backgroundColor": "#FFFFFF",
+                  "fillStyle": "solid",
+                  "strokeWidth": 1,
+                  "strokeStyle": "solid",
+                  "roughness": 0,
+                  "opacity": 100,
+                  "groupIds": [
+                    "id52"
+                  ],
+                  "frameId": null,
+                  "index": "aB",
+                  "roundness": null,
+                  "seed": 687354232,
+                  "version": 3,
+                  "versionNonce": 669630328,
+                  "isDeleted": false,
+                  "boundElements": [
+                    {
+                      "type": "text",
+                      "id": "id65"
+                    }
+                  ],
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "customData": {
+                    "tableCell": {
+                      "row": 1,
+                      "column": 1,
+                      "role": "background"
+                    }
+                  }
+                },
+                {
+                  "id": "id65",
+                  "type": "text",
+                  "x": 338,
+                  "y": 283.65,
+                  "width": 854,
+                  "height": 20.7,
+                  "angle": 0,
+                  "strokeColor": "#26364A",
+                  "backgroundColor": "transparent",
+                  "fillStyle": "solid",
+                  "strokeWidth": 2,
+                  "strokeStyle": "solid",
+                  "roughness": 1,
+                  "opacity": 100,
+                  "groupIds": [
+                    "id52"
+                  ],
+                  "frameId": null,
+                  "index": "aC",
+                  "roundness": null,
+                  "seed": 653771272,
+                  "version": 3,
+                  "versionNonce": 1949176840,
+                  "isDeleted": false,
+                  "boundElements": null,
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "customData": {
+                    "tableCell": {
+                      "row": 1,
+                      "column": 1,
+                      "role": "text"
+                    }
+                  },
+                  "text": "“我先想知道你的建议，再决定要不要看更多背景。”",
+                  "fontSize": 18,
+                  "baseFontSize": null,
+                  "fontFamily": 2,
+                  "textAlign": "left",
+                  "verticalAlign": "middle",
+                  "containerId": "id64",
+                  "originalText": "“我先想知道你的建议，再决定要不要看更多背景。”",
+                  "autoResize": false,
+                  "lineHeight": 1.15,
+                  "labelPosition": null
+                },
+                {
+                  "id": "id67",
+                  "type": "rectangle",
+                  "x": 80,
+                  "y": 338,
+                  "width": 250,
+                  "height": 88,
+                  "angle": 0,
+                  "strokeColor": "#D8DFE3",
+                  "backgroundColor": "#FFFFFF",
+                  "fillStyle": "solid",
+                  "strokeWidth": 1,
+                  "strokeStyle": "solid",
+                  "roughness": 0,
+                  "opacity": 100,
+                  "groupIds": [
+                    "id52"
+                  ],
+                  "frameId": null,
+                  "index": "aD",
+                  "roundness": null,
+                  "seed": 1464087416,
+                  "version": 3,
+                  "versionNonce": 1014173816,
+                  "isDeleted": false,
+                  "boundElements": [
+                    {
+                      "type": "text",
+                      "id": "id68"
+                    }
+                  ],
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "customData": {
+                    "tableCell": {
+                      "row": 2,
+                      "column": 0,
+                      "role": "background"
+                    }
+                  }
+                },
+                {
+                  "id": "id68",
+                  "type": "text",
+                  "x": 88,
+                  "y": 371.65,
+                  "width": 234,
+                  "height": 20.7,
+                  "angle": 0,
+                  "strokeColor": "#26364A",
+                  "backgroundColor": "transparent",
+                  "fillStyle": "solid",
+                  "strokeWidth": 2,
+                  "strokeStyle": "solid",
+                  "roughness": 1,
+                  "opacity": 100,
+                  "groupIds": [
+                    "id52"
+                  ],
+                  "frameId": null,
+                  "index": "aE",
+                  "roundness": null,
+                  "seed": 1424285704,
+                  "version": 3,
+                  "versionNonce": 1147032328,
+                  "isDeleted": false,
+                  "boundElements": null,
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "customData": {
+                    "tableCell": {
+                      "row": 2,
+                      "column": 0,
+                      "role": "text"
+                    }
+                  },
+                  "text": "访谈摘录 02",
+                  "fontSize": 18,
+                  "baseFontSize": null,
+                  "fontFamily": 2,
+                  "textAlign": "left",
+                  "verticalAlign": "middle",
+                  "containerId": "id67",
+                  "originalText": "访谈摘录 02",
+                  "autoResize": false,
+                  "lineHeight": 1.15,
+                  "labelPosition": null
+                },
+                {
+                  "id": "id70",
+                  "type": "rectangle",
+                  "x": 330,
+                  "y": 338,
+                  "width": 870,
+                  "height": 88,
+                  "angle": 0,
+                  "strokeColor": "#D8DFE3",
+                  "backgroundColor": "#FFFFFF",
+                  "fillStyle": "solid",
+                  "strokeWidth": 1,
+                  "strokeStyle": "solid",
+                  "roughness": 0,
+                  "opacity": 100,
+                  "groupIds": [
+                    "id52"
+                  ],
+                  "frameId": null,
+                  "index": "aF",
+                  "roundness": null,
+                  "seed": 1073198456,
+                  "version": 3,
+                  "versionNonce": 1974092152,
+                  "isDeleted": false,
+                  "boundElements": [
+                    {
+                      "type": "text",
+                      "id": "id71"
+                    }
+                  ],
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "customData": {
+                    "tableCell": {
+                      "row": 2,
+                      "column": 1,
+                      "role": "background"
+                    }
+                  }
+                },
+                {
+                  "id": "id71",
+                  "type": "text",
+                  "x": 338,
+                  "y": 371.65,
+                  "width": 854,
+                  "height": 20.7,
+                  "angle": 0,
+                  "strokeColor": "#26364A",
+                  "backgroundColor": "transparent",
+                  "fillStyle": "solid",
+                  "strokeWidth": 2,
+                  "strokeStyle": "solid",
+                  "roughness": 1,
+                  "opacity": 100,
+                  "groupIds": [
+                    "id52"
+                  ],
+                  "frameId": null,
+                  "index": "aG",
+                  "roundness": null,
+                  "seed": 614628872,
+                  "version": 3,
+                  "versionNonce": 1110356488,
+                  "isDeleted": false,
+                  "boundElements": null,
+                  "updated": 1,
+                  "created": 1,
+                  "link": null,
+                  "locked": false,
+                  "customData": {
+                    "tableCell": {
+                      "row": 2,
+                      "column": 1,
+                      "role": "text"
+                    }
+                  },
+                  "text": "“如果有下一步和时间，我就知道该怎么参与。”",
+                  "fontSize": 18,
+                  "baseFontSize": null,
+                  "fontFamily": 2,
+                  "textAlign": "left",
+                  "verticalAlign": "middle",
+                  "containerId": "id70",
+                  "originalText": "“如果有下一步和时间，我就知道该怎么参与。”",
+                  "autoResize": false,
+                  "lineHeight": 1.15,
+                  "labelPosition": null
+                }
+              ],
+              "appState": {
+                "viewBackgroundColor": "#F7F5F0"
+              }
+            }
+          }
+        },
+        "files": {
+          "guzi-demo-clarity-illustration": {
+            "id": "guzi-demo-clarity-illustration",
+            "mimeType": "image/svg+xml",
+            "dataURL": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzQwIiB2aWV3Qm94PSIwIDAgNDgwIDM0MCI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNDAiIHJ4PSIyOCIgZmlsbD0iI0U4RjBGMyIvPjxjaXJjbGUgY3g9IjM2NSIgY3k9Ijg1IiByPSI1OCIgZmlsbD0iI0Q5RTVFQiIvPjxjaXJjbGUgY3g9IjEwMiIgY3k9IjI2NCIgcj0iNDIiIGZpbGw9IiNEOUU1RUIiLz48cmVjdCB4PSI1OCIgeT0iODciIHdpZHRoPSIxNzgiIGhlaWdodD0iMTgyIiByeD0iMTYiIGZpbGw9IiNGRkZGRkYiIHRyYW5zZm9ybT0icm90YXRlKC04IDE0NyAxNzgpIi8+PHBhdGggZD0iTTk1IDEzNWg5NE05NSAxNjFoNjhNOTUgMTg3aDg1TTk1IDIxM2g1MiIgc3Ryb2tlPSIjQ0JEN0RGIiBzdHJva2Utd2lkdGg9IjExIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHRyYW5zZm9ybT0icm90YXRlKC04IDE0NyAxNzgpIi8+PHJlY3QgeD0iMjE4IiB5PSI2NSIgd2lkdGg9IjE4OCIgaGVpZ2h0PSIyMDgiIHJ4PSIxOCIgZmlsbD0iIzIwMzI0OCIgdHJhbnNmb3JtPSJyb3RhdGUoNiAzMTIgMTY5KSIvPjxjaXJjbGUgY3g9IjMxMiIgY3k9IjEyMSIgcj0iMjQiIGZpbGw9IiNEMjY0M0YiLz48cGF0aCBkPSJtMzAwIDEyMiA4IDggMTctMjAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0ZGRkZGRiIgc3Ryb2tlLXdpZHRoPSI2IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48cGF0aCBkPSJNMjU3IDE3OWgxMDdNMjU3IDIwNGg3OE0yNTcgMjI5aDk3IiBzdHJva2U9IiNGRkZGRkYiIHN0cm9rZS13aWR0aD0iMTAiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgb3BhY2l0eT0iLjkyIiB0cmFuc2Zvcm09InJvdGF0ZSg2IDMxMiAxNjkpIi8+PHBhdGggZD0iTTE3NSAyOTRjNTYgMjkgMTQxIDIwIDE4MC00IiBmaWxsPSJub25lIiBzdHJva2U9IiNEMjY0M0YiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0ibTM0NSAyODcgMTctMi02IDE3IiBmaWxsPSJub25lIiBzdHJva2U9IiNEMjY0M0YiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+",
+            "created": 1
+          }
+        }
+      }
+    }
+  ]
+}

@@ -10,6 +10,8 @@ import { exportToCanvas } from "@excalidraw/excalidraw/scene/export";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import { translate } from "../../shared/i18n/i18n";
+import { parsePresentation } from "../presentation/model";
+import { renderSlideSvg } from "../presentation/renderSlide";
 
 import { createThumbnailCache } from "./thumbnailCache";
 
@@ -64,6 +66,20 @@ const getThumbnail = (
     const source = await ownerWindow.desktop.readFile(file.path);
     if (cancelled()) {
       return null;
+    }
+    const presentation = await parsePresentation(source.content, ownerWindow);
+    if (presentation) {
+      const svg = await renderSlideSvg(
+        presentation.slides[0],
+        presentation.width,
+        presentation.height,
+        ownerDocument,
+      );
+      return cancelled()
+        ? null
+        : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+            svg.outerHTML,
+          )}`;
     }
     const scene = await loadFromBlob(
       new ownerWindow.Blob([source.content]),

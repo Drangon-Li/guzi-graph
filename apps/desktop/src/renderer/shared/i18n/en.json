@@ -154,5 +154,12 @@
   "Transformer 架构": "Transformer Architecture",
   "完整的编码器与解码器结构，包含 QKV 详解和子画布笔记。": "The complete encoder and decoder architecture, with QKV details and subcanvas notes.",
   "打开未保存的副本": "Open an unsaved copy",
-  "打开示例副本自由编辑，保存时选择自己的位置。": "Edit your own copy of an example and choose a location when saving."
+  "打开示例副本自由编辑，保存时选择自己的位置。": "Edit your own copy of an example and choose a location when saving.",
+  "新建演示文稿": "New presentation",
+  "演示文稿": "Presentation",
+  "创建演示文稿副本": "Create presentation copy",
+  "导出当前页结构化信息…": "Export current slide data…",
+  "导出全部页面 PDF…": "Export all slides as PDF…",
+  "文件名会同步更新，文件格式保持不变。": "The file name will be updated; its format will stay the same.",
+  "演示文稿数据损坏或格式不受支持。": "The presentation is damaged or its format is not supported."
 }

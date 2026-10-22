@@ -29,6 +29,8 @@ import { useWorkspace } from "../features/workspace/workspace";
 import { PreferencePanel } from "../features/settings/PreferencePanel";
 import { resolveEditorPreferences } from "../shared/config/editorPreferences";
 import { SubcanvasEditor } from "../features/editor/SubcanvasEditor";
+import { PresentationEditor } from "../features/presentation/PresentationEditor";
+import { exportPresentationPdf } from "../features/presentation/renderSlide";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
 import {
   DEFAULT_STYLE_PRESETS,
@@ -233,7 +235,7 @@ const ProjectEditModal = ({
             {edit.kind === "folder"
               ? t("分类会在默认文件夹内创建真实文件夹。")
               : edit.kind === "rename"
-              ? t("文件名会同步更新，扩展名保持 .excalidraw。")
+              ? t("文件名会同步更新，文件格式保持不变。")
               : t("文件会移入默认文件夹下所选的分类，原位置将不再保留。")}
           </p>
           {failed && (
@@ -283,6 +285,9 @@ const Editor = ({
 }) => {
   const t = (message: string) =>
     translate(workspace.settings.language, message);
+  const EditorView = document.presentation
+    ? PresentationEditor
+    : SubcanvasEditor;
   return (
     <section
       className={`desktop-editor-pane${active ? " is-active" : ""}`}
@@ -290,8 +295,9 @@ const Editor = ({
       aria-hidden={!active}
       inert={!active || blocked}
     >
-      <SubcanvasEditor
+      <EditorView
         document={document}
+        workspace={workspace}
         ownerDocument={root.ownerDocument}
         initialData={document.initialData}
         onExcalidrawAPI={(api) => {
@@ -358,6 +364,20 @@ const Editor = ({
             {t("新建画布")}
           </MainMenu.Item>
           <MainMenu.Item
+            icon={PlusIcon}
+            onSelect={() => workspace.newPresentation()}
+          >
+            {t("新建演示文稿")}
+          </MainMenu.Item>
+          {!document.presentation && (
+            <MainMenu.Item
+              icon={PlusIcon}
+              onSelect={() => workspace.newPresentation(document)}
+            >
+              {t("创建演示文稿副本")}
+            </MainMenu.Item>
+          )}
+          <MainMenu.Item
             icon={LoadIcon}
             shortcut="⌘O"
             onSelect={() => void workspace.openFiles()}
@@ -374,11 +394,25 @@ const Editor = ({
           </MainMenu.Item>
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.Item icon={exportToFileIcon} onSelect={onStructuredExport}>
-            {t("导出结构化信息…")}
+            {t(
+              document.presentation
+                ? "导出当前页结构化信息…"
+                : "导出结构化信息…",
+            )}
           </MainMenu.Item>
           <MainMenu.Item
             icon={ExportIcon}
             onSelect={() => {
+              if (document.presentation) {
+                workspace.commitText(document);
+                void exportPresentationPdf(
+                  document.presentation,
+                  document.title,
+                  root.ownerDocument.defaultView!.desktop,
+                  root.ownerDocument,
+                ).catch(workspace.reportError);
+                return;
+              }
               if (document.api) {
                 document.flushEditing?.();
                 void exportCanvasPdf(
@@ -390,26 +424,28 @@ const Editor = ({
               }
             }}
           >
-            {t("导出 PDF…")}
+            {t(document.presentation ? "导出全部页面 PDF…" : "导出 PDF…")}
           </MainMenu.Item>
-          <MainMenu.Item
-            icon={ExportIcon}
-            onSelect={() => {
-              if (document.api) {
-                document.flushEditing?.();
-                void exportCanvasPdf(
-                  document.api,
-                  document.title,
-                  root.ownerDocument.defaultView!.desktop,
-                  { includeSubcanvases: true },
-                ).catch(workspace.reportError);
-              }
-            }}
-          >
-            {workspace.settings.language === "en"
-              ? "Export PDF with subcanvases…"
-              : "导出 PDF（包含子画布）…"}
-          </MainMenu.Item>
+          {!document.presentation && (
+            <MainMenu.Item
+              icon={ExportIcon}
+              onSelect={() => {
+                if (document.api) {
+                  document.flushEditing?.();
+                  void exportCanvasPdf(
+                    document.api,
+                    document.title,
+                    root.ownerDocument.defaultView!.desktop,
+                    { includeSubcanvases: true },
+                  ).catch(workspace.reportError);
+                }
+              }}
+            >
+              {workspace.settings.language === "en"
+                ? "Export PDF with subcanvases…"
+                : "导出 PDF（包含子画布）…"}
+            </MainMenu.Item>
+          )}
           <MainMenu.Separator />
           <MainMenu.DefaultItems.SearchMenu />
           <MainMenu.DefaultItems.ClearCanvas />
@@ -424,7 +460,7 @@ const Editor = ({
             {t("桌面设置")}
           </MainMenu.Item>
         </MainMenu>
-      </SubcanvasEditor>
+      </EditorView>
     </section>
   );
 };
@@ -614,14 +650,14 @@ export const App = ({ root }: { root: HTMLElement }) => {
     const ownerDocument = root.ownerDocument;
     const ownerWindow = ownerDocument.defaultView!;
     const handlePreset = (event: KeyboardEvent) => {
-      if (event.isComposing || event.repeat) {
+      if (event.isComposing || event.repeat || active.presenting) {
         return;
       }
       const target = event.target;
       if (
         target instanceof ownerWindow.Element &&
         target.closest(
-          "input, textarea, select, [contenteditable='true'], [role='textbox']",
+          "input, textarea, select, [contenteditable='true'], [role='textbox'], .desktop-presentation-toolbar, .desktop-presentation-filmstrip, .desktop-project-context-menu",
         )
       ) {
         return;
@@ -715,6 +751,13 @@ export const App = ({ root }: { root: HTMLElement }) => {
           title={t("新建画布 · ⌘N")}
         >
           {PlusIcon}
+        </Button>
+        <Button
+          onSelect={() => workspace.newPresentation()}
+          aria-label={t("新建演示文稿")}
+          title={t("新建演示文稿")}
+        >
+          {t("演示文稿")}
         </Button>
         {active && !workspace.projectsVisible && (
           <span className="desktop-save-status">
@@ -961,6 +1004,15 @@ export const App = ({ root }: { root: HTMLElement }) => {
           includeInferredStructure={workspace.settings.includeInferredStructure}
           onClose={() => setStructuredExport(null)}
         />
+      )}
+      {import.meta.env.VITE_DESKTOP_BUILD_CHANNEL === "dev-ppt" && (
+        <div
+          className="desktop-build-badge"
+          aria-label="测试版本：dev-ppt 功能开发"
+        >
+          <strong>dev-ppt</strong>
+          <span>功能开发</span>
+        </div>
       )}
       {workspace.closePrompt && (
         <Modal

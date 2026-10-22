@@ -117,6 +117,50 @@ describe("desktop inline tab rename interaction", () => {
     expect(api.setActiveTool).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "desktop-presentation-toolbar",
+    "desktop-presentation-filmstrip",
+    "desktop-project-context-menu",
+  ])(
+    "ignores style shortcuts within %s while retaining editor shortcuts",
+    (className) => {
+      render(<App root={root} />);
+      const api = {
+        getAppState: () => getDefaultAppState(),
+        getSceneElements: () => [],
+        updateScene: vi.fn(),
+        setActiveTool: vi.fn(),
+      } as unknown as ExcalidrawImperativeAPI;
+      canvas.activeEditor = () => api;
+      const ownerDocument = root.ownerDocument;
+      const container = ownerDocument.createElement("div");
+      container.className = className;
+      const button = ownerDocument.createElement("button");
+      container.append(button);
+      root.append(container);
+      fireEvent.keyDown(button, { key: "™", code: "Digit2", altKey: true });
+      expect(api.updateScene).not.toHaveBeenCalled();
+      expect(api.setActiveTool).not.toHaveBeenCalled();
+
+      const editor = ownerDocument.createElement("div");
+      editor.className = "desktop-presentation-editor";
+      root.append(editor);
+      for (const target of [editor, root]) {
+        fireEvent.keyDown(target, { key: "™", code: "Digit2", altKey: true });
+        expect(api.setActiveTool).toHaveBeenCalledWith({ type: "arrow" });
+        expect(api.updateScene).toHaveBeenCalledWith(
+          expect.objectContaining({
+            appState: expect.objectContaining({
+              currentItemStrokeStyle: "dashed",
+            }),
+          }),
+        );
+        vi.mocked(api.setActiveTool).mockClear();
+        vi.mocked(api.updateScene).mockClear();
+      }
+    },
+  );
+
   it("edits in place with focus and selection, commits Enter once without a dialog", async () => {
     const view = render(<App root={root} />);
     const tab = view.getByRole("tab", { name: "原名称" });

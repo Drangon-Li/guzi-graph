@@ -25,6 +25,27 @@ body,
     --desktop-muted: var(--color-gray-50);
   }
 
+  .desktop-build-badge {
+    position: fixed;
+    right: 68px;
+    bottom: 14px;
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 10px;
+    border: 1px solid #b6a8ff;
+    border-radius: 999px;
+    background: #33275c;
+    color: #f3efff;
+    font-family: system-ui, sans-serif;
+    font-size: 11px;
+    line-height: 1.4;
+    letter-spacing: 0.2px;
+    pointer-events: none;
+    user-select: none;
+  }
+
   // Keep selector wrapping stable across Prettier 2.6 and 2.8.
   /* prettier-ignore */
   :where(
