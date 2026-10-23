@@ -1808,6 +1808,15 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       return false;
     }
     try {
+      const pendingDocument = documentsRef.current.find(
+        (item) => item.path === file.path,
+      );
+      while (pendingDocument?.saving) {
+        await pendingDocument.saving;
+      }
+      if (closingRef.current) {
+        return false;
+      }
       const next = await (operation === "rename"
         ? desktop.renameFile(file.path, value)
         : desktop.moveFile(file.path, value));

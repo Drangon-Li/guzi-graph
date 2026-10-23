@@ -1,4 +1,5 @@
 import { loadFromBlob, serializeAsJSON } from "@excalidraw/excalidraw";
+import { serializeForJSON } from "@excalidraw/excalidraw/data/json";
 
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 
@@ -239,7 +240,12 @@ export const serializePresentation = (deck: Presentation): string => {
         id: slide.id,
         title: slide.title,
         ...(slide.bounds ? { bounds: slide.bounds } : {}),
-        scene: copyPresentationScene(slide.scene),
+        scene: serializeForJSON(
+          slide.scene.elements ?? [],
+          slide.scene.appState ?? {},
+          slide.scene.files ?? {},
+          "local",
+        ),
       })),
     },
     null,

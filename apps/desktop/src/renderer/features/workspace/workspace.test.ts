@@ -3268,6 +3268,133 @@ describe("desktop document workspace", () => {
     expect(hook.result.current.error).toBe("已有同名文件");
   });
 
+  it.each(["rename", "move"] as const)(
+    "waits for a pending save before a project file %s",
+    async (operation) => {
+      const hook = await mount();
+      const first = addDocument(hook);
+      const originalPath = "/drawings/original.excalidraw";
+      const nextPath = "/drawings/updated.excalidraw";
+      first.document.path = originalPath;
+      first.edit(2);
+      let finish!: (file: DiskDocument) => void;
+      vi.mocked(desktop.saveFile).mockImplementation(
+        () => new Promise((resolve) => (finish = resolve)),
+      );
+      const mutate = vi.mocked(
+        operation === "rename" ? desktop.renameFile : desktop.moveFile,
+      );
+      mutate.mockResolvedValue(disk(nextPath, first.document.content));
+      let saving!: Promise<boolean>;
+      let changing!: Promise<boolean>;
+      act(() => {
+        saving = hook.result.current.requestSave(first.document);
+        changing = hook.result.current.mutateFile(
+          operation,
+          projectFile(originalPath),
+          "updated",
+        );
+      });
+      try {
+        expect(mutate).not.toHaveBeenCalled();
+      } finally {
+        await act(async () => {
+          finish(disk(originalPath, first.document.content));
+          expect(await saving).toBe(true);
+          expect(await changing).toBe(true);
+        });
+      }
+      expect(mutate).toHaveBeenCalledWith(originalPath, "updated");
+      expect(first.document.path).toBe(nextPath);
+      expect(first.document.dirty).toBe(false);
+    },
+  );
+
+  it.each(["cancel", "failure"])(
+    "keeps project renaming available after a pending save ends in %s",
+    async (outcome) => {
+      const hook = await mount();
+      const first = addDocument(hook);
+      const originalPath = "/drawings/original.excalidraw";
+      const nextPath = "/drawings/updated.excalidraw";
+      first.document.path = originalPath;
+      first.edit(2);
+      const content = first.document.content;
+      let finish!: () => void;
+      vi.mocked(desktop.saveFile).mockImplementation(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = () =>
+              outcome === "cancel"
+                ? resolve(null)
+                : reject(new Error("disk unavailable"));
+          }),
+      );
+      vi.mocked(desktop.renameFile).mockResolvedValue(disk(nextPath, content));
+      let saving!: Promise<boolean>;
+      let renaming!: Promise<boolean>;
+      act(() => {
+        saving = hook.result.current.requestSave(first.document);
+        renaming = hook.result.current.mutateFile(
+          "rename",
+          projectFile(originalPath),
+          "updated",
+        );
+      });
+      try {
+        expect(desktop.renameFile).not.toHaveBeenCalled();
+      } finally {
+        await act(async () => {
+          finish();
+          expect(await saving).toBe(false);
+          expect(await renaming).toBe(true);
+        });
+      }
+      expect(first.document.path).toBe(nextPath);
+      expect(first.document.content).toBe(content);
+      expect(first.document.dirty).toBe(true);
+      if (outcome === "failure") {
+        expect(hook.result.current.error).toBe("disk unavailable");
+      }
+    },
+  );
+
+  it("keeps a Save As tab on its new path when the original project file is renamed", async () => {
+    const hook = await mount();
+    const first = addDocument(hook);
+    const originalPath = "/drawings/original.excalidraw";
+    const savedPath = "/outside/copy.excalidraw";
+    const renamedPath = "/drawings/renamed.excalidraw";
+    first.document.path = originalPath;
+    first.edit(2);
+    let finish!: (file: DiskDocument) => void;
+    vi.mocked(desktop.saveFile).mockImplementation(
+      () => new Promise((resolve) => (finish = resolve)),
+    );
+    vi.mocked(desktop.renameFile).mockResolvedValue(
+      disk(renamedPath, first.document.content),
+    );
+    let saving!: Promise<boolean>;
+    let renaming!: Promise<boolean>;
+    act(() => {
+      saving = hook.result.current.requestSave(first.document, true);
+      renaming = hook.result.current.mutateFile(
+        "rename",
+        projectFile(originalPath),
+        "renamed",
+      );
+    });
+    await act(async () => {
+      finish(disk(savedPath, first.document.content));
+      expect(await saving).toBe(true);
+      expect(await renaming).toBe(true);
+    });
+    expect(desktop.renameFile).toHaveBeenCalledWith(originalPath, "renamed");
+    expect(first.document.path).toBe(savedPath);
+    expect(first.document.title).toBe("copy");
+    expect(first.document.dirty).toBe(false);
+  });
+
   it.each([
     "",
     ".",

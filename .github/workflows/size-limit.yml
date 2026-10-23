@@ -2,7 +2,7 @@ name: "Bundle Size check @excalidraw/excalidraw"
 on:
   pull_request:
     branches:
-      - master
+      - main
 jobs:
   size:
     runs-on: ubuntu-latest
