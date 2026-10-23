@@ -301,33 +301,42 @@ test("new installations create the stable legacy profile directory", async (t) =
   assert.equal((await invoke("get-settings")).theme, "system");
 });
 
-test("dev-ppt builds use an independent profile and preserve legacy settings", async (t) => {
-  const legacySettings = { theme: "dark", language: "en" };
-  const { app, invoke } = await harness(t, {
-    buildChannel: "dev-ppt",
-    userDataOverride: null,
-    legacySettings,
-  });
-  const profile = path.join(app.getPath("appData"), "Excalidraw-Guzi Dev PPT");
-  assert.equal(app.getPath("userData"), profile);
-  assert.equal((await fs.stat(profile)).isDirectory(), true);
-  assert.equal((await invoke("get-settings")).theme, "system");
-  await invoke("update-settings", { theme: "light" });
-  assert.deepEqual(
-    JSON.parse(
-      await fs.readFile(
-        path.join(app.getPath("appData"), "Excalidraw Local", "settings.json"),
+for (const [buildChannel, profileName] of [
+  ["dev-ppt", "Excalidraw-Guzi Dev PPT"],
+  ["test", "Excalidraw-Guzi Test"],
+]) {
+  test(`${buildChannel} builds use an independent profile and preserve legacy settings`, async (t) => {
+    const legacySettings = { theme: "dark", language: "en" };
+    const { app, invoke } = await harness(t, {
+      buildChannel,
+      userDataOverride: null,
+      legacySettings,
+    });
+    const profile = path.join(app.getPath("appData"), profileName);
+    assert.equal(app.getPath("userData"), profile);
+    assert.equal((await fs.stat(profile)).isDirectory(), true);
+    assert.equal((await invoke("get-settings")).theme, "system");
+    await invoke("update-settings", { theme: "light" });
+    assert.deepEqual(
+      JSON.parse(
+        await fs.readFile(
+          path.join(
+            app.getPath("appData"),
+            "Excalidraw Local",
+            "settings.json",
+          ),
+        ),
       ),
-    ),
-    legacySettings,
-  );
-});
+      legacySettings,
+    );
+  });
 
-test("explicit userData overrides take priority for dev-ppt builds", async (t) => {
-  const { app, base } = await harness(t, { buildChannel: "dev-ppt" });
-  assert.equal(app.getPath("userData"), path.join(base, "userData"));
-  await assert.rejects(fs.stat(app.getPath("appData")), { code: "ENOENT" });
-});
+  test(`explicit userData overrides take priority for ${buildChannel} builds`, async (t) => {
+    const { app, base } = await harness(t, { buildChannel });
+    assert.equal(app.getPath("userData"), path.join(base, "userData"));
+    await assert.rejects(fs.stat(app.getPath("appData")), { code: "ENOENT" });
+  });
+}
 
 test("relative isolated profile overrides are rejected", async (t) => {
   await assert.rejects(

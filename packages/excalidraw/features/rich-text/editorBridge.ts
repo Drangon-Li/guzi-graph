@@ -2,12 +2,15 @@ export type RichTextCommand =
   | { type: "bold" | "italic" | "underline" }
   | { type: "layout" }
   | { type: "background"; value: string | null }
+  | { type: "color"; value: string }
   | { type: "list"; value: "ordered" | "bullet" | null }
   | { type: "indent"; value: "in" | "out" };
 
 export type RichTextSelectionState = {
   elementId: string;
   background: string | null;
+  color: string | null;
+  hasSelection: boolean;
   list: "none" | "ordered" | "bullet" | null;
 };
 
@@ -39,6 +42,8 @@ export const publishRichTextSelectionState = (
     state
       ? previous?.elementId === state.elementId &&
         previous.background === state.background &&
+        previous.color === state.color &&
+        previous.hasSelection === state.hasSelection &&
         previous.list === state.list
       : !previous
   ) {
@@ -54,6 +59,7 @@ export const publishRichTextSelectionState = (
 
 type ActiveEditor = {
   elementId: string;
+  hasTextSelection: () => boolean;
   execute: (command: RichTextCommand) => void;
 };
 const editors = new WeakMap<Document, ActiveEditor>();
@@ -74,9 +80,15 @@ export const registerRichTextEditor = (
 export const executeRichTextCommand = (
   ownerDocument: Document,
   command: RichTextCommand,
+  selectedTextElementId?: string,
 ) => {
   const editor = editors.get(ownerDocument);
-  if (!editor) {
+  if (
+    !editor ||
+    (selectedTextElementId &&
+      (editor.elementId !== selectedTextElementId ||
+        !editor.hasTextSelection()))
+  ) {
     return false;
   }
   editor.execute(command);

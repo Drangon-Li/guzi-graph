@@ -10,6 +10,7 @@ export type RichTextRun = {
   italic?: boolean;
   underline?: boolean;
   background?: string;
+  color?: string;
 };
 
 export type RichTextParagraph = {
@@ -37,6 +38,9 @@ export const normalizeRichTextBackground = (
   /^(?:#[\da-f]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%deg]+\))$/i.test(value)
     ? value
     : undefined;
+
+export const normalizeRichTextColor = (value: unknown): string | undefined =>
+  value === "transparent" ? value : normalizeRichTextBackground(value);
 
 export const normalizeRichText = (
   value: unknown,
@@ -66,6 +70,7 @@ export const normalizeRichText = (
         ...(normalizeRichTextBackground(run.background) && {
           background: run.background,
         }),
+        ...(normalizeRichTextColor(run.color) && { color: run.color }),
       });
     }
     const list = paragraph.list;
@@ -204,6 +209,7 @@ export const layoutRichText = (
           previous.italic === glyph.run.italic &&
           previous.underline === glyph.run.underline &&
           previous.background === glyph.run.background &&
+          previous.color === glyph.run.color &&
           previous.x + previous.width === x
         ) {
           previous.text += glyph.text;

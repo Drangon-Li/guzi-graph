@@ -71,6 +71,75 @@ describe("desktop undo routing", () => {
     expect(editText).not.toHaveBeenCalled();
   });
 
+  it.each(["undo", "redo"] as const)(
+    "routes %s to the focused thumbnail ahead of the open child editor",
+    async (command) => {
+      const pane = root.querySelector(".desktop-editor-pane")!;
+      pane.insertAdjacentHTML(
+        "beforeend",
+        '<div class="desktop-subcanvas"><div class="excalidraw"></div></div><aside class="desktop-presentation-filmstrip"><button>Slide</button></aside>',
+      );
+      const thumbnail = pane.querySelector("button")!;
+      thumbnail.focus();
+      const events: KeyboardEvent[] = [];
+      root.addEventListener("keydown", (event) => events.push(event));
+      await handleDesktopEditingCommand(root, command, {
+        canvasActive: true,
+        blocked: false,
+      });
+      expect(events).toHaveLength(1);
+      expect(events[0].target).toBe(thumbnail);
+      expect(events[0][KEYS.CTRL_OR_CMD]).toBe(true);
+      expect(events[0].shiftKey).toBe(command === "redo");
+      expect(editText).not.toHaveBeenCalled();
+    },
+  );
+
+  it("routes thumbnail history while the editor is mounting and keeps title undo native", async () => {
+    root.innerHTML =
+      '<section class="desktop-editor-pane is-active"><aside class="desktop-presentation-filmstrip"><button>Slide</button><input /></aside></section>';
+    const thumbnail = root.querySelector("button")!;
+    thumbnail.focus();
+    const keydown = vi.fn();
+    thumbnail.addEventListener("keydown", keydown);
+    await handleDesktopEditingCommand(root, "undo", {
+      canvasActive: true,
+      blocked: false,
+    });
+    expect(keydown).toHaveBeenCalledTimes(1);
+    root.querySelector("input")!.focus();
+    await handleDesktopEditingCommand(root, "redo", {
+      canvasActive: true,
+      blocked: false,
+    });
+    expect(keydown).toHaveBeenCalledTimes(1);
+    expect(editText).toHaveBeenCalledWith("redo");
+  });
+
+  it("keeps child editor routing when focus is outside the active filmstrip", async () => {
+    root
+      .querySelector(".desktop-editor-pane")!
+      .insertAdjacentHTML(
+        "beforeend",
+        '<div class="desktop-subcanvas"><div class="excalidraw"></div></div>',
+      );
+    root.insertAdjacentHTML(
+      "beforeend",
+      '<section class="desktop-editor-pane"><aside class="desktop-presentation-filmstrip"><button>Hidden slide</button></aside></section>',
+    );
+    root.querySelector("button")!.focus();
+    const events: KeyboardEvent[] = [];
+    root.addEventListener("keydown", (event) => events.push(event));
+    await handleDesktopEditingCommand(root, "undo", {
+      canvasActive: true,
+      blocked: false,
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0].target).toBe(
+      root.querySelector(".desktop-subcanvas .excalidraw"),
+    );
+  });
+
   it("does not redirect readonly input undo into canvas history", async () => {
     const input = document.createElement("input");
     input.readOnly = true;

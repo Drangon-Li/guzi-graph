@@ -19,6 +19,11 @@ import type {
 } from "@excalidraw/excalidraw/subcanvas";
 import type { HistoryCheckpoint } from "@excalidraw/excalidraw/history";
 
+import {
+  appendFontReplacementHistory,
+  replaceSnapshotFonts,
+} from "./canvasFonts";
+
 import "./SubcanvasEditor.scss";
 
 import type { SceneSnapshot } from "../../shared/model/document";
@@ -213,11 +218,67 @@ export const SubcanvasEditor = ({
           ? child.current
           : null
         : root.current;
+    document.replaceAllSceneFonts = (fontFamily) => {
+      const api = root.current;
+      if (!api || api.isDestroyed) {
+        return;
+      }
+      const previous = snapshot();
+      const next = replaceSnapshotFonts(previous, fontFamily);
+      const childApi = child.current;
+      if (
+        next === previous &&
+        (!childApi ||
+          childApi.isDestroyed ||
+          childApi.getAppState().currentItemFontFamily === fontFamily)
+      ) {
+        return;
+      }
+      for (const [id, scene] of Object.entries(previous.appState.subscenes)) {
+        if (id !== currentId.current) {
+          const checkpoint = appendFontReplacementHistory(
+            checkpoints.current.get(id),
+            scene,
+            next.appState.subscenes[id],
+          );
+          if (checkpoint) {
+            checkpoints.current.set(id, checkpoint);
+          }
+        }
+      }
+      scenes.current = next.appState.subscenes;
+      lastRootMap.current = scenes.current;
+      lastChildMap.current = scenes.current;
+      const childScene = currentId.current && scenes.current[currentId.current];
+      if (childApi && !childApi.isDestroyed && childScene) {
+        childApi.updateScene({
+          elements: childScene.elements,
+          appState: {
+            currentItemFontFamily: fontFamily,
+            fontRegistry:
+              childScene.appState.fontRegistry ??
+              childApi.getAppState().fontRegistry,
+            subscenes: scenes.current,
+          },
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        });
+      }
+      api.updateScene({
+        elements: next.elements,
+        appState: {
+          currentItemFontFamily: fontFamily,
+          fontRegistry: next.appState.fontRegistry,
+          subscenes: scenes.current,
+        },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+    };
     return () => {
       delete document.flushEditing;
       delete document.getSnapshot;
       delete document.invalidateSubsceneHistory;
       delete document.activeEditor;
+      delete document.replaceAllSceneFonts;
     };
   });
 
@@ -225,6 +286,11 @@ export const SubcanvasEditor = ({
     ...props.desktopIntegration,
     open: () => latest.current.desktopIntegration!.open(),
     subcanvas: { open },
+    sceneFontLabel: activeId
+      ? english
+        ? "Replace fonts on this subcanvas"
+        : "替换当前子画布字体"
+      : props.desktopIntegration?.sceneFontLabel,
     save: async (_snapshot: SceneSnapshot, saveAs: boolean) => {
       flushChild();
       root.current?.commitEditing();
@@ -333,6 +399,8 @@ export const SubcanvasEditor = ({
                     ...scene.appState,
                     subscenes: scenes.current,
                     fontTopPicks: root.current?.getAppState().fontTopPicks,
+                    currentItemFontFamily:
+                      root.current?.getAppState().currentItemFontFamily,
                     colorTopPicks: root.current?.getAppState().colorTopPicks,
                     currentItemStickyNoteMode:
                       root.current?.getAppState().currentItemStickyNoteMode,
@@ -353,7 +421,11 @@ export const SubcanvasEditor = ({
                   captureChild(activeId, elements, state, nextFiles)
                 }
                 onDuplicate={duplicate}
-                desktopIntegration={integration}
+                desktopIntegration={{
+                  ...integration,
+                  history: undefined,
+                  elementPastePosition: undefined,
+                }}
                 interaction={props.interaction}
                 handleKeyboardGlobally={props.handleKeyboardGlobally}
                 autoFocus

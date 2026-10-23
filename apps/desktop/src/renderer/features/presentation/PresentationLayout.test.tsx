@@ -7,6 +7,20 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { useState } from "react";
+
+import { KEYS, MIME_TYPES } from "@excalidraw/common";
+import { Excalidraw } from "@excalidraw/excalidraw";
+import {
+  createPasteEvent,
+  serializeAsClipboardJSON,
+} from "@excalidraw/excalidraw/clipboard";
+import { API } from "@excalidraw/excalidraw/tests/helpers/api";
+
+import type {
+  ExcalidrawImperativeAPI,
+  NormalizedZoomValue,
+} from "@excalidraw/excalidraw/types";
 
 import { PresentationLayout } from "./PresentationLayout";
 import { renderSlideSvg } from "./renderSlide";
@@ -77,6 +91,8 @@ const makeProps = () => ({
   onAdd: vi.fn(),
   onCopy: vi.fn(() => "copied-slide"),
   onPaste: vi.fn(),
+  onCanvasPaste: vi.fn(),
+  onHistory: vi.fn(),
   onDelete: vi.fn(),
   onRename: vi.fn(),
   onMove: vi.fn(),
@@ -538,6 +554,51 @@ it("tracks native fullscreen exit and rejects a failed controller fullscreen exi
   });
 });
 
+it("focuses the new slide after adding it from the strip header", () => {
+  const props = makeProps();
+  const { rerender } = render(<PresentationLayout {...props} />);
+  const initialItems = screen.getAllByRole("listitem");
+  for (const item of initialItems) {
+    expect(item).not.toHaveClass("is-new");
+  }
+
+  fireEvent.click(screen.getByRole("button", { name: "Add slide" }));
+  expect(props.onAdd).toHaveBeenCalledTimes(1);
+  const presentation: Presentation = {
+    ...props.presentation,
+    slides: [
+      ...props.presentation.slides,
+      { id: "new", title: "New slide", scene: { elements: [] } },
+    ],
+  };
+  rerender(
+    <PresentationLayout
+      {...props}
+      presentation={presentation}
+      activeSlideId="new"
+    />,
+  );
+  const newSlide = screen.getByRole("button", {
+    name: "Select slide 4: New slide",
+  });
+  expect(newSlide).toHaveFocus();
+  expect(newSlide.closest("li")).toHaveClass("is-new");
+  expect(screen.getAllByRole("listitem").slice(0, 3)).toEqual(initialItems);
+
+  rerender(
+    <PresentationLayout
+      {...props}
+      presentation={presentation}
+      activeSlideId="new"
+      revision={1}
+    />,
+  );
+  expect(
+    screen.getByRole("button", { name: "Select slide 4: New slide" }),
+  ).toBe(newSlide);
+  expect(newSlide).toHaveFocus();
+});
+
 it("keeps thumbnails compact and provides rename and delete in the context menu", () => {
   const props = makeProps();
   const { rerender } = render(<PresentationLayout {...props} />);
@@ -766,7 +827,7 @@ it("uses native clipboard events only for focused thumbnails, leaving title and 
   });
   const clipboardData = {
     setData: vi.fn(),
-    getData: vi.fn(() => "copied-slide"),
+    getData: vi.fn(() => JSON.stringify(props.presentation)),
   };
   second.focus();
   expect(fireClipboard(second, "copy", clipboardData)).toBe(false);
@@ -776,7 +837,9 @@ it("uses native clipboard events only for focused thumbnails, leaving title and 
     "copied-slide",
   );
   expect(fireClipboard(second, "paste", clipboardData)).toBe(false);
-  expect(props.onPaste).toHaveBeenCalledWith("copied-slide");
+  expect(props.onPaste).toHaveBeenCalledWith(
+    JSON.stringify(props.presentation),
+  );
   expect(backgroundCopy).not.toHaveBeenCalled();
   expect(backgroundPaste).not.toHaveBeenCalled();
 
@@ -798,6 +861,125 @@ it("uses native clipboard events only for focused thumbnails, leaving title and 
   ).toBe(true);
   expect(props.onCopy).toHaveBeenCalledTimes(1);
   expect(props.onPaste).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the thumbnail focused when copying commits canvas editing", () => {
+  const props = makeProps();
+  props.children = <div tabIndex={0}>Editor</div>;
+  props.onCopy.mockImplementation(() => {
+    screen.getByText("Editor").focus();
+    return "copied-slide";
+  });
+  render(<PresentationLayout {...props} />);
+  const thumbnail = screen.getByRole("button", {
+    name: "Select slide 2: Details",
+  });
+  thumbnail.focus();
+  const clipboardData = { setData: vi.fn() };
+  fireClipboard(document.activeElement as HTMLElement, "copy", clipboardData);
+  expect(thumbnail).toHaveFocus();
+  expect(clipboardData.setData).toHaveBeenCalledWith(
+    "text/plain",
+    "copied-slide",
+  );
+});
+
+it("pastes copied canvas elements in place after selecting another thumbnail", async () => {
+  const props = makeProps();
+  const rectangle = API.createElement({
+    type: "rectangle",
+    x: 113.25,
+    y: 79.5,
+    width: 91,
+    height: 63,
+  });
+  props.presentation.slides[0].scene = { elements: [rectangle] };
+  let api!: ExcalidrawImperativeAPI;
+  const Harness = () => {
+    const [activeSlideId, select] = useState("first");
+    return (
+      <PresentationLayout
+        {...props}
+        activeSlideId={activeSlideId}
+        onSelect={select}
+        onCanvasPaste={(event) => api.pasteFromClipboard(event)}
+      >
+        <Excalidraw
+          key={activeSlideId}
+          autoFocus={false}
+          handleKeyboardGlobally
+          onExcalidrawAPI={(value) => {
+            if (value) {
+              api = value;
+            }
+          }}
+          initialData={
+            props.presentation.slides.find(
+              (slide) => slide.id === activeSlideId,
+            )!.scene
+          }
+          desktopIntegration={{
+            open: async () => {},
+            save: async () => true,
+            elementPastePosition: "original",
+          }}
+        />
+      </PresentationLayout>
+    );
+  };
+  render(<Harness />);
+  await waitFor(() => expect(api?.getAppState().isLoading).toBe(false));
+  const sourceApi = api;
+  const content = serializeAsClipboardJSON({
+    elements: sourceApi.getSceneElements(),
+    files: null,
+  });
+  const second = screen.getByRole("button", {
+    name: "Select slide 2: Details",
+  });
+  second.focus();
+  fireEvent.click(second);
+  await waitFor(() => {
+    expect(api).not.toBe(sourceApi);
+    expect(api.getAppState().isLoading).toBe(false);
+  });
+  act(() =>
+    api.updateScene({
+      appState: {
+        scrollX: 451,
+        scrollY: -321,
+        zoom: { value: 0.5 as NormalizedZoomValue },
+        gridModeEnabled: true,
+        gridSize: 20,
+      },
+    }),
+  );
+  expect(second).toHaveFocus();
+  const elementFromPoint = document.elementFromPoint;
+  document.elementFromPoint = vi.fn(() => second);
+  try {
+    fireEvent(
+      second,
+      createPasteEvent({
+        types: {
+          [MIME_TYPES.excalidrawClipboard]: content,
+          [MIME_TYPES.text]: content,
+        },
+      }),
+    );
+    await waitFor(() => expect(api.getSceneElements()).toHaveLength(1));
+    expect(api.getSceneElements()[0]).toMatchObject({
+      x: rectangle.x,
+      y: rectangle.y,
+      width: rectangle.width,
+      height: rectangle.height,
+    });
+    expect(api.getSceneElements()[0].id).not.toBe(rectangle.id);
+    expect(props.onPaste).not.toHaveBeenCalled();
+    expect(props.presentation.slides).toHaveLength(3);
+  } finally {
+    document.elementFromPoint = elementFromPoint;
+  }
 });
 
 it("moves thumbnail focus to the selected page and supports deletion without deleting the last page", () => {
@@ -825,6 +1007,58 @@ it("moves thumbnail focus to the selected page and supports deletion without del
   expect(first).toHaveFocus();
   fireEvent.keyDown(first, { key: "Delete" });
   expect(props.onDelete).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  { key: "z", code: "KeyZ", shiftKey: false, direction: "undo" },
+  { key: "z", code: "KeyZ", shiftKey: true, direction: "redo" },
+  { key: "y", code: "KeyY", shiftKey: false, direction: "redo" },
+  { key: "я", code: "KeyZ", shiftKey: false, direction: "undo" },
+])("routes thumbnail history shortcuts to the deck: %o", (shortcut) => {
+  const props = makeProps();
+  const onKeyDown = vi.fn();
+  render(
+    <div onKeyDown={onKeyDown}>
+      <PresentationLayout {...props} />
+    </div>,
+  );
+  const thumbnail = screen.getByRole("button", {
+    name: "Select slide 2: Details",
+  });
+  thumbnail.focus();
+  expect(
+    fireEvent.keyDown(thumbnail, {
+      ...shortcut,
+      [KEYS.CTRL_OR_CMD]: true,
+    }),
+  ).toBe(false);
+  expect(props.onHistory).toHaveBeenCalledTimes(1);
+  expect(props.onHistory).toHaveBeenCalledWith(shortcut.direction);
+  expect(onKeyDown).not.toHaveBeenCalled();
+});
+
+it("leaves title input undo and composing shortcuts to their editor", () => {
+  const props = makeProps();
+  render(<PresentationLayout {...props} />);
+  const thumbnail = screen.getByRole("button", {
+    name: "Select slide 2: Details",
+  });
+  thumbnail.focus();
+  fireEvent.keyDown(thumbnail, {
+    key: "z",
+    [KEYS.CTRL_OR_CMD]: true,
+    isComposing: true,
+  });
+  fireEvent.contextMenu(thumbnail);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+  const input = screen.getByRole("textbox");
+  expect(input).toHaveFocus();
+  expect(fireEvent.keyDown(input, { key: "z", [KEYS.CTRL_OR_CMD]: true })).toBe(
+    true,
+  );
+  expect(props.onHistory).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(thumbnail).toHaveFocus();
 });
 
 it.each([{ blocked: true }, { active: false }])(
@@ -868,6 +1102,8 @@ it("does not handle page operations while inactive or blocked", () => {
     fireClipboard(second, "copy", clipboardData);
     fireClipboard(second, "paste", clipboardData);
     fireEvent.keyDown(second, { key: "Delete" });
+    fireEvent.keyDown(second, { key: "z", [KEYS.CTRL_OR_CMD]: true });
+    fireEvent.click(second);
     fireEvent.click(screen.getByRole("button", { name: "Add slide" }));
     fireEvent.click(screen.getByRole("button", { name: "Pin slide strip" }));
     fireEvent.click(screen.getByRole("button", { name: "Slide strip" }));
@@ -876,7 +1112,9 @@ it("does not handle page operations while inactive or blocked", () => {
   expect(props.onCopy).not.toHaveBeenCalled();
   expect(props.onPaste).not.toHaveBeenCalled();
   expect(props.onDelete).not.toHaveBeenCalled();
+  expect(props.onHistory).not.toHaveBeenCalled();
   expect(props.onAdd).not.toHaveBeenCalled();
+  expect(props.onSelect).not.toHaveBeenCalled();
   expect(localStorage.getItem(PINNED_STORAGE_KEY)).toBeNull();
 });
 
@@ -940,7 +1178,9 @@ it("follows the pointer with the existing thumbnail and reorders slides at the d
     expect(preview.style.transform).toBe("translate3d(10px, 24px, 0)");
     expect(items[0]).toHaveClass("is-drop-target");
     firePointer(target, "pointerup", 50);
+    const focusBeforeClick = document.activeElement;
     fireEvent.click(target);
+    expect(document.activeElement).toBe(focusBeforeClick);
     expect(items[0]).not.toHaveClass("is-drop-target");
     expect(items[2]).not.toHaveClass("is-dragging");
     expect(preview).not.toBeVisible();

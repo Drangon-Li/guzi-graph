@@ -871,11 +871,20 @@ export interface ExcalidrawProps {
     open: () => Promise<void>;
     /** Hide online services while retaining local tools and shortcut help. */
     localOnly?: boolean;
+    history?: {
+      undoAvailable: boolean;
+      redoAvailable: boolean;
+      /** Return false to use the editor's local history. */
+      perform: (direction: "undo" | "redo") => boolean;
+    };
+    elementPastePosition?: "original";
     subcanvas?: { open: (elementId: string) => void };
     onStickyNoteModeChange?: (
       mode: AppState["currentItemStickyNoteMode"],
     ) => void;
     onConfigurePreferences?: (section: PreferenceSection) => void;
+    onReplaceSceneFont?: (fontFamily: FontFamilyValues) => Promise<void>;
+    sceneFontLabel?: string;
     fontSizePresets?: FontSizePresets;
     backgroundTopPicks?: readonly string[];
     toolbarTooltips?: boolean;
@@ -1431,6 +1440,8 @@ export interface ExcalidrawImperativeAPI {
   commitEditing: () => void;
   /** Commit editing and use the optional desktop document save handler. */
   desktopSave: (saveAs?: boolean) => Promise<boolean>;
+  /** Paste a native clipboard event forwarded by the host UI. */
+  pasteFromClipboard: (event: ClipboardEvent) => void;
   updateScene: InstanceType<typeof App>["updateScene"];
   applyDeltas: InstanceType<typeof App>["applyDeltas"];
   mutateElement: InstanceType<typeof App>["mutateElement"];

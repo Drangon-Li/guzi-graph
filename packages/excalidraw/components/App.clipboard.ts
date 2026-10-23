@@ -253,7 +253,15 @@ export class AppClipboard {
         elements,
         files: data.files || null,
         position:
-          this.app.editorInterface.formFactor === "desktop"
+          this.app.props.desktopIntegration?.elementPastePosition ===
+            "original" &&
+          !data.programmaticAPI &&
+          data.elements.every(
+            (element) =>
+              Number.isFinite(element.x) && Number.isFinite(element.y),
+          )
+            ? "original"
+            : this.app.editorInterface.formFactor === "desktop"
             ? "cursor"
             : "center",
         retainSeed: isPlainPaste,
@@ -365,35 +373,55 @@ export class AppClipboard {
     IS_PLAIN_PASTE = false;
   };
 
-  public pasteFromClipboard = withBatchedUpdates(
-    async (event: ClipboardEvent) => {
+  public pasteFromClipboard = (event: ClipboardEvent) => {
+    return this.pasteClipboardEvent({ event });
+  };
+
+  public pasteFromHost = (event: ClipboardEvent) => {
+    if (!event.clipboardData || !this.app.isInteractionEnabled()) {
+      return;
+    }
+    this.app.focusContainer();
+    this.pasteClipboardEvent({ event, fromHost: true });
+  };
+
+  private pasteClipboardEvent = withBatchedUpdates(
+    async ({
+      event,
+      fromHost = false,
+    }: {
+      event: ClipboardEvent;
+      fromHost?: boolean;
+    }) => {
       if (!this.app.isInteractionEnabled()) {
         return;
       }
 
       const isPlainPaste = !!IS_PLAIN_PASTE;
 
-      // #686
-      const target = this.app.ownerDocument.activeElement;
-      const isExcalidrawActive = this.dependencies
-        .getContainer()
-        ?.contains(target);
-      if (event && !isExcalidrawActive) {
-        return;
-      }
+      if (!fromHost) {
+        // #686
+        const target = this.app.ownerDocument.activeElement;
+        const isExcalidrawActive = this.dependencies
+          .getContainer()
+          ?.contains(target);
+        if (event && !isExcalidrawActive) {
+          return;
+        }
 
-      const elementUnderCursor = this.app.ownerDocument.elementFromPoint(
-        this.app.viewport.lastPosition.x,
-        this.app.viewport.lastPosition.y,
-      );
-      if (
-        event &&
-        (!(
-          elementUnderCursor instanceof this.app.ownerWindow.HTMLCanvasElement
-        ) ||
-          isWritableElement(target))
-      ) {
-        return;
+        const elementUnderCursor = this.app.ownerDocument.elementFromPoint(
+          this.app.viewport.lastPosition.x,
+          this.app.viewport.lastPosition.y,
+        );
+        if (
+          event &&
+          (!(
+            elementUnderCursor instanceof this.app.ownerWindow.HTMLCanvasElement
+          ) ||
+            isWritableElement(target))
+        ) {
+          return;
+        }
       }
 
       // must be called in the same frame (thus before any awaits) as the paste

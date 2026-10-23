@@ -1,0 +1,33 @@
+@import "../css/variables.module.scss";
+
+.excalidraw .scene-font-picker {
+  min-width: 0;
+  margin: 8px 0 0;
+  padding: 12px 4px 4px;
+  border: 0;
+  border-top: 1px solid var(--color-surface-high);
+
+  legend {
+    padding: 0 4px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  p {
+    margin: 0 0 10px;
+    color: var(--color-gray-70);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .excalidraw-button {
+    width: 100%;
+  }
+
+  [role="alert"] {
+    display: block;
+    margin-top: 8px;
+    color: var(--color-danger);
+    font-size: 12px;
+  }
+}

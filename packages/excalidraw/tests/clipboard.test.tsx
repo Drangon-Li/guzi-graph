@@ -10,14 +10,18 @@ import {
   TEXT_MAX_WRAP_WIDTH,
   arrayToMap,
   getLineHeight,
+  EXPORT_DATA_TYPES,
+  viewportCoordsToSceneCoords,
 } from "@excalidraw/common";
 
 import { getElementBounds } from "@excalidraw/element";
 
-import type { ExcalidrawTextElement } from "@excalidraw/element/types";
+import type { ExcalidrawTextElement, FileId } from "@excalidraw/element/types";
 
+import * as Clipboard from "../clipboard";
 import { createPasteEvent, serializeAsClipboardJSON } from "../clipboard";
-import { actionCopy, actionCut } from "../actions/actionClipboard";
+import { actionCopy, actionCut, actionPaste } from "../actions/actionClipboard";
+import { getSubcanvasId } from "../features/subcanvas/model";
 
 import { Excalidraw } from "../index";
 
@@ -29,9 +33,10 @@ import {
   waitFor,
   GlobalTestState,
   unmountComponent,
+  act,
 } from "./test-utils";
 
-import type { NormalizedZoomValue } from "../types";
+import type { BinaryFiles, NormalizedZoomValue } from "../types";
 
 const { h } = window;
 
@@ -174,6 +179,372 @@ describe("general paste behavior", () => {
       expect(h.elements.length).toBe(1);
       expect(h.elements[0].seed).toBe(rectangle.seed);
     });
+  });
+});
+
+describe("original element paste position", () => {
+  const source = () =>
+    API.createElement({
+      type: "rectangle",
+      x: 113.25,
+      y: -79.5,
+      width: 91,
+      height: 63,
+    });
+
+  const enableOriginalPosition = async () => {
+    unmountComponent();
+    await render(
+      <Excalidraw
+        autoFocus
+        handleKeyboardGlobally
+        desktopIntegration={{
+          save: async () => true,
+          open: async () => {},
+          elementPastePosition: "original",
+        }}
+      />,
+    );
+  };
+
+  it.each([
+    { scrollX: 0, scrollY: 0, zoom: 1, gridModeEnabled: false },
+    { scrollX: 451, scrollY: -321, zoom: 0.5, gridModeEnabled: false },
+    { scrollX: -219, scrollY: 752, zoom: 2, gridModeEnabled: true },
+  ])("keeps page coordinates after switching pages: %o", async (viewport) => {
+    await enableOriginalPosition();
+    const rectangle = source();
+    API.setElements([rectangle]);
+    API.setSelectedElements([rectangle]);
+    const clipboardJSON = serializeAsClipboardJSON({
+      elements: h.app.scene.getSelectedElements(h.state),
+      files: null,
+    });
+    API.setElements([]);
+    API.setAppState({
+      ...viewport,
+      gridSize: 20,
+      zoom: { value: viewport.zoom as NormalizedZoomValue },
+    });
+    mouse.moveTo(421, 287);
+    pasteWithCtrlCmdV(clipboardJSON);
+    await waitFor(() => expect(h.elements).toHaveLength(1));
+    expect(h.elements[0]).toMatchObject({
+      x: rectangle.x,
+      y: rectangle.y,
+      width: rectangle.width,
+      height: rectangle.height,
+    });
+    expect(h.elements[0].id).not.toBe(rectangle.id);
+    pasteWithCtrlCmdV(clipboardJSON);
+    await waitFor(() => expect(h.elements).toHaveLength(2));
+    expect(h.elements[1]).toMatchObject({ x: rectangle.x, y: rectangle.y });
+    expect(h.elements[1].id).not.toBe(h.elements[0].id);
+  });
+
+  it("uses the same original position for menu paste", async () => {
+    await enableOriginalPosition();
+    const rectangle = source();
+    const read = vi.spyOn(Clipboard, "readSystemClipboard").mockResolvedValue({
+      [MIME_TYPES.excalidrawClipboard]: serializeAsClipboardJSON({
+        elements: [rectangle],
+        files: null,
+      }),
+    });
+    try {
+      mouse.moveTo(421, 287);
+      act(() => h.app.actionManager.executeAction(actionPaste, "contextMenu"));
+      await waitFor(() => expect(h.elements).toHaveLength(1));
+      expect(h.elements[0]).toMatchObject({ x: rectangle.x, y: rectangle.y });
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it("only bypasses canvas targeting for host-forwarded clipboard data", async () => {
+    await enableOriginalPosition();
+    const rectangle = source();
+    const button = h.app.ownerDocument.createElement("button");
+    h.app.ownerDocument.body.append(button);
+    const elementFromPoint = h.app.ownerDocument.elementFromPoint;
+    h.app.ownerDocument.elementFromPoint = () => button;
+    try {
+      button.focus();
+      const event = createPasteEvent({
+        types: {
+          [MIME_TYPES.excalidrawClipboard]: serializeAsClipboardJSON({
+            elements: [rectangle],
+            files: null,
+          }),
+        },
+      });
+      h.app.clipboard.pasteFromClipboard(event);
+      expect(h.elements).toHaveLength(0);
+      expect(button).toHaveFocus();
+      h.app.api.pasteFromClipboard(
+        new h.app.ownerWindow.Event("paste") as ClipboardEvent,
+      );
+      expect(button).toHaveFocus();
+      act(() => h.app.api.pasteFromClipboard(event));
+      await waitFor(() => expect(h.elements).toHaveLength(1));
+      expect(h.elements[0]).toMatchObject({ x: rectangle.x, y: rectangle.y });
+    } finally {
+      button.remove();
+      h.app.ownerDocument.elementFromPoint = elementFromPoint;
+    }
+  });
+
+  it.each([true, false])(
+    "handles PNG-only host paste with native trust=%s",
+    async (isTrusted) => {
+      await enableOriginalPosition();
+      const text = API.createElement({
+        type: "text",
+        text: "editable slide text",
+        x: 113.25,
+        y: 79.5,
+      });
+      const content = serializeAsClipboardJSON({
+        elements: [text],
+        files: null,
+      });
+      const customType = `web ${MIME_TYPES.excalidrawClipboard}`;
+      const read = vi.fn().mockResolvedValue([
+        {
+          types: [customType],
+          getType: vi.fn(async () => ({ text: async () => content })),
+        },
+      ]);
+      const { navigator } = h.app.ownerWindow;
+      const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { read },
+      });
+      const insertImages = vi
+        .spyOn(h.app, "insertImages")
+        .mockResolvedValue(undefined);
+      const preview = new File(["preview"], "preview.png", {
+        type: MIME_TYPES.png,
+      });
+      const event = new Proxy(createPasteEvent({ files: [preview] }), {
+        get(target, property) {
+          const value =
+            property === "isTrusted"
+              ? isTrusted
+              : Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      try {
+        act(() => h.app.api.pasteFromClipboard(event));
+        if (isTrusted) {
+          await waitFor(() => expect(h.elements).toHaveLength(1));
+          expect(h.elements[0]).toMatchObject({
+            type: "text",
+            text: text.text,
+            x: text.x,
+            y: text.y,
+          });
+          expect(h.elements[0].id).not.toBe(text.id);
+          expect(read).toHaveBeenCalledTimes(1);
+          expect(insertImages).not.toHaveBeenCalled();
+        } else {
+          await waitFor(() => expect(insertImages).toHaveBeenCalledTimes(1));
+          expect(read).not.toHaveBeenCalled();
+          expect(h.elements).toHaveLength(0);
+        }
+      } finally {
+        insertImages.mockRestore();
+        if (clipboard) {
+          Object.defineProperty(navigator, "clipboard", clipboard);
+        } else {
+          Reflect.deleteProperty(navigator, "clipboard");
+        }
+      }
+    },
+  );
+
+  it("keeps ordinary canvas paste centered at the cursor", async () => {
+    const rectangle = source();
+    API.setAppState({
+      scrollX: 451,
+      scrollY: -321,
+      zoom: { value: 0.5 as NormalizedZoomValue },
+    });
+    mouse.moveTo(421, 287);
+    const position = viewportCoordsToSceneCoords(
+      { clientX: 421, clientY: 287 },
+      h.state,
+    );
+    pasteWithCtrlCmdV(
+      serializeAsClipboardJSON({ elements: [rectangle], files: null }),
+    );
+    await waitFor(() => expect(h.elements).toHaveLength(1));
+    expect(h.elements[0].x).toBe(position.x - rectangle.width / 2);
+    expect(h.elements[0].y).toBe(position.y - rectangle.height / 2);
+  });
+
+  it("retains cursor placement for external text, API elements and library items", async () => {
+    await enableOriginalPosition();
+    mouse.moveTo(421, 287);
+    const position = viewportCoordsToSceneCoords(
+      { clientX: 421, clientY: 287 },
+      h.state,
+    );
+    pasteWithCtrlCmdV("external text");
+    await waitFor(() => expect(h.elements).toHaveLength(1));
+    expect(h.elements[0].x + h.elements[0].width / 2).toBe(position.x);
+    const rectangle = source();
+    pasteWithCtrlCmdV(
+      JSON.stringify({
+        type: EXPORT_DATA_TYPES.excalidrawClipboardWithAPI,
+        elements: [rectangle],
+      }),
+    );
+    await waitFor(() => expect(h.elements).toHaveLength(2));
+    expect(h.elements[1].x).toBe(position.x - rectangle.width / 2);
+    act(() =>
+      h.app.addElementsFromPasteOrLibrary({
+        elements: [rectangle],
+        files: null,
+        position: "cursor",
+      }),
+    );
+    expect(h.elements[2].x).toBe(position.x - rectangle.width / 2);
+  });
+
+  it("uses cursor placement when clipboard elements have no scene coordinates", async () => {
+    await enableOriginalPosition();
+    const rectangle = source();
+    mouse.moveTo(421, 287);
+    const position = viewportCoordsToSceneCoords(
+      { clientX: 421, clientY: 287 },
+      h.state,
+    );
+    pasteWithCtrlCmdV(
+      JSON.stringify({
+        type: EXPORT_DATA_TYPES.excalidrawClipboard,
+        elements: [{ ...rectangle, x: undefined, y: undefined }],
+      }),
+    );
+    await waitFor(() => expect(h.elements).toHaveLength(1));
+    expect(h.elements[0].x).toBe(position.x - rectangle.width / 2);
+    expect(h.elements[0].y).toBe(position.y - rectangle.height / 2);
+  });
+
+  it("keeps external image insertion at the cursor", async () => {
+    await enableOriginalPosition();
+    mouse.moveTo(421, 287);
+    const position = viewportCoordsToSceneCoords(
+      { clientX: 421, clientY: 287 },
+      h.state,
+    );
+    const insertImages = vi
+      .spyOn(h.app, "insertImages")
+      .mockResolvedValue(undefined);
+    const file = new File(["image"], "image.png", { type: MIME_TYPES.png });
+    try {
+      document.dispatchEvent(createPasteEvent({ files: [file] }));
+      await waitFor(() =>
+        expect(insertImages).toHaveBeenCalledWith(
+          [file],
+          position.x,
+          position.y,
+        ),
+      );
+    } finally {
+      insertImages.mockRestore();
+    }
+  });
+
+  it("preserves frames, bound text, image files and independent subscenes", async () => {
+    await enableOriginalPosition();
+    const frame = API.createElement({
+      type: "frame",
+      x: 113.25,
+      y: -79.5,
+      width: 500,
+      height: 500,
+    });
+    const rectangle = {
+      ...source(),
+      frameId: frame.id,
+      boundElements: [{ id: "label", type: "text" as const }],
+    };
+    const text = API.createElement({
+      type: "text",
+      id: "label",
+      text: "label",
+      containerId: rectangle.id,
+      frameId: frame.id,
+    });
+    const image = API.createElement({
+      type: "image",
+      x: 250.5,
+      y: 80.25,
+      fileId: "original-paste-file" as FileId,
+      status: "saved",
+      frameId: frame.id,
+    });
+    const note = {
+      ...API.createElement({
+        type: "stickynote",
+        x: 312.5,
+        y: 210.75,
+        frameId: frame.id,
+      }),
+      customData: { subcanvas: { sceneId: "source-child", title: "child" } },
+    };
+    const child = API.createElement({ type: "rectangle", x: 11, y: 17 });
+    const files: BinaryFiles = {
+      [image.fileId!]: {
+        id: image.fileId!,
+        mimeType: MIME_TYPES.png,
+        dataURL:
+          "data:image/png;base64,aW1hZ2U=" as BinaryFiles[string]["dataURL"],
+        created: 1,
+      },
+    };
+    pasteWithCtrlCmdV(
+      serializeAsClipboardJSON({
+        elements: [frame, rectangle, text, image, note],
+        files,
+        subscenes: {
+          "source-child": {
+            version: 1,
+            title: "child",
+            elements: [child],
+            appState: {},
+          },
+        },
+      }),
+    );
+    await waitFor(() => expect(h.elements).toHaveLength(5));
+    const [pastedFrame, pastedRectangle, pastedText, pastedImage, pastedNote] =
+      h.elements;
+    expect(pastedRectangle.boundElements).toEqual([
+      { id: pastedText.id, type: "text" },
+    ]);
+    expect((pastedText as ExcalidrawTextElement).containerId).toBe(
+      pastedRectangle.id,
+    );
+    for (const element of h.elements.slice(1)) {
+      expect(element.frameId).toBe(pastedFrame.id);
+    }
+    expect(pastedImage).toMatchObject({
+      x: image.x,
+      y: image.y,
+      fileId: image.fileId,
+    });
+    expect(h.app.files[image.fileId!]).toEqual(files[image.fileId!]);
+    const childId = getSubcanvasId(pastedNote)!;
+    expect(childId).not.toBe("source-child");
+    expect(h.state.subscenes[childId].elements[0]).toMatchObject({
+      x: child.x,
+      y: child.y,
+    });
+    expect(h.state.subscenes[childId].elements[0].id).not.toBe(child.id);
   });
 });
 

@@ -4,6 +4,7 @@ import {
   getTextAnchorRatios,
   isExcalidrawElement,
   isNonDeletedElement,
+  layoutRichText,
   newElementWith,
   updateBoundElements,
 } from "@excalidraw/element";
@@ -48,11 +49,16 @@ export const actionTextAutoResize = register({
       return false;
     }
 
-    const metrics = measureText(
-      target.originalText,
-      getFontString(target),
-      target.lineHeight,
-    );
+    const metrics = target.richText
+      ? layoutRichText(target, Infinity)
+      : {
+          ...measureText(
+            target.originalText,
+            getFontString(target),
+            target.lineHeight,
+          ),
+          text: target.originalText,
+        };
 
     // unwrapping resizes the box, so keep the point the text's alignment pins
     // — otherwise a right-aligned or centred text slides sideways, and one
@@ -65,7 +71,7 @@ export const actionTextAutoResize = register({
       height: metrics.height,
       x: target.x + (target.width - metrics.width) * anchor.x,
       y: target.y + (target.height - metrics.height) * anchor.y,
-      text: target.originalText,
+      text: metrics.text,
     });
 
     // the anchor only pins one point of the box, so any other arrow bound to

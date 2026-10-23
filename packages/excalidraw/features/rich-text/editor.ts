@@ -15,6 +15,8 @@ import {
   KEY_TAB_COMMAND,
   OUTDENT_CONTENT_COMMAND,
   createEditor,
+  HISTORY_PUSH_TAG,
+  HISTORY_MERGE_TAG,
 } from "lexical";
 import { registerRichText } from "@lexical/rich-text";
 import {
@@ -49,6 +51,7 @@ import {
   isArrowElement,
   richTextFromPlainText,
   normalizeRichTextBackground,
+  normalizeRichTextColor,
   richTextToPlainText,
   redrawTextBoundingBox,
 } from "@excalidraw/element";
@@ -100,12 +103,16 @@ export const $readRichText = (): RichTextDocument => {
         const background = normalizeRichTextBackground(
           node.getStyle().match(/background-color:\s*([^;]+)/i)?.[1],
         );
+        const color = normalizeRichTextColor(
+          node.getStyle().match(/(?:^|;)\s*color:\s*([^;]+)/i)?.[1],
+        );
         runs.push({
           text: node.getTextContent(),
           ...(node.hasFormat("bold") && { bold: true }),
           ...(node.hasFormat("italic") && { italic: true }),
           ...(node.hasFormat("underline") && { underline: true }),
           ...(background && { background }),
+          ...(color && { color }),
         });
       } else if ($isLineBreakNode(node)) {
         runs.push({ text: "\n" });
@@ -194,8 +201,12 @@ export const $writeRichText = (
       if (run.underline) {
         text.toggleFormat("underline");
       }
-      if (run.background) {
-        text.setStyle(`background-color: ${run.background};`);
+      if (run.background || run.color) {
+        text.setStyle(
+          `${run.background ? `background-color: ${run.background};` : ""}${
+            run.color ? `color: ${run.color};` : ""
+          }`,
+        );
       }
       target.append(text);
       textPositions.push({
@@ -234,6 +245,19 @@ export const $writeRichText = (
   }
 };
 
+export const $getRichTextSelectionOffsets = (selection = $getSelection()) => {
+  if (!$isRangeSelection(selection)) {
+    return null;
+  }
+  const offsetAt = (point: typeof selection.anchor) => {
+    const prefix = $createRangeSelection();
+    prefix.anchor.set($getRoot().getKey(), 0, "element");
+    prefix.focus.set(point.key, point.offset, point.type);
+    return prefix.getTextContent().length;
+  };
+  return { start: offsetAt(selection.anchor), end: offsetAt(selection.focus) };
+};
+
 export const applyRichTextEditorCommand = (
   editor: LexicalEditor,
   command: RichTextCommand,
@@ -258,11 +282,14 @@ export const applyRichTextEditorCommand = (
       command.value === "in" ? INDENT_CONTENT_COMMAND : OUTDENT_CONTENT_COMMAND,
       undefined,
     );
-  } else if (command.type === "background") {
+  } else if (command.type === "background" || command.type === "color") {
     editor.update(() => {
       const selection = $getSelection();
       if ($isRangeSelection(selection)) {
-        $patchStyleText(selection, { "background-color": command.value });
+        $patchStyleText(selection, {
+          [command.type === "background" ? "background-color" : "color"]:
+            command.value,
+        });
       }
     });
   }
@@ -309,7 +336,7 @@ export const richTextWysiwyg = ({
   });
   const style = ownerDocument.createElement("style");
   style.textContent =
-    ".excalidraw-rich-text p{margin:0;margin-bottom:var(--rich-paragraph-gap,0)}.excalidraw-rich-text p:last-child{margin-bottom:0}.excalidraw-rich-text ul,.excalidraw-rich-text ol{margin:0;padding-left:1.5em}.excalidraw-rich-text li{margin-bottom:var(--rich-paragraph-gap,0)}.excalidraw-rich-text .rich-bold{font-weight:bold}.excalidraw-rich-text .rich-italic{font-style:italic}.excalidraw-rich-text .rich-underline{text-decoration:underline;text-decoration-thickness:max(1px,.05em);text-underline-offset:max(1px,.06em);text-decoration-skip-ink:none}";
+    ".excalidraw-rich-text p{margin:0;margin-bottom:var(--rich-paragraph-gap,0)}.excalidraw-rich-text p:last-child{margin-bottom:0}.excalidraw-rich-text ul,.excalidraw-rich-text ol{margin:0;padding-left:1.5em}.excalidraw-rich-text li{margin-bottom:var(--rich-paragraph-gap,0)}.excalidraw-rich-text .rich-bold{font-weight:bold}.excalidraw-rich-text .rich-italic{font-style:italic}.excalidraw-rich-text .rich-underline{text-decoration:underline;text-decoration-thickness:max(1px,.05em);text-underline-offset:max(1px,.06em);text-decoration-skip-ink:none}.excalidraw-rich-text [data-lexical-text]::selection{-webkit-text-fill-color:HighlightText}";
   box.append(style, editable);
   const editor = createEditor({
     namespace: `excalidraw-${element.id}`,
@@ -352,6 +379,24 @@ export const richTextWysiwyg = ({
   const initialContainerHeight = initialContainer?.height ?? 0;
   const latest = () =>
     app.scene.getElement<ExcalidrawTextElement>(element.id) ?? element;
+  const updateTextColors = () => {
+    editor.getEditorState().read(() => {
+      for (const node of $getRoot().getAllTextNodes()) {
+        const dom = editor.getElementByKey(node.getKey());
+        const color = normalizeRichTextColor(
+          node.getStyle().match(/(?:^|;)\s*color:\s*([^;]+)/i)?.[1],
+        );
+        if (dom && color && app.state.theme === THEME.DARK) {
+          const displayedColor = applyDarkModeFilter(color);
+          dom.style.webkitTextFillColor = displayedColor;
+          dom.style.textDecorationColor = displayedColor;
+        } else if (dom) {
+          dom.style.webkitTextFillColor = "";
+          dom.style.textDecorationColor = "";
+        }
+      }
+    });
+  };
   const updateStyle = () => {
     const current = latest();
     const container = getContainerElement(
@@ -415,6 +460,7 @@ export const richTextWysiwyg = ({
       "--rich-paragraph-gap",
       `${(current.paragraphSpacing ?? 0) * current.fontSize}px`,
     );
+    updateTextColors();
   };
   updateStyle();
   const synchronize = () => {
@@ -470,6 +516,13 @@ export const richTextWysiwyg = ({
       publishRichTextSelectionState(ownerDocument, {
         elementId: element.id,
         background: background || null,
+        color:
+          $getSelectionStyleValueForProperty(
+            selection,
+            "color",
+            latest().strokeColor,
+          ) || null,
+        hasSelection: !selection.isCollapsed(),
         list: kinds.size === 1 ? [...kinds][0] : null,
       });
     });
@@ -477,6 +530,7 @@ export const richTextWysiwyg = ({
   publishSelection();
   disposers.push(
     editor.registerUpdateListener(({ dirtyElements, dirtyLeaves }) => {
+      updateTextColors();
       publishSelection();
       if (dirtyElements.size || dirtyLeaves.size) {
         synchronize();
@@ -540,15 +594,22 @@ export const richTextWysiwyg = ({
       return;
     }
     editable.focus({ preventScroll: true });
-    editor.update(() => {
-      if (!$isRangeSelection($getSelection()) && savedSelection) {
-        $setSelection(savedSelection.clone());
-      }
-      applyRichTextEditorCommand(editor, command);
-    });
+    editor.update(
+      () => {
+        if (!$isRangeSelection($getSelection()) && savedSelection) {
+          $setSelection(savedSelection.clone());
+        }
+        applyRichTextEditorCommand(editor, command);
+      },
+      { tag: HISTORY_PUSH_TAG },
+    );
   };
   disposers.push(
-    registerRichTextEditor(ownerDocument, { elementId: element.id, execute }),
+    registerRichTextEditor(ownerDocument, {
+      elementId: element.id,
+      hasTextSelection: () => !!savedSelection && !savedSelection.isCollapsed(),
+      execute,
+    }),
   );
   disposers.push(
     editor.registerCommand(
@@ -677,11 +738,21 @@ export const richTextWysiwyg = ({
       ) {
         lastDocument = current.richText;
         lastSerialized = JSON.stringify(lastDocument);
-        editor.update(() => $writeRichText(lastDocument), { tag: "historic" });
+        editor.update(
+          () => {
+            const selection = $getSelection();
+            const offsets = $getRichTextSelectionOffsets(
+              $isRangeSelection(selection) ? selection : savedSelection,
+            );
+            $writeRichText(lastDocument, offsets);
+          },
+          { tag: HISTORY_MERGE_TAG },
+        );
       }
     }),
   );
   disposers.push(app.onScrollChangeEmitter.on(updateStyle));
+  disposers.push(app.onChangeEmitter.on(updateStyle));
   const onBoxScroll = () => {
     const x = box.scrollLeft;
     const y = box.scrollTop;

@@ -8,6 +8,8 @@ import {
 } from "react";
 import { createPortal, flushSync } from "react-dom";
 
+import { isInputLike, KEYS, matchKey } from "@excalidraw/common";
+
 import {
   PinIcon,
   PlusIcon,
@@ -39,6 +41,8 @@ type Props = {
   onAdd: () => void;
   onCopy: (id: string) => string | null;
   onPaste: (content: string) => void;
+  onCanvasPaste: (event: ClipboardEvent) => void;
+  onHistory: (direction: "undo" | "redo") => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onMove: (id: string, toIndex: number) => void;
@@ -169,6 +173,9 @@ export const PresentationLayout = (props: Props) => {
   const slideList = useRef<HTMLOListElement>(null);
   const dragPreview = useRef<HTMLDivElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
+  const initialSlideIds = useRef(
+    new Set(presentation.slides.map((slide) => slide.id)),
+  );
   const presentMenuButton = useRef<HTMLButtonElement>(null);
   const filmstripId = useId();
   const presentMenuId = useId();
@@ -617,12 +624,16 @@ export const PresentationLayout = (props: Props) => {
   const menuSlide = presentation.slides.find(
     (slide) => slide.id === contextMenu?.slideId,
   );
-  const selectSlide = (id: string) => {
+  const selectSlide = (id: string, button: HTMLButtonElement) => {
+    if (disabled) {
+      return;
+    }
     if (suppressSlideClick.current) {
       suppressSlideClick.current = false;
       return;
     }
     props.onSelect(id);
+    button.focus({ preventScroll: true });
   };
   const addSlide = () => {
     setKeyboardFocus(true);
@@ -747,6 +758,31 @@ export const PresentationLayout = (props: Props) => {
             }}
             onKeyDown={(event) => {
               event.stopPropagation();
+              if (
+                !disabled &&
+                !renaming &&
+                !event.defaultPrevented &&
+                !event.nativeEvent.isComposing &&
+                !isInputLike(event.target) &&
+                event[KEYS.CTRL_OR_CMD] &&
+                !event.altKey &&
+                (matchKey(event, KEYS.Z) ||
+                  (!event.shiftKey && matchKey(event, KEYS.Y)))
+              ) {
+                event.preventDefault();
+                const filmstrip = event.currentTarget;
+                props.onHistory(
+                  event.shiftKey || matchKey(event, KEYS.Y) ? "redo" : "undo",
+                );
+                filmstrip.ownerDocument.defaultView!.queueMicrotask(() =>
+                  filmstrip
+                    .querySelector<HTMLButtonElement>(
+                      ".desktop-slide-item.is-active .desktop-slide-select",
+                    )
+                    ?.focus({ preventScroll: true }),
+                );
+                return;
+              }
               if (event.key === "Escape" && dragging.current) {
                 event.preventDefault();
                 suppressSlideClick.current = dragging.current.moved;
@@ -782,9 +818,10 @@ export const PresentationLayout = (props: Props) => {
                   <span aria-hidden="true">{expanded ? "▾" : "▴"}</span>
                 )}
               </button>
-              <div className="desktop-filmstrip-actions">
+              <div className="desktop-filmstrip-actions desktop-filmstrip-actions-start">
                 <button
                   ref={addButton}
+                  className="desktop-filmstrip-add"
                   disabled={disabled}
                   onClick={addSlide}
                   aria-label={t("新建页面", "Add slide")}
@@ -792,6 +829,8 @@ export const PresentationLayout = (props: Props) => {
                 >
                   <span aria-hidden="true">{PlusIcon}</span>
                 </button>
+              </div>
+              <div className="desktop-filmstrip-actions">
                 <button
                   disabled={disabled}
                   aria-label={t("固定缩略图栏", "Pin slide strip")}
@@ -883,7 +922,9 @@ export const PresentationLayout = (props: Props) => {
                   key={slide.id}
                   className={`desktop-slide-item${
                     slide.id === activeSlideId ? " is-active" : ""
-                  }${slide.id === draggedId ? " is-dragging" : ""}${
+                  }${!initialSlideIds.current.has(slide.id) ? " is-new" : ""}${
+                    slide.id === draggedId ? " is-dragging" : ""
+                  }${
                     dropIndex === index && index !== draggedIndex
                       ? ` is-drop-target${
                           index > draggedIndex ? " is-drop-after" : ""
@@ -950,7 +991,10 @@ export const PresentationLayout = (props: Props) => {
                     }
                     event.preventDefault();
                     event.stopPropagation();
+                    const focused = event.currentTarget.ownerDocument
+                      .activeElement as HTMLElement;
                     const content = props.onCopy(slide.id);
+                    focused.focus({ preventScroll: true });
                     if (content) {
                       event.clipboardData.setData("text/plain", content);
                     }
@@ -967,7 +1011,17 @@ export const PresentationLayout = (props: Props) => {
                     }
                     event.preventDefault();
                     event.stopPropagation();
-                    props.onPaste(event.clipboardData.getData("text/plain"));
+                    const content = event.clipboardData.getData("text/plain");
+                    let isPresentation = false;
+                    try {
+                      isPresentation =
+                        JSON.parse(content)?.type === "guzi-presentation";
+                    } catch {}
+                    if (isPresentation) {
+                      props.onPaste(content);
+                    } else {
+                      props.onCanvasPaste(event.nativeEvent);
+                    }
                   }}
                   onKeyDown={(event) => {
                     if (
@@ -994,7 +1048,9 @@ export const PresentationLayout = (props: Props) => {
                       "拖拽排序 · 右键操作",
                       "Drag to reorder · Right-click for actions",
                     )}
-                    onClick={() => selectSlide(slide.id)}
+                    onClick={(event) =>
+                      selectSlide(slide.id, event.currentTarget)
+                    }
                   >
                     <span className="desktop-slide-number">{index + 1}</span>
                     <SlidePreview
@@ -1034,7 +1090,9 @@ export const PresentationLayout = (props: Props) => {
                       className="desktop-slide-title"
                       disabled={disabled}
                       title={t("双击重命名", "Double-click to rename")}
-                      onClick={() => selectSlide(slide.id)}
+                      onClick={(event) =>
+                        selectSlide(slide.id, event.currentTarget)
+                      }
                       onDoubleClick={() => rename(slide)}
                     >
                       {slide.title}

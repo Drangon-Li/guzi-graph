@@ -51,7 +51,7 @@ export const mutateElement = <TElement extends Mutable<ExcalidrawElement>>(
 
   // casting to any because can't use `in` operator
   // (see https://github.com/microsoft/TypeScript/issues/21732)
-  const { points, fixedSegments, fileId } = updates as any;
+  const { points, fixedSegments, fileId, richText } = updates as any;
 
   if (
     isElbowArrow(element) &&
@@ -134,6 +134,7 @@ export const mutateElement = <TElement extends Mutable<ExcalidrawElement>>(
     typeof updates.height !== "undefined" ||
     typeof updates.width !== "undefined" ||
     typeof fileId != "undefined" ||
+    typeof richText !== "undefined" ||
     typeof points !== "undefined"
   ) {
     ShapeCache.delete(element);

@@ -42,7 +42,10 @@ if (process.env.EXCALIDRAW_DESKTOP_USER_DATA) {
 } else {
   // Normal builds keep the legacy profile; test builds must not reuse it.
   const profileName =
-    buildChannel === "dev-ppt" ? "Excalidraw-Guzi Dev PPT" : "Excalidraw Local";
+    {
+      "dev-ppt": "Excalidraw-Guzi Dev PPT",
+      test: "Excalidraw-Guzi Test",
+    }[buildChannel] || "Excalidraw Local";
   const userData = path.join(app.getPath("appData"), profileName);
   mkdirSync(userData, { recursive: true });
   app.setPath("userData", userData);

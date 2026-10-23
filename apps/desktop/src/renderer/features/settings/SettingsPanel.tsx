@@ -11,6 +11,7 @@ import {
 import { Button } from "@excalidraw/excalidraw";
 
 import type { PreferenceSection } from "@excalidraw/excalidraw/types";
+import type { FontFamilyValues } from "@excalidraw/element/types";
 
 import {
   DesktopSegmentedControl,
@@ -59,6 +60,7 @@ export const SettingsPanel = ({
   settings,
   onChange,
   onChangeDirectory,
+  onApplyFontToOpenDocuments,
 }: {
   root: HTMLElement;
   settings: DesktopSettings;
@@ -66,6 +68,7 @@ export const SettingsPanel = ({
     update: Partial<DesktopSettings>,
   ) => Promise<DesktopSettings | null>;
   onChangeDirectory: () => Promise<void>;
+  onApplyFontToOpenDocuments?: (fontFamily: FontFamilyValues) => Promise<void>;
 }) => {
   const [category, setCategory] = useState<SettingsCategory>("general");
   const [preference, setPreference] = useState<PreferenceSection>("fonts");
@@ -117,8 +120,8 @@ export const SettingsPanel = ({
       ? "Choose how tools behave on your canvas."
       : "调整画布工具的显示与创建方式。",
     defaults: en
-      ? "Customize toolbar choices and defaults for new drawings."
-      : "定制工具栏快捷项与新画布默认值。",
+      ? "Customize toolbar choices, default fonts and colors."
+      : "定制工具栏快捷项、默认字体与颜色。",
     shortcuts: en
       ? "Keep your favorite drawing styles one shortcut away."
       : "用快捷键快速调用常用绘图样式。",
@@ -289,6 +292,7 @@ export const SettingsPanel = ({
               preferences={settings.editorPreferences}
               section={preference}
               language={settings.language}
+              onApplyFontToOpenDocuments={onApplyFontToOpenDocuments}
               onChange={(editorPreferences) =>
                 savePreferences({ editorPreferences })
               }

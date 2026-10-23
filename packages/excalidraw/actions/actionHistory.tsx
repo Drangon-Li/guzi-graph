@@ -73,9 +73,12 @@ export const createUndoAction: ActionCreator = (history) => ({
   trackEvent: { category: "history" },
   viewMode: false,
   perform: (elements, appState, value, app) =>
-    executeHistoryAction(app, appState, () =>
-      history.undo(arrayToMap(elements) as SceneElementsMap, appState),
-    ),
+    executeHistoryAction(app, appState, () => {
+      if (app.props.desktopIntegration?.history?.perform("undo")) {
+        return;
+      }
+      return history.undo(arrayToMap(elements) as SceneElementsMap, appState);
+    }),
   keyTest: (event) =>
     event[KEYS.CTRL_OR_CMD] && matchKey(event, KEYS.Z) && !event.shiftKey,
   PanelComponent: ({ appState, updateData, data, app }) => {
@@ -95,7 +98,11 @@ export const createUndoAction: ActionCreator = (history) => ({
         aria-label={t("buttons.undo")}
         onClick={updateData}
         size={data?.size || "medium"}
-        disabled={isUndoStackEmpty}
+        disabled={
+          app.props.desktopIntegration?.history
+            ? !app.props.desktopIntegration.history.undoAvailable
+            : isUndoStackEmpty
+        }
         data-testid="button-undo"
         style={{
           ...(isMobile ? MOBILE_ACTION_BUTTON_BG : {}),
@@ -112,9 +119,12 @@ export const createRedoAction: ActionCreator = (history) => ({
   trackEvent: { category: "history" },
   viewMode: false,
   perform: (elements, appState, __, app) =>
-    executeHistoryAction(app, appState, () =>
-      history.redo(arrayToMap(elements) as SceneElementsMap, appState),
-    ),
+    executeHistoryAction(app, appState, () => {
+      if (app.props.desktopIntegration?.history?.perform("redo")) {
+        return;
+      }
+      return history.redo(arrayToMap(elements) as SceneElementsMap, appState);
+    }),
   keyTest: (event) =>
     (event[KEYS.CTRL_OR_CMD] && event.shiftKey && matchKey(event, KEYS.Z)) ||
     (event[KEYS.CTRL_OR_CMD] && !event.shiftKey && matchKey(event, KEYS.Y)),
@@ -135,7 +145,11 @@ export const createRedoAction: ActionCreator = (history) => ({
         aria-label={t("buttons.redo")}
         onClick={updateData}
         size={data?.size || "medium"}
-        disabled={isRedoStackEmpty}
+        disabled={
+          app.props.desktopIntegration?.history
+            ? !app.props.desktopIntegration.history.redoAvailable
+            : isRedoStackEmpty
+        }
         data-testid="button-redo"
         style={{
           ...(isMobile ? MOBILE_ACTION_BUTTON_BG : {}),
