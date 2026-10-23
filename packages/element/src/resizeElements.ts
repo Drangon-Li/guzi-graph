@@ -49,6 +49,7 @@ import {
   getApproxMinLineHeight,
 } from "./textMeasurements";
 import { wrapText } from "./textWrapping";
+import { layoutRichText } from "./richText";
 import {
   isArrowElement,
   isBindingElement,
@@ -377,16 +378,19 @@ export const resizeSingleTextElement = (
 
     const newWidth = Math.max(minWidth, nextWidth);
 
-    const text = wrapText(
-      element.originalText,
-      getFontString(element),
-      Math.abs(newWidth),
-    );
-    const metrics = measureText(
-      text,
-      getFontString(element),
-      element.lineHeight,
-    );
+    const richTextLayout = element.richText
+      ? layoutRichText(element, Math.abs(newWidth))
+      : null;
+    const text =
+      richTextLayout?.text ??
+      wrapText(
+        element.originalText,
+        getFontString(element),
+        Math.abs(newWidth),
+      );
+    const metrics =
+      richTextLayout ??
+      measureText(text, getFontString(element), element.lineHeight);
 
     const newHeight = metrics.height;
 

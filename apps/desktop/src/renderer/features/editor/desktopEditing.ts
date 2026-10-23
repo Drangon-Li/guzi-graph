@@ -34,7 +34,11 @@ export const handleDesktopEditingCommand = async (
     return;
   }
 
+  const filmstrip = root.querySelector<HTMLElement>(
+    ".desktop-editor-pane.is-active .desktop-presentation-filmstrip",
+  );
   const editor =
+    (focused && filmstrip?.contains(focused) ? focused : null) ??
     root.querySelector<HTMLElement>(
       ".desktop-editor-pane.is-active .desktop-subcanvas .excalidraw",
     ) ??

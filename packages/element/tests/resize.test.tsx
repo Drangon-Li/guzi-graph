@@ -33,6 +33,8 @@ import { getLinearElementPathSegments } from "../src/utils";
 import { LinearElementEditor } from "../src/linearElementEditor";
 import { getElementPointsCoords } from "../src/bounds";
 import { computeContainerDimensionForBoundText } from "../src/textElement";
+import { newElementWith } from "../src/mutateElement";
+import { layoutRichText, richTextFromPlainText } from "../src/richText";
 
 import type {
   ExcalidrawElbowArrowElement,
@@ -905,6 +907,64 @@ describe("text element", () => {
     expect(text.fontFamily).toBe(fontFamily);
     expect(text.autoResize).toBe(false);
   });
+
+  it.each([
+    { handle: "e", formatted: false },
+    { handle: "w", formatted: false },
+    { handle: "e", formatted: true },
+    { handle: "w", formatted: true },
+  ] as const)(
+    "keeps all rich text visible when resizing from $handle (formatted: $formatted)",
+    ({ handle, formatted }) => {
+      const originalText = [
+        "Background:",
+        "Domain-Specific Architectures：现在的 agent 体系大多都是垂域的",
+        "Partial Foundational Capabilities：有的 care 湿实验有的 care 干实验",
+        "Linear Optimization Pipelines：优化路径是线性的",
+        "Limited Long-Horizon Operation：缺乏有效的长期记忆及方案",
+      ].join("\n");
+      const richText = richTextFromPlainText(originalText);
+      if (formatted) {
+        richText.paragraphs[0].runs[0].bold = true;
+        richText.paragraphs.slice(1).forEach((paragraph) => {
+          paragraph.list = { kind: "ordered", indent: 1 };
+        });
+      }
+      const base = newElementWith(
+        API.createElement({ type: "text", text: originalText }),
+        { richText, paragraphSpacing: formatted ? 0.5 : 0 },
+      );
+      const initialLayout = layoutRichText(base);
+      const text = newElementWith(base, {
+        width: initialLayout.width,
+        height: initialLayout.height,
+        text: initialLayout.text,
+      });
+      API.setElements([text]);
+      const { x, y, width, height, fontSize, fontFamily } = text;
+
+      for (const nextWidth of [width / 2, width / 3, width]) {
+        UI.resize(text, handle, [
+          (nextWidth - text.width) * (handle === "w" ? -1 : 1),
+          0,
+        ]);
+
+        const layout = layoutRichText(text, text.width);
+        expect(text.height).toBeCloseTo(layout.height);
+        expect(text.text).toBe(layout.text);
+        expect(text.width).toBeCloseTo(nextWidth);
+        expect(text.x).toBeCloseTo(handle === "w" ? x + width - nextWidth : x);
+        expect(text.y).toBeCloseTo(
+          handle === "w" ? y + height - text.height : y,
+        );
+        expect(text.fontSize).toBe(fontSize);
+        expect(text.fontFamily).toBe(fontFamily);
+        expect(text.originalText).toBe(originalText);
+        expect(text.richText).toEqual(richText);
+        expect(text.autoResize).toBe(false);
+      }
+    },
+  );
 
   it("has a minimum width when wrapped", async () => {
     const text = UI.createElement("text");

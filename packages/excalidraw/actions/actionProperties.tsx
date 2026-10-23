@@ -1,6 +1,13 @@
 import { pointFrom } from "@excalidraw/math";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import {
   BUCKET_FILL_BACKGROUND_PICKS,
@@ -103,6 +110,11 @@ import type { ElementUpdate, Scene } from "@excalidraw/element";
 import type { CaptureUpdateActionType } from "@excalidraw/element";
 
 import { getEditorStylesPanelMode } from "../components/stylesPanelMode";
+import {
+  executeRichTextCommand,
+  getRichTextSelectionState,
+  subscribeRichTextSelection,
+} from "../features/rich-text/editorBridge";
 
 import { trackEvent } from "../analytics";
 import { PreferenceConfigureButton } from "../components/PreferenceConfigureButton";
@@ -176,7 +188,6 @@ import {
 
 import { getShortcutKey } from "../shortcut";
 
-import { executeRichTextCommand } from "../features/rich-text/editorBridge";
 import { RichTextJustifyIcon } from "../features/rich-text/RichTextIcons";
 
 import {
@@ -373,9 +384,22 @@ export const actionChangeStrokeColor = register<
   name: "changeStrokeColor",
   label: "labels.stroke",
   trackEvent: false,
-  perform: (elements, appState, value) => {
+  perform: (elements, appState, value, app) => {
     const { color, ...appStateUpdates } = value ?? {};
     if (color === undefined) {
+      return {
+        appState: { ...appState, ...appStateUpdates },
+        captureUpdate: CaptureUpdateAction.EVENTUALLY,
+      };
+    }
+    if (
+      appState.editingTextElement &&
+      executeRichTextCommand(
+        app.ownerDocument,
+        { type: "color", value: color },
+        appState.editingTextElement.id,
+      )
+    ) {
       return {
         appState: { ...appState, ...appStateUpdates },
         captureUpdate: CaptureUpdateAction.EVENTUALLY,
@@ -393,13 +417,27 @@ export const actionChangeStrokeColor = register<
         changeProperty(
           elements,
           appState,
-          (el) =>
-            hasStrokeColor(el.type)
-              ? newElementWith(
-                  el,
-                  getColorUpdate(el, "strokeColor", color, elementsMap),
-                )
-              : el,
+          (el) => {
+            if (!hasStrokeColor(el.type)) {
+              return el;
+            }
+            return newElementWith(el, {
+              ...getColorUpdate(el, "strokeColor", color, elementsMap),
+              ...(isTextElement(el) &&
+                el.richText &&
+                el.richText.paragraphs.some((paragraph) =>
+                  paragraph.runs.some((run) => run.color !== undefined),
+                ) && {
+                  richText: {
+                    ...el.richText,
+                    paragraphs: el.richText.paragraphs.map((paragraph) => ({
+                      ...paragraph,
+                      runs: paragraph.runs.map(({ color, ...run }) => run),
+                    })),
+                  },
+                }),
+            });
+          },
           true,
         ),
         elementsMap,
@@ -413,6 +451,22 @@ export const actionChangeStrokeColor = register<
     };
   },
   PanelComponent: ({ elements, appState, updateData, app }) => {
+    const selection = useSyncExternalStore(
+      useCallback(
+        (listener) => subscribeRichTextSelection(app.ownerDocument, listener),
+        [app.ownerDocument],
+      ),
+      useCallback(
+        () => getRichTextSelectionState(app.ownerDocument),
+        [app.ownerDocument],
+      ),
+      () => null,
+    );
+    const selectedText =
+      selection?.hasSelection &&
+      selection.elementId === appState.editingTextElement?.id
+        ? selection
+        : null;
     const { stylesPanelMode } = getStylesPanelInfo(app);
     const target = resolveColorTarget(appState, elements, "strokeColor");
     // a note has no stroke: its "stroke" is the ink of its text and footer
@@ -434,13 +488,18 @@ export const actionChangeStrokeColor = register<
           excludedColors={target.excludedColors}
           type="elementStroke"
           label={label}
-          color={getFormValue(
-            elements,
-            app,
-            (element) => element.strokeColor,
-            true,
-            (hasSelection) => (!hasSelection ? target.currentValue : null),
-          )}
+          color={
+            selectedText
+              ? selectedText.color
+              : getFormValue(
+                  elements,
+                  app,
+                  (element) => element.strokeColor,
+                  true,
+                  (hasSelection) =>
+                    !hasSelection ? target.currentValue : null,
+                )
+          }
           onChange={(color) => updateData({ color })}
           elements={elements}
           appState={appState}

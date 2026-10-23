@@ -22,6 +22,7 @@ import type { RichTextDocument } from "@excalidraw/element";
 import {
   $readRichText,
   $writeRichText,
+  $getRichTextSelectionOffsets,
   applyRichTextEditorCommand,
 } from "./editor";
 
@@ -49,6 +50,30 @@ describe("Lexical rich text editing", () => {
   });
   afterEach(() => cleanups.forEach((cleanup) => cleanup()));
 
+  it.each([false, true])(
+    "restores forward and backward ranges across paragraphs and nested lists (backward=%s)",
+    (backward) => {
+      const document = richTextFromPlainText("first\n\n中文\nlist\nnested");
+      document.paragraphs[3].list = { kind: "bullet", indent: 0 };
+      document.paragraphs[4].list = { kind: "bullet", indent: 1 };
+      const selection = backward
+        ? { start: 17, end: 8 }
+        : { start: 8, end: 17 };
+      editor.update(() => $writeRichText(document, selection), {
+        discrete: true,
+      });
+      editor.update(
+        () => {
+          const offsets = $getRichTextSelectionOffsets();
+          expect(offsets).toEqual(selection);
+          $writeRichText(document, offsets);
+          expect($getRichTextSelectionOffsets()).toEqual(selection);
+        },
+        { discrete: true },
+      );
+    },
+  );
+
   it("round trips paragraphs, nested lists and partial inline styles", () => {
     const document: RichTextDocument = {
       version: 1,
@@ -62,6 +87,7 @@ describe("Lexical rich text editing", () => {
               italic: true,
               underline: true,
               background: "#fff3bf",
+              color: "#e03131",
             },
           ],
         },
@@ -113,6 +139,43 @@ describe("Lexical rich text editing", () => {
       { text: "中文", bold: true, italic: true, background: "#fff3bf" },
       { text: "def" },
     ]);
+  });
+
+  it("colors a selection across styled runs while retaining backgrounds and history", () => {
+    const document: RichTextDocument = {
+      version: 1,
+      paragraphs: [
+        {
+          runs: [
+            { text: "abc", bold: true, background: "#fff3bf" },
+            { text: "中文", italic: true, color: "#1971c2" },
+            { text: "def", underline: true },
+          ],
+        },
+      ],
+    };
+    editor.update(() => $writeRichText(document, { start: 1, end: 6 }), {
+      discrete: true,
+    });
+    editor.update(
+      () =>
+        applyRichTextEditorCommand(editor, { type: "color", value: "#e03131" }),
+      { discrete: true, tag: HISTORY_PUSH_TAG },
+    );
+    const colored = read(editor);
+    expect(colored.paragraphs[0].runs).toEqual([
+      { text: "a", bold: true, background: "#fff3bf" },
+      { text: "bc", bold: true, background: "#fff3bf", color: "#e03131" },
+      { text: "中文", italic: true, color: "#e03131" },
+      { text: "d", underline: true, color: "#e03131" },
+      { text: "ef", underline: true },
+    ]);
+    editor.dispatchCommand(UNDO_COMMAND, undefined);
+    flush(editor);
+    expect(read(editor)).toEqual(document);
+    editor.dispatchCommand(REDO_COMMAND, undefined);
+    flush(editor);
+    expect(read(editor)).toEqual(colored);
   });
 
   it("continues a list on Enter and exits an empty item on the next Enter", () => {

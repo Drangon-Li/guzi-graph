@@ -1,8 +1,15 @@
 import "@excalidraw/element";
+import rough from "roughjs/bin/rough";
 
-import { FONT_FAMILY, getVerticalOffset } from "@excalidraw/common";
+import {
+  applyDarkModeFilter,
+  FONT_FAMILY,
+  getVerticalOffset,
+  THEME,
+} from "@excalidraw/common";
 
 import type { getLineHeight } from "@excalidraw/common";
+import type { StaticCanvasRenderConfig } from "@excalidraw/excalidraw/scene/types";
 
 import {
   layoutRichText,
@@ -28,6 +35,142 @@ const element = (
 });
 
 describe("rich text layout", () => {
+  it("repaints the cached static canvas after an inline-color-only mutation", async () => {
+    const { Scene } = await import("../src/Scene");
+    const { renderElement, elementWithCanvasCache } = await import(
+      "../src/renderElement"
+    );
+    const { getDefaultAppState } = await import(
+      "@excalidraw/excalidraw/appState"
+    );
+    const { Renderer } = await import("@excalidraw/excalidraw/scene/Renderer");
+    const text = element("颜色测试：局部红色，其余保持原色", {
+      fontFamily: FONT_FAMILY.Nunito,
+      fontSize: 32,
+      strokeColor: "#1e1e1e",
+    });
+    const scene = new Scene([text], { skipValidation: true });
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d")!;
+    const config: StaticCanvasRenderConfig = {
+      imageCache: new Map(),
+      renderGrid: false,
+      isExporting: false,
+      canvasBackgroundColor: "#fff",
+      embedsValidationStatus: new Map(),
+      elementsPendingErasure: new Set(),
+      pendingFlowchartNodes: null,
+      theme: THEME.DARK,
+    };
+    const appState = {
+      ...getDefaultAppState(),
+      theme: THEME.DARK,
+      width: 1600,
+      height: 1000,
+      offsetTop: 0,
+      offsetLeft: 0,
+    };
+    const { elementsMap } = new Renderer(scene).getRenderableElements({
+      ...appState,
+      selectedElements: [],
+    });
+    const draw = () =>
+      renderElement(
+        text,
+        elementsMap,
+        scene.getNonDeletedElementsMap(),
+        rough.canvas(canvas),
+        context,
+        config,
+        appState,
+      );
+    draw();
+    const originalCache = elementWithCanvasCache.get(text)!;
+    expect(originalCache).toBeDefined();
+    const dimensions = { width: text.width, height: text.height };
+    scene.mutateElement(text, {
+      richText: {
+        version: 1,
+        paragraphs: [
+          {
+            runs: [
+              { text: "颜色测试：" },
+              { text: "局部红色", color: "#e03131" },
+              { text: "，其余保持原色" },
+            ],
+          },
+        ],
+      },
+    });
+    expect({ width: text.width, height: text.height }).toEqual(dimensions);
+    draw();
+    const coloredCache = elementWithCanvasCache.get(text)!;
+    expect(coloredCache).not.toBe(originalCache);
+    const events = (coloredCache.canvas.getContext("2d") as any).__getEvents();
+    let color: string;
+    expect(
+      events.flatMap((event: any) => {
+        if (event.type === "fillStyle") {
+          color = event.props.value;
+        }
+        return event.type === "fillText"
+          ? [{ text: event.props.text, color }]
+          : [];
+      }),
+    ).toEqual([
+      { text: "颜色测试：", color: applyDarkModeFilter("#1e1e1e") },
+      { text: "局部红色", color: applyDarkModeFilter("#e03131") },
+      { text: "，其余保持原色", color: applyDarkModeFilter("#1e1e1e") },
+    ]);
+    scene.destroy();
+  });
+
+  it("preserves inline colors on restore and keeps differently colored runs separate", async () => {
+    const { serializeAsJSON } = await import(
+      "@excalidraw/excalidraw/data/json"
+    );
+    const { restoreElements } = await import(
+      "@excalidraw/excalidraw/data/restore"
+    );
+    const richText = {
+      version: 1 as const,
+      paragraphs: [
+        {
+          runs: [
+            { text: "a" },
+            { text: "b", color: "#e03131", background: "#fff3bf" },
+            { text: "c", color: "#1971c2" },
+          ],
+        },
+      ],
+    };
+    expect(normalizeRichText(richText)).toEqual(richText);
+    const text = element("abc", { richText });
+    expect(
+      layoutRichText(text).lines[0].runs.map(({ text, color }) => ({
+        text,
+        color,
+      })),
+    ).toEqual([
+      { text: "a", color: undefined },
+      { text: "b", color: "#e03131" },
+      { text: "c", color: "#1971c2" },
+    ]);
+    const restored = restoreElements(
+      JSON.parse(serializeAsJSON([text], {}, {}, "local")).elements,
+      null,
+    );
+    expect(restored.find((item) => item.type === "text")?.richText).toEqual(
+      richText,
+    );
+    expect(
+      normalizeRichText({
+        version: 1,
+        paragraphs: [{ runs: [{ text: "x", color: "url(invalid)" }] }],
+      })?.paragraphs[0].runs,
+    ).toEqual([{ text: "x" }]);
+  });
+
   it("initializes justification through rich layout while preserving ordinary text", () => {
     expect(element("ordinary").richText).toBeUndefined();
     const justified = newTextElement({
@@ -250,9 +393,13 @@ describe("rich text layout", () => {
     }).toEqual({ width: plain.width, height: plain.height, text: plain.text });
   });
 
-  it.each([20, 40])(
-    "exports matching Canvas and SVG underlines with highlights, wrapping and justified spaces at %spx",
-    async (fontSize) => {
+  it.each([
+    { fontSize: 20, dark: false },
+    { fontSize: 40, dark: false },
+    { fontSize: 20, dark: true },
+  ])(
+    "exports matching Canvas and SVG colors and underlines with highlights, wrapping and justified spaces at $fontSize px (dark=$dark)",
+    async ({ fontSize, dark }) => {
       const { exportToCanvas, exportToSvg } = await import(
         "@excalidraw/excalidraw/scene/export"
       );
@@ -276,6 +423,7 @@ describe("rich text layout", () => {
                   italic: true,
                   underline: true,
                   background: "#fff3bf",
+                  color: "#e03131",
                 },
                 { text: "d", bold: true, italic: true },
               ],
@@ -301,7 +449,16 @@ describe("rich text layout", () => {
       ).toBe(text.width);
       const canvas = document.createElement("canvas");
       const context = canvas.getContext("2d")!;
+      const textColors: unknown[] = [];
+      const rectangleColors: unknown[] = [];
       const spy = vi.spyOn(context, "fillRect");
+      const textSpy = vi.spyOn(context, "fillText");
+      spy.mockImplementation(() => {
+        rectangleColors.push(context.fillStyle);
+      });
+      textSpy.mockImplementation(() => {
+        textColors.push(context.fillStyle);
+      });
       try {
         await exportToCanvas(
           [renderedText],
@@ -311,6 +468,7 @@ describe("rich text layout", () => {
             height: 600,
             offsetTop: 0,
             offsetLeft: 0,
+            exportWithDarkMode: dark,
           },
           {},
           { exportBackground: false, viewBackgroundColor: "#fff" },
@@ -331,29 +489,61 @@ describe("rich text layout", () => {
             ([, , , height]) => height === fontSize * text.lineHeight,
           ),
         ).toBe(true);
+        expect(textColors).toEqual(
+          layout.lines.flatMap((line) =>
+            line.runs.map((run) =>
+              applyDarkModeFilter(run.color ?? text.strokeColor, dark),
+            ),
+          ),
+        );
+        expect(
+          spy.mock.calls.flatMap(([, , , height], index) =>
+            height === Math.max(1, fontSize * 0.05)
+              ? [rectangleColors[index]]
+              : [],
+          ),
+        ).toEqual(underlines.map(() => applyDarkModeFilter("#e03131", dark)));
       } finally {
         spy.mockRestore();
+        textSpy.mockRestore();
       }
       const svg = await exportToSvg(
         [renderedText],
-        { exportBackground: false, viewBackgroundColor: "#fff" },
+        {
+          exportBackground: false,
+          viewBackgroundColor: "#fff",
+          exportWithDarkMode: dark,
+        },
         {},
         { skipInliningFonts: true },
       );
       expect(
-        Array.from(svg.querySelectorAll('rect[fill="#123456"]')).map(
-          (rect) => ({
-            x: Number(rect.getAttribute("x")),
-            y: Number(rect.getAttribute("y")),
-            width: Number(rect.getAttribute("width")),
-            height: Number(rect.getAttribute("height")),
-          }),
-        ),
+        Array.from(
+          svg.querySelectorAll(
+            `rect[fill="${applyDarkModeFilter("#e03131", dark)}"]`,
+          ),
+        ).map((rect) => ({
+          x: Number(rect.getAttribute("x")),
+          y: Number(rect.getAttribute("y")),
+          width: Number(rect.getAttribute("width")),
+          height: Number(rect.getAttribute("height")),
+        })),
       ).toEqual(underlines);
       expect(
         svg.querySelector('text[font-weight="bold"][font-style="italic"]'),
       ).not.toBeNull();
       expect(svg.querySelector('rect[fill="#fff3bf"]')).not.toBeNull();
+      expect(
+        Array.from(svg.querySelectorAll("text")).map((node) =>
+          node.getAttribute("fill"),
+        ),
+      ).toEqual(
+        layout.lines.flatMap((line) =>
+          line.runs.map((run) =>
+            applyDarkModeFilter(run.color ?? text.strokeColor, dark),
+          ),
+        ),
+      );
     },
   );
 });

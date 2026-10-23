@@ -273,6 +273,7 @@ export class AppDuplicate {
     opts?: {
       retainSeed?: boolean;
       preserveFrameChildrenOrder?: boolean;
+      preservePosition?: boolean;
     },
   ) => {
     const [minX, minY, maxX, maxY] = getCommonBounds(elements);
@@ -291,12 +292,14 @@ export class AppDuplicate {
 
     const duplication = duplicateElements({
       type: "everything",
-      elements: elements.map((element) => {
-        return newElementWith(element, {
-          x: element.x + gridX - minX,
-          y: element.y + gridY - minY,
-        });
-      }),
+      elements: opts?.preservePosition
+        ? elements
+        : elements.map((element) => {
+            return newElementWith(element, {
+              x: element.x + gridX - minX,
+              y: element.y + gridY - minY,
+            });
+          }),
       randomizeSeed: !opts?.retainSeed,
       preserveFrameChildrenOrder: opts?.preserveFrameChildrenOrder,
     });

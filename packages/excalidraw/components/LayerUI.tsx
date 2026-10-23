@@ -63,6 +63,7 @@ import { LaserPointerButton } from "./LaserPointerButton";
 import { Toast } from "./Toast";
 import { Toolbar } from "./Toolbar";
 import { SelectionToolbar } from "./SelectionToolbar";
+import { SceneFontPicker } from "./SceneFontPicker";
 import { getToolPanelDock, getToolPanelWidth, ToolPanel } from "./ToolPanel";
 import { useSidebarDockContainer } from "./CanvasLayout";
 import {
@@ -766,7 +767,12 @@ const LayerUI = ({
               appState={appState}
               propertiesAvailable={showSelectedShapeActions(appState, elements)}
               hidden={toolPanelDock === "right" && !!appState.openSidebar}
-              canvasMenu={<tunnels.MainMenuTunnel.Out />}
+              canvasMenu={
+                <>
+                  <tunnels.MainMenuTunnel.Out />
+                  <SceneFontPicker />
+                </>
+              }
               properties={
                 <SelectedShapeActions
                   appState={appState}

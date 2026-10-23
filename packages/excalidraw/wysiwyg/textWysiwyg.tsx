@@ -1112,6 +1112,19 @@ export const textWysiwyg = ({
     });
   };
 
+  const handleBlur = (event: FocusEvent) => {
+    const next = event.relatedTarget;
+    if (
+      next instanceof ownerWindow.Element &&
+      next.closest(
+        `.${CLASSES.SHAPE_ACTIONS_MENU}, .selected-shape-actions, .compact-shape-actions-island, .properties-content, .properties-trigger, .selection-toolbar`,
+      )
+    ) {
+      return;
+    }
+    handleSubmit();
+  };
+
   const cleanup = () => {
     // remove events to ensure they don't late-fire
     editable.onblur = null;
@@ -1160,6 +1173,7 @@ export const textWysiwyg = ({
       (target instanceof ownerWindow.HTMLElement ||
         target instanceof ownerWindow.SVGElement) &&
       (!!(target as Element).closest(`.${CLASSES.SHAPE_ACTIONS_MENU}`) ||
+        !!(target as Element).closest(".selected-shape-actions") ||
         !!(target as Element).closest(".compact-shape-actions-island"));
 
     ownerWindow.setTimeout(() => {
@@ -1173,7 +1187,7 @@ export const textWysiwyg = ({
       // let the focus scroll the container: for a box reaching past the
       // viewport, revealing the caret the textarea has until the click's is
       // placed (the end of the value) would pan the canvas there.
-      editable.onblur = handleSubmit;
+      editable.onblur = handleBlur;
       editable.focus({ preventScroll: true });
       if (pendingInitialSelection) {
         editable.setSelectionRange(
@@ -1240,7 +1254,7 @@ export const textWysiwyg = ({
       ((event.target instanceof ownerWindow.HTMLElement ||
         event.target instanceof ownerWindow.SVGElement) &&
         (event.target.closest(
-          `.${CLASSES.SHAPE_ACTIONS_MENU}, .${CLASSES.ZOOM_ACTIONS}`,
+          `.${CLASSES.SHAPE_ACTIONS_MENU}, .selected-shape-actions, .${CLASSES.ZOOM_ACTIONS}`,
         ) ||
           event.target.closest(".compact-shape-actions-island")) &&
         !isWritableElement(event.target)) ||
@@ -1268,6 +1282,7 @@ export const textWysiwyg = ({
 
   const unbindRichEditor = registerRichTextEditor(ownerDocument, {
     elementId: element.id,
+    hasTextSelection: () => editable.selectionStart !== editable.selectionEnd,
     execute: (command) => {
       if (isDestroyed) {
         return;

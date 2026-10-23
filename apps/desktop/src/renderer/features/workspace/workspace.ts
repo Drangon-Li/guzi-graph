@@ -5,17 +5,26 @@ import { loadFromBlob, CaptureUpdateAction } from "@excalidraw/excalidraw";
 import { restoreAppState } from "@excalidraw/excalidraw/data/restore";
 import { collectSubcanvasScenes } from "@excalidraw/excalidraw/subcanvas";
 import { getNormalizedZoom } from "@excalidraw/excalidraw/scene/normalize";
-import { getCommonBounds, getNonDeletedElements } from "@excalidraw/element";
+import {
+  getCommonBounds,
+  getNonDeletedElements,
+  StoreIncrement,
+} from "@excalidraw/element";
 import {
   exportToCanvas,
   exportToSvg,
 } from "@excalidraw/excalidraw/scene/export";
+import { HistoryDelta } from "@excalidraw/excalidraw/history";
 
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
+  AppState,
 } from "@excalidraw/excalidraw/types";
 import type { HistoryCheckpoint } from "@excalidraw/excalidraw/history";
+
+import type { DurableIncrement, EphemeralIncrement } from "@excalidraw/element";
+import type { FontFamilyValues } from "@excalidraw/element/types";
 
 import {
   createSceneTracker,
@@ -23,6 +32,14 @@ import {
   fileTitle,
 } from "../../shared/model/document";
 import { handleDesktopEditingCommand } from "../editor/desktopEditing";
+import {
+  appendFontReplacementHistory,
+  loadReplacementFont,
+  replaceLayerFont,
+  restoreLayerFontChanges,
+  replacementFontRegistry,
+  replaceSnapshotFonts,
+} from "../editor/canvasFonts";
 import {
   CanvasCommandError,
   CANVAS_CAPABILITIES,
@@ -71,6 +88,33 @@ import type {
   RecoveryDraft,
 } from "../../../shared/desktop-api";
 
+type SlideRuntime = {
+  snapshot?: SceneSnapshot;
+  history?: HistoryCheckpoint;
+  children: Map<string, HistoryCheckpoint>;
+};
+
+type PresentationStructure = {
+  slides: Presentation["slides"];
+  activeSlideId: string;
+  runtime: Map<string, SlideRuntime>;
+};
+
+type PresentationHistoryEntry =
+  | { kind: "canvas"; slideId: string; checkpoint: HistoryCheckpoint }
+  | {
+      kind: "slides" | "fonts";
+      before: PresentationStructure;
+      after: PresentationStructure;
+    };
+
+export interface PresentationHistory {
+  undo: PresentationHistoryEntry[];
+  redo: PresentationHistoryEntry[];
+  replaying: boolean;
+  pending?: { entry: PresentationHistoryEntry; direction: "undo" | "redo" };
+}
+
 export interface CanvasDocument {
   presentation?: Presentation;
   activeSlideId?: string;
@@ -78,14 +122,8 @@ export interface CanvasDocument {
   presenting?: boolean;
   presentationController?: PresentationController;
   invalidateSubsceneHistory?: (ids: string[]) => void;
-  slideRuntime?: Map<
-    string,
-    {
-      snapshot?: SceneSnapshot;
-      history?: HistoryCheckpoint;
-      children: Map<string, HistoryCheckpoint>;
-    }
-  >;
+  slideRuntime?: Map<string, SlideRuntime>;
+  presentationHistory?: PresentationHistory;
   id: string;
   path: string | null;
   title: string;
@@ -96,6 +134,7 @@ export interface CanvasDocument {
   flushEditing?: () => void;
   getSnapshot?: () => SceneSnapshot;
   activeEditor?: () => ExcalidrawImperativeAPI | null;
+  replaceAllSceneFonts?: (fontFamily: FontFamilyValues) => void;
   dirty: boolean;
   revision: number;
   content: string;
@@ -297,6 +336,9 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       presentation,
       activeSlideId: presentation?.slides[0].id,
       slideRuntime: presentation ? new Map() : undefined,
+      presentationHistory: presentation
+        ? { undo: [], redo: [], replaying: false }
+        : undefined,
       id: draft?.id || ownerWindow.crypto.randomUUID(),
       path: file?.path || null,
       title: draft
@@ -310,6 +352,8 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
         ...(file || draft ? { scrollToContent: true } : {}),
         appState: {
           ...initialData.appState,
+          currentItemFontFamily: preferences.defaultFontFamily,
+          fontRegistry: { ...initialData.appState?.fontRegistry, ...registry },
           currentItemStickyNoteMode:
             settingsRef.current.stickyNoteMode ?? "note",
         },
@@ -543,6 +587,241 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     );
   };
 
+  const applyFontToCurrentLayer = async (
+    document: CanvasDocument,
+    fontFamily: FontFamilyValues,
+  ) => {
+    commitText(document);
+    const api = document.activeEditor ? document.activeEditor() : document.api;
+    if (!api || api.isDestroyed) {
+      return;
+    }
+    await loadReplacementFont(
+      api.getSceneElementsIncludingDeleted(),
+      fontFamily,
+      ownerDocument,
+    );
+    if (
+      !documentsRef.current.includes(document) ||
+      api.isDestroyed ||
+      (document.activeEditor ? document.activeEditor() : document.api) !== api
+    ) {
+      return;
+    }
+    commitText(document);
+    const previous = api.getSceneElementsIncludingDeleted();
+    const elements = replaceLayerFont(previous, fontFamily);
+    if (
+      elements === previous &&
+      api.getAppState().currentItemFontFamily === fontFamily
+    ) {
+      return;
+    }
+    flushSync(() =>
+      api.updateScene({
+        elements,
+        appState: {
+          currentItemFontFamily: fontFamily,
+          fontRegistry: replacementFontRegistry(
+            api.getAppState().fontRegistry,
+            fontFamily,
+          ),
+        },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      }),
+    );
+    captureAPI(document);
+  };
+
+  const applyFontToOpenDocuments = async (fontFamily: FontFamilyValues) => {
+    const toSnapshot = (
+      scene: ExcalidrawInitialDataState,
+      viewport?: AppState,
+    ): SceneSnapshot => {
+      const bounds = root.getBoundingClientRect();
+      return {
+        elements: scene.elements ?? [],
+        appState: {
+          ...restoreAppState(scene.appState, viewport),
+          width: scene.appState?.width ?? viewport?.width ?? root.clientWidth,
+          height:
+            scene.appState?.height ?? viewport?.height ?? root.clientHeight,
+          offsetLeft:
+            scene.appState?.offsetLeft ?? viewport?.offsetLeft ?? bounds.left,
+          offsetTop:
+            scene.appState?.offsetTop ?? viewport?.offsetTop ?? bounds.top,
+        },
+        files: scene.files ?? {},
+      };
+    };
+    const documents = documentsRef.current.filter(
+      (document) => document.removalPhase !== "removing",
+    );
+    documents.forEach(commitText);
+    const getScenes = (document: CanvasDocument) =>
+      document.presentation
+        ? document.presentation.slides.map((slide) =>
+            slide.id === document.activeSlideId && document.api
+              ? document.getSnapshot?.() ?? {
+                  elements: document.api.getSceneElementsIncludingDeleted(),
+                  appState: document.api.getAppState(),
+                  files: document.api.getFiles(),
+                }
+              : document.slideRuntime?.get(slide.id)?.snapshot ?? slide.scene,
+          )
+        : [
+            document.getSnapshot?.() ??
+              (document.api
+                ? {
+                    elements: document.api.getSceneElementsIncludingDeleted(),
+                    appState: document.api.getAppState(),
+                    files: document.api.getFiles(),
+                  }
+                : document.initialData),
+          ];
+    await loadReplacementFont(
+      documents.flatMap((document) =>
+        getScenes(document).flatMap((scene) => [
+          ...(scene.elements ?? []),
+          ...Object.values(scene.appState?.subscenes ?? {}).flatMap(
+            (child) => child.elements,
+          ),
+        ]),
+      ),
+      fontFamily,
+      ownerDocument,
+    );
+    for (const document of documents) {
+      if (
+        !documentsRef.current.includes(document) ||
+        document.removalPhase === "removing"
+      ) {
+        continue;
+      }
+      commitText(document);
+      const fontHistory = document.presentationHistory;
+      if (fontHistory) {
+        checkpointSlide(document);
+      }
+      const beforeFonts = fontHistory
+        ? clonePresentationStructure(document)
+        : undefined;
+      const beforeContent = document.content;
+      if (fontHistory) {
+        fontHistory.replaying = true;
+      }
+      try {
+        if (document.replaceAllSceneFonts) {
+          flushSync(() => document.replaceAllSceneFonts!(fontFamily));
+          commitText(document);
+          captureAPI(document);
+        } else if (document.api && !document.api.isDestroyed) {
+          const previous =
+            getScenes(document)[
+              document.presentation
+                ? document.presentation.slides.findIndex(
+                    (slide) => slide.id === document.activeSlideId,
+                  )
+                : 0
+            ];
+          const next = replaceSnapshotFonts(previous, fontFamily);
+          if (next !== previous) {
+            flushSync(() =>
+              document.api!.updateScene({
+                elements: next.elements,
+                appState: {
+                  currentItemFontFamily: fontFamily,
+                  fontRegistry:
+                    next.appState?.fontRegistry ??
+                    document.api!.getAppState().fontRegistry,
+                  subscenes:
+                    next.appState?.subscenes ??
+                    document.api!.getAppState().subscenes,
+                },
+                captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+              }),
+            );
+            captureAPI(document);
+          }
+        }
+        if (document.presentation) {
+          if (document.api) {
+            checkpointSlide(document);
+          }
+          for (const slide of document.presentation.slides) {
+            if (slide.id === document.activeSlideId && document.api) {
+              continue;
+            }
+            const runtime = document.slideRuntime?.get(slide.id);
+            const previous = runtime?.snapshot ?? slide.scene;
+            const next = replaceSnapshotFonts(previous, fontFamily);
+            if (next === previous) {
+              continue;
+            }
+            if (!document.initialized) {
+              document.unsavedCopy = true;
+              document.dirty = true;
+            }
+            const children = new Map(runtime?.children);
+            for (const [id, child] of Object.entries(
+              previous.appState?.subscenes ?? {},
+            )) {
+              const childHistory = appendFontReplacementHistory(
+                children.get(id),
+                child,
+                next.appState!.subscenes![id],
+              );
+              if (childHistory) {
+                children.set(id, childHistory);
+              }
+            }
+            slide.scene = next;
+            document.slideRuntime!.set(slide.id, {
+              snapshot: toSnapshot(next, document.api?.getAppState()),
+              history: appendFontReplacementHistory(
+                runtime?.history,
+                previous,
+                next,
+              ),
+              children,
+            });
+            if (slide.id === document.activeSlideId) {
+              document.initialData = next;
+            }
+          }
+          recordContent(document, serializePresentation(document.presentation));
+        } else if (!document.api) {
+          const next = replaceSnapshotFonts(document.initialData, fontFamily);
+          if (next === document.initialData) {
+            continue;
+          }
+          if (!document.initialized) {
+            document.unsavedCopy = true;
+            document.dirty = true;
+          }
+          document.initialData = next;
+          capture(document, toSnapshot(document.initialData));
+        }
+      } finally {
+        if (fontHistory) {
+          fontHistory.replaying = false;
+        }
+      }
+      if (fontHistory && beforeFonts && document.content !== beforeContent) {
+        fontHistory.undo.push({
+          kind: "fonts",
+          before: beforeFonts,
+          after: clonePresentationStructure(document),
+        });
+        fontHistory.redo.length = 0;
+      }
+      if (!document.initialized && document.dirty) {
+        scheduleDraft(document);
+      }
+    }
+    refresh();
+  };
+
   const initialize = (
     document: CanvasDocument,
     api: ExcalidrawImperativeAPI,
@@ -759,10 +1038,30 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     if (!slide || document.activeSlideId === id || document.presenting) {
       return;
     }
-    checkpointSlide(document);
+    if (
+      document.presentation!.slides.some(
+        (slide) => slide.id === document.activeSlideId,
+      )
+    ) {
+      checkpointSlide(document);
+    }
     const cached = document.slideRuntime!.get(id);
     document.activeSlideId = id;
-    document.initialData = cached?.snapshot ?? slide.scene;
+    const preferences = resolveEditorPreferences(
+      settingsRef.current.editorPreferences,
+    );
+    const scene = cached?.snapshot ?? slide.scene;
+    document.initialData = {
+      ...scene,
+      appState: {
+        ...scene.appState,
+        currentItemFontFamily: preferences.defaultFontFamily,
+        fontRegistry: {
+          ...scene.appState?.fontRegistry,
+          ...registerPreferenceFonts(preferences),
+        },
+      },
+    };
     document.tracker = createSceneTracker();
     document.activeSlideContent = undefined;
     document.api = null;
@@ -772,57 +1071,343 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     refresh();
   };
 
+  const recordPresentationIncrement = (
+    document: CanvasDocument,
+    increment: DurableIncrement | EphemeralIncrement,
+  ) => {
+    const history = document.presentationHistory;
+    if (
+      !history ||
+      history.replaying ||
+      history.pending ||
+      !StoreIncrement.isDurable(increment) ||
+      increment.delta instanceof HistoryDelta ||
+      !document.activeSlideId
+    ) {
+      return;
+    }
+    const delta = increment.delta;
+    const state = delta.appState.delta.inserted;
+    if (
+      delta.elements.isEmpty() &&
+      !("viewBackgroundColor" in state) &&
+      !("name" in state)
+    ) {
+      return;
+    }
+    history.undo.push({
+      kind: "canvas",
+      slideId: document.activeSlideId,
+      checkpoint: { undo: [HistoryDelta.inverse(delta)], redo: [] },
+    });
+    history.redo.length = 0;
+    refresh();
+  };
+
+  const replayPresentationCanvas = (
+    document: CanvasDocument,
+    entry: Extract<PresentationHistoryEntry, { kind: "canvas" }>,
+    direction: "undo" | "redo",
+  ) => {
+    const history = document.presentationHistory!;
+    const api = document.api;
+    if (!api || api.isDestroyed || api.getAppState().isLoading) {
+      history.pending = { entry, direction };
+      refresh();
+      return;
+    }
+    history.replaying = true;
+    try {
+      api.history.restoreCheckpoint!(entry.checkpoint);
+      flushSync(() => api.history[direction]!());
+      entry.checkpoint = api.history.checkpoint!();
+      captureAPI(document);
+    } finally {
+      history.replaying = false;
+      delete history.pending;
+    }
+    refresh();
+  };
+
+  const resumePresentationHistory = (
+    document: CanvasDocument,
+    api: ExcalidrawImperativeAPI,
+  ) => {
+    const pending = document.presentationHistory?.pending;
+    if (!pending || pending.entry.kind !== "canvas") {
+      return;
+    }
+    // Initialization calls back before the store commits the mounted scene.
+    ownerWindow.queueMicrotask(() => {
+      if (
+        document.api === api &&
+        !api.isDestroyed &&
+        document.presentationHistory?.pending === pending &&
+        pending.entry.kind === "canvas"
+      ) {
+        replayPresentationCanvas(document, pending.entry, pending.direction);
+      }
+    });
+  };
+
+  const presentationStructure = (
+    document: CanvasDocument,
+  ): PresentationStructure => ({
+    slides: document.presentation!.slides.map((slide) => ({ ...slide })),
+    activeSlideId: document.activeSlideId!,
+    runtime: new Map(document.slideRuntime),
+  });
+
+  const clonePresentationStructure = (
+    document: CanvasDocument,
+  ): PresentationStructure => {
+    const state = presentationStructure(document);
+    return {
+      ...state,
+      slides: JSON.parse(JSON.stringify(state.slides)),
+      runtime: new Map(
+        [...state.runtime].map(([id, runtime]) => [
+          id,
+          {
+            ...runtime,
+            snapshot: runtime.snapshot
+              ? JSON.parse(JSON.stringify(runtime.snapshot))
+              : undefined,
+            children: new Map(runtime.children),
+          },
+        ]),
+      ),
+    };
+  };
+
+  const replayPresentationFonts = (
+    document: CanvasDocument,
+    source: PresentationStructure,
+    target: PresentationStructure,
+  ) => {
+    const restoreLayer = (
+      current: ExcalidrawInitialDataState,
+      previous: ExcalidrawInitialDataState,
+      next: ExcalidrawInitialDataState,
+    ): SceneSnapshot => {
+      const state: AppState = {
+        ...restoreAppState(current.appState, undefined),
+        width: current.appState?.width ?? root.clientWidth,
+        height: current.appState?.height ?? root.clientHeight,
+        offsetLeft: current.appState?.offsetLeft ?? 0,
+        offsetTop: current.appState?.offsetTop ?? 0,
+      };
+      return {
+        elements: restoreLayerFontChanges(
+          current.elements ?? [],
+          previous.elements ?? [],
+          next.elements ?? [],
+        ),
+        appState: {
+          ...state,
+          fontRegistry: {
+            ...state.fontRegistry,
+            ...next.appState?.fontRegistry,
+          },
+        },
+        files: current.files ?? {},
+      };
+    };
+    for (const slide of document.presentation!.slides) {
+      const previous = source.slides.find(
+        (item) => item.id === slide.id,
+      )?.scene;
+      const next = target.slides.find((item) => item.id === slide.id)?.scene;
+      if (!previous || !next) {
+        continue;
+      }
+      const runtime = document.slideRuntime!.get(slide.id);
+      const current = runtime?.snapshot ?? slide.scene;
+      const restored = restoreLayer(current, previous, next);
+      const subscenes = { ...current.appState?.subscenes };
+      for (const [id, child] of Object.entries(subscenes)) {
+        const previousChild = previous.appState?.subscenes?.[id];
+        const nextChild = next.appState?.subscenes?.[id];
+        if (previousChild && nextChild) {
+          const restoredChild = restoreLayer(child, previousChild, nextChild);
+          subscenes[id] = {
+            ...child,
+            elements: restoredChild.elements,
+            appState: {
+              ...child.appState,
+              fontRegistry: restoredChild.appState.fontRegistry,
+            },
+          };
+        }
+      }
+      restored.appState.subscenes = subscenes;
+      slide.scene = restored;
+      document.slideRuntime!.set(slide.id, {
+        ...runtime,
+        snapshot: restored,
+        children: runtime?.children ?? new Map(),
+      });
+      if (slide.id === document.activeSlideId && document.api) {
+        flushSync(() =>
+          document.api!.updateScene({
+            elements: restored.elements,
+            appState: {
+              fontRegistry: restored.appState.fontRegistry,
+              subscenes,
+            },
+            captureUpdate: CaptureUpdateAction.NEVER,
+          }),
+        );
+      }
+    }
+    selectSlide(document, target.activeSlideId);
+    recordContent(document, serializePresentation(document.presentation!));
+    refresh();
+  };
+
+  const performPresentationHistory = (
+    document: CanvasDocument,
+    direction: "undo" | "redo",
+  ) => {
+    const history = document.presentationHistory;
+    if (!history || history.replaying) {
+      return false;
+    }
+    if (document.presenting || history.pending) {
+      return true;
+    }
+    commitText(document);
+    const entry = history[direction].pop();
+    if (!entry) {
+      return true;
+    }
+    history[direction === "undo" ? "redo" : "undo"].push(entry);
+    if (entry.kind === "canvas") {
+      if (document.activeSlideId === entry.slideId) {
+        replayPresentationCanvas(document, entry, direction);
+      } else {
+        history.pending = { entry, direction };
+        selectSlide(document, entry.slideId);
+      }
+    } else {
+      checkpointSlide(document);
+      const target = direction === "undo" ? entry.before : entry.after;
+      if (entry.kind === "fonts") {
+        replayPresentationFonts(
+          document,
+          direction === "undo" ? entry.after : entry.before,
+          target,
+        );
+        return true;
+      }
+      const currentScenes = new Map(
+        document.presentation!.slides.map((slide) => [slide.id, slide.scene]),
+      );
+      if (entry.kind === "slides") {
+        // A removed page must retain child edits and local history made after insertion.
+        const source = direction === "undo" ? entry.after : entry.before;
+        source.slides = source.slides.map((slide) => ({
+          ...slide,
+          scene: currentScenes.get(slide.id) ?? slide.scene,
+        }));
+        source.runtime = new Map(
+          source.slides.flatMap((slide) => {
+            const runtime =
+              document.slideRuntime!.get(slide.id) ??
+              source.runtime.get(slide.id);
+            return runtime ? [[slide.id, runtime] as const] : [];
+          }),
+        );
+      }
+      document.presentation!.slides = target.slides.map((slide) => ({
+        ...slide,
+        scene: currentScenes.get(slide.id) ?? slide.scene,
+      }));
+      document.slideRuntime = new Map(
+        [...target.runtime].map(([id, runtime]) => [
+          id,
+          document.slideRuntime!.get(id) ?? runtime,
+        ]),
+      );
+      selectSlide(document, target.activeSlideId);
+      recordContent(document, serializePresentation(document.presentation!));
+      refresh();
+    }
+    return true;
+  };
+
   const changeSlides = (
     document: CanvasDocument,
     change: (deck: Presentation) => void,
+    activeAfter?: () => string,
+    affectedSlideId?: string,
   ) => {
     if (!document.presentation || document.presenting) {
       return;
     }
-    commitText(document);
+    checkpointSlide(document);
+    const before = presentationStructure(document);
+    const previousContent = serializePresentation(document.presentation);
     change(document.presentation);
-    recordContent(document, serializePresentation(document.presentation));
+    const content = serializePresentation(document.presentation);
+    if (content === previousContent) {
+      return;
+    }
+    if (activeAfter) {
+      selectSlide(document, activeAfter());
+    }
+    const after = presentationStructure(document);
+    if (affectedSlideId) {
+      before.activeSlideId = affectedSlideId;
+      after.activeSlideId = affectedSlideId;
+    }
+    const history = document.presentationHistory!;
+    history.undo.push({ kind: "slides", before, after });
+    history.redo.length = 0;
+    recordContent(document, content);
+    refresh();
   };
 
   const addSlide = (document: CanvasDocument, duplicateId?: string) => {
     let id = "";
-    changeSlides(document, (deck) => {
-      const source = deck.slides.find((slide) => slide.id === duplicateId);
-      id = ownerWindow.crypto.randomUUID();
-      const index = deck.slides.findIndex(
-        (slide) => slide.id === (duplicateId ?? document.activeSlideId),
-      );
-      const title = settingsRef.current.language === "en" ? "Slide" : "页面";
-      const slide = {
-        id,
-        ...(source?.bounds ? { bounds: { ...source.bounds } } : {}),
-        title: source
-          ? `${source.title} ${
-              settingsRef.current.language === "en" ? "copy" : "副本"
-            }`
-          : `${title} ${deck.slides.length + 1}`,
-        scene: source
-          ? copyPresentationScene(source.scene)
-          : {
-              appState: {
-                ...document.initialData.appState,
-                subscenes: {},
-                selectedElementIds: {},
-                viewBackgroundColor: "#ffffff",
+    changeSlides(
+      document,
+      (deck) => {
+        const source = deck.slides.find((slide) => slide.id === duplicateId);
+        id = ownerWindow.crypto.randomUUID();
+        const index = deck.slides.findIndex(
+          (slide) => slide.id === (duplicateId ?? document.activeSlideId),
+        );
+        const title = settingsRef.current.language === "en" ? "Slide" : "页面";
+        const slide = {
+          id,
+          ...(source?.bounds ? { bounds: { ...source.bounds } } : {}),
+          title: source
+            ? `${source.title} ${
+                settingsRef.current.language === "en" ? "copy" : "副本"
+              }`
+            : `${title} ${deck.slides.length + 1}`,
+          scene: source
+            ? copyPresentationScene(source.scene)
+            : {
+                appState: {
+                  ...document.initialData.appState,
+                  subscenes: {},
+                  selectedElementIds: {},
+                  viewBackgroundColor: "#ffffff",
+                },
+                elements: [],
+                files: {},
               },
-              elements: [],
-              files: {},
-            },
-      };
-      deck.slides = [
-        ...deck.slides.slice(0, index + 1),
-        slide,
-        ...deck.slides.slice(index + 1),
-      ];
-    });
-    if (id) {
-      selectSlide(document, id);
-    }
+        };
+        deck.slides = [
+          ...deck.slides.slice(0, index + 1),
+          slide,
+          ...deck.slides.slice(index + 1),
+        ];
+      },
+      () => id,
+    );
   };
 
   const copySlide = (document: CanvasDocument, id: string): string | null => {
@@ -867,13 +1452,16 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       bounds: { ...getSlideBounds(slide, source.width, source.height) },
       scene: copyPresentationScene(slide.scene),
     }));
-    changeSlides(document, (deck) => {
-      const index = deck.slides.findIndex(
-        (slide) => slide.id === document.activeSlideId,
-      );
-      deck.slides.splice(index + 1, 0, ...slides);
-    });
-    selectSlide(document, slides[0].id);
+    changeSlides(
+      document,
+      (deck) => {
+        const index = deck.slides.findIndex(
+          (slide) => slide.id === document.activeSlideId,
+        );
+        deck.slides.splice(index + 1, 0, ...slides);
+      },
+      () => slides[0].id,
+    );
   };
 
   const deleteSlide = (document: CanvasDocument, id: string) => {
@@ -885,38 +1473,50 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     if (index < 0) {
       return;
     }
-    if (document.activeSlideId === id) {
-      selectSlide(
-        document,
-        deck.slides[index + 1]?.id ?? deck.slides[index - 1].id,
-      );
-    }
-    changeSlides(document, () => {
-      deck.slides = deck.slides.filter((slide) => slide.id !== id);
-      document.slideRuntime!.delete(id);
-    });
+    const activeAfter =
+      document.activeSlideId === id
+        ? deck.slides[index + 1]?.id ?? deck.slides[index - 1].id
+        : document.activeSlideId!;
+    changeSlides(
+      document,
+      () => {
+        deck.slides = deck.slides.filter((slide) => slide.id !== id);
+        document.slideRuntime!.delete(id);
+      },
+      () => activeAfter,
+    );
   };
 
   const renameSlide = (document: CanvasDocument, id: string, title: string) => {
     if (title.trim()) {
-      changeSlides(document, (deck) => {
-        deck.slides = deck.slides.map((slide) =>
-          slide.id === id ? { ...slide, title: title.trim() } : slide,
-        );
-      });
+      changeSlides(
+        document,
+        (deck) => {
+          deck.slides = deck.slides.map((slide) =>
+            slide.id === id ? { ...slide, title: title.trim() } : slide,
+          );
+        },
+        undefined,
+        id,
+      );
     }
   };
 
   const moveSlide = (document: CanvasDocument, id: string, toIndex: number) => {
-    changeSlides(document, (deck) => {
-      const fromIndex = deck.slides.findIndex((slide) => slide.id === id);
-      if (fromIndex < 0 || toIndex < 0 || toIndex >= deck.slides.length) {
-        return;
-      }
-      const slides = [...deck.slides];
-      slides.splice(toIndex, 0, slides.splice(fromIndex, 1)[0]);
-      deck.slides = slides;
-    });
+    changeSlides(
+      document,
+      (deck) => {
+        const fromIndex = deck.slides.findIndex((slide) => slide.id === id);
+        if (fromIndex < 0 || toIndex < 0 || toIndex >= deck.slides.length) {
+          return;
+        }
+        const slides = [...deck.slides];
+        slides.splice(toIndex, 0, slides.splice(fromIndex, 1)[0]);
+        deck.slides = slides;
+      },
+      undefined,
+      id,
+    );
   };
 
   const guardClose = async (
@@ -1141,14 +1741,39 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
           }
         }
         if (update.editorPreferences) {
-          registerPreferenceFonts(update.editorPreferences);
+          const preferences = update.editorPreferences;
+          const registry = registerPreferenceFonts(preferences);
+          const applyDefaults = <T extends ExcalidrawInitialDataState>(
+            scene: T,
+          ): T => ({
+            ...scene,
+            appState: {
+              ...scene.appState,
+              currentItemFontFamily: preferences.defaultFontFamily,
+              fontRegistry: { ...scene.appState?.fontRegistry, ...registry },
+            },
+          });
           for (const document of documentsRef.current) {
+            document.initialData = applyDefaults(document.initialData);
+            for (const slide of document.presentation?.slides ?? []) {
+              slide.scene = applyDefaults(slide.scene);
+            }
+            for (const runtime of document.slideRuntime?.values() ?? []) {
+              if (runtime.snapshot) {
+                runtime.snapshot = applyDefaults(runtime.snapshot);
+              }
+            }
             for (const editor of new Set([
               document.api,
               document.activeEditor?.(),
             ])) {
               editor?.updateScene({
                 appState: {
+                  currentItemFontFamily: preferences.defaultFontFamily,
+                  fontRegistry: {
+                    ...editor?.getAppState().fontRegistry,
+                    ...registry,
+                  },
                   fontTopPicks: update.editorPreferences.fontTopPicks,
                   colorTopPicks: getPreferenceColorTopPicks(
                     update.editorPreferences,
@@ -1803,13 +2428,16 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
           },
           scene: copyPresentationScene(slide.scene),
         };
-        changeSlides(document, (deck) => {
-          const index = deck.slides.findIndex(
-            (item) => item.id === document.activeSlideId,
-          );
-          deck.slides.splice(index + 1, 0, copy);
-        });
-        selectSlide(document, copy.id);
+        changeSlides(
+          document,
+          (deck) => {
+            const index = deck.slides.findIndex(
+              (item) => item.id === document.activeSlideId,
+            );
+            deck.slides.splice(index + 1, 0, copy);
+          },
+          () => copy.id,
+        );
       } else {
         throw new CanvasCommandError(
           "INVALID_ARGUMENT",
@@ -2600,6 +3228,9 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     refreshProjects,
     newDocument: () => createDocument(),
     newPresentation,
+    recordPresentationIncrement,
+    performPresentationHistory,
+    resumePresentationHistory,
     selectSlide,
     addSlide,
     copySlide,
@@ -2618,6 +3249,8 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     closeDocument,
     removeFile,
     updateSettings,
+    applyFontToCurrentLayer,
+    applyFontToOpenDocuments,
     changeDirectory,
     changeTheme,
     mutateFile,

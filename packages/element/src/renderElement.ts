@@ -706,7 +706,7 @@ const drawElementOnCanvas = (
               }
               context.font = getRichTextFont(element, run);
               context.fillStyle = applyDarkModeFilter(
-                element.strokeColor,
+                run.color ?? element.strokeColor,
                 renderConfig.theme === THEME.DARK,
               );
               context.fillText(run.text, run.x, run.y + baseline);

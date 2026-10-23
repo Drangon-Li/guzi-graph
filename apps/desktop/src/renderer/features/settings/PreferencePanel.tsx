@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import {
   FONT_FAMILY,
@@ -11,6 +11,7 @@ import { Button } from "@excalidraw/excalidraw/components/Button";
 import { CloseIcon } from "@excalidraw/excalidraw/components/icons";
 
 import type { PreferenceSection } from "@excalidraw/excalidraw/types";
+import type { FontFamilyValues } from "@excalidraw/element/types";
 
 import { DesktopSelect } from "../../shared/ui/DesktopControls";
 import {
@@ -62,12 +63,14 @@ export const PreferencePanel = ({
   section,
   language,
   onChange,
+  onApplyFontToOpenDocuments,
 }: {
   root: HTMLElement;
   preferences?: EditorPreferences;
   section: PreferenceSection;
   language: DesktopLanguage;
   onChange: (preferences: EditorPreferences) => void | Promise<void>;
+  onApplyFontToOpenDocuments?: (fontFamily: FontFamilyValues) => Promise<void>;
 }) => {
   const [draft, setDraft] = useState(() =>
     resolveEditorPreferences(preferences),
@@ -77,6 +80,14 @@ export const PreferencePanel = ({
   const [selectedSystemFamily, setSelectedSystemFamily] = useState("");
   const [error, setError] = useState("");
   const [loadingFonts, setLoadingFonts] = useState(false);
+  const [pendingFont, setPendingFont] = useState<{
+    id: number;
+    family: string;
+    systemFont?: boolean;
+  } | null>(null);
+  const [savingFont, setSavingFont] = useState(false);
+  const [fontStatus, setFontStatus] = useState("");
+  const fontConfirmation = useRef<HTMLDivElement>(null);
   const [color, setColor] = useState("#ffffff");
   const en = language === "en";
   const [fontSizes, setFontSizes] = useState(draft.fontSizePresets);
@@ -86,6 +97,11 @@ export const PreferencePanel = ({
     setDraft(next);
     setFontSizes(next.fontSizePresets);
   }, [preferences]);
+  useEffect(() => {
+    if (pendingFont) {
+      fontConfirmation.current?.focus();
+    }
+  }, [pendingFont]);
   const colorSection =
     section === "elementStroke"
       ? ({
@@ -132,6 +148,57 @@ export const PreferencePanel = ({
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
+  const applyDefaultFont = async (replaceExisting: boolean) => {
+    if (!pendingFont || savingFont) {
+      return;
+    }
+    const { id, family, systemFont } = pendingFont;
+    const next = {
+      ...draft,
+      defaultFontFamily: id,
+      defaultFontName: family,
+      systemFonts:
+        systemFont && !draft.systemFonts.some((font) => font.id === id)
+          ? [...draft.systemFonts, { id, family }]
+          : draft.systemFonts,
+    };
+    setSavingFont(true);
+    setError("");
+    setFontStatus("");
+    let saved = false;
+    try {
+      registerPreferenceFonts(next);
+      await onChange(next);
+      saved = true;
+      setDraft(resolveEditorPreferences(next));
+      if (replaceExisting) {
+        await onApplyFontToOpenDocuments?.(id as FontFamilyValues);
+      }
+      setPendingFont(null);
+      setFontStatus(
+        replaceExisting
+          ? en
+            ? "Default font saved and open documents updated."
+            : "默认字体已保存，已替换打开文档中的文字。"
+          : en
+          ? "Default font saved. Existing text is unchanged."
+          : "默认字体已保存，已有文字保持不变。",
+      );
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setError(
+        saved
+          ? `${
+              en
+                ? "Default font saved, but replacing existing text failed: "
+                : "默认字体已保存，但替换已有文字失败："
+            }${message}`
+          : message,
+      );
+    } finally {
+      setSavingFont(false);
+    }
+  };
   const loadFonts = async () => {
     setLoadingFonts(true);
     setError("");
@@ -176,13 +243,11 @@ export const PreferencePanel = ({
       );
       return;
     }
-    void update({
-      ...draft,
-      systemFonts: existing
-        ? draft.systemFonts
-        : [...draft.systemFonts, { id, family: selectedSystemFamily }],
-      defaultFontFamily: id,
-      defaultFontName: selectedSystemFamily,
+    setFontStatus("");
+    setPendingFont({
+      id,
+      family: selectedSystemFamily,
+      systemFont: true,
     });
   };
   return (
@@ -196,21 +261,78 @@ export const PreferencePanel = ({
             <DesktopSelect
               root={root}
               label={en ? "Default font" : "默认字体"}
+              disabled={savingFont}
               value={String(draft.defaultFontFamily)}
               options={fonts.map(({ id, family }) => ({
                 value: String(id),
                 label: family,
               }))}
-              onValueChange={(value) =>
-                void update({
-                  ...draft,
-                  defaultFontFamily: Number(value),
-                  defaultFontName: fonts.find(
-                    (font) => font.id === Number(value),
-                  )?.family,
-                })
-              }
+              onValueChange={(value) => {
+                const font = fonts.find((item) => item.id === Number(value));
+                if (font) {
+                  setError("");
+                  setFontStatus("");
+                  setPendingFont(font);
+                }
+              }}
             />
+            {pendingFont && (
+              <div
+                className="desktop-preference-panel__font-confirm"
+                ref={fontConfirmation}
+                role="group"
+                tabIndex={-1}
+                aria-label={en ? "Apply default font" : "应用默认字体"}
+                aria-busy={savingFont}
+              >
+                <p>
+                  {en
+                    ? `Use ${pendingFont.family} as the default font?`
+                    : `将默认字体设为 ${pendingFont.family}？`}
+                </p>
+                {onApplyFontToOpenDocuments && (
+                  <p className="desktop-preference-panel__hint">
+                    {en
+                      ? "You can also replace text in all open documents, including every slide and subcanvas. Locked text is skipped."
+                      : "可同时替换全部已打开文档中的文字，包含所有 PPT 页和子画布，跳过锁定文字。"}
+                  </p>
+                )}
+                <div className="desktop-preference-panel__font-actions">
+                  <Button
+                    className="desktop-preference-panel__button"
+                    disabled={savingFont}
+                    onSelect={() => void applyDefaultFont(false)}
+                  >
+                    {en ? "New text only" : "仅用于新内容"}
+                  </Button>
+                  {onApplyFontToOpenDocuments && (
+                    <Button
+                      className="desktop-preference-panel__button"
+                      disabled={savingFont}
+                      onSelect={() => void applyDefaultFont(true)}
+                    >
+                      {en
+                        ? "Also replace open documents"
+                        : "同时替换已打开文档"}
+                    </Button>
+                  )}
+                  <Button
+                    className="desktop-preference-panel__button"
+                    disabled={savingFont}
+                    onSelect={() => {
+                      setPendingFont(null);
+                      setError("");
+                    }}
+                  >
+                    {en ? "Cancel" : "取消"}
+                  </Button>
+                </div>
+                {savingFont && (
+                  <p role="status">{en ? "Applying…" : "正在应用…"}</p>
+                )}
+              </div>
+            )}
+            {fontStatus && <p role="status">{fontStatus}</p>}
           </div>
           <fieldset>
             <legend>
@@ -221,6 +343,7 @@ export const PreferencePanel = ({
                 <label key={id}>
                   <input
                     type="checkbox"
+                    disabled={savingFont}
                     checked={draft.fontTopPicks.includes(id)}
                     onChange={(event) => {
                       const next = event.target.checked
@@ -253,7 +376,7 @@ export const PreferencePanel = ({
             </p>
             <Button
               className="desktop-preference-panel__button"
-              disabled={loadingFonts}
+              disabled={loadingFonts || savingFont}
               onSelect={() => void loadFonts()}
             >
               {loadingFonts
@@ -293,6 +416,7 @@ export const PreferencePanel = ({
                 </p>
                 <Button
                   className="desktop-preference-panel__button"
+                  disabled={savingFont}
                   onSelect={addSystemFont}
                 >
                   {en ? "Add and use as default" : "添加并设为默认字体"}
@@ -491,8 +615,8 @@ export const PreferencePanel = ({
       <p className="desktop-preference-panel__hint">
         {section === "fonts"
           ? en
-            ? "Defaults apply to new drawings. Installed font names are saved with each drawing."
-            : "默认值用于新画布；本机字体名称会随画布保存。"
+            ? "The default font applies to new text in all drawings. You choose whether to replace existing text. Installed font names are saved with each drawing."
+            : "默认字体用于所有画布中的新文字；是否替换已有文字由你选择。本机字体名称会随画布保存。"
           : section === "fontSizes"
           ? en
             ? "Font size shortcuts do not change existing text."

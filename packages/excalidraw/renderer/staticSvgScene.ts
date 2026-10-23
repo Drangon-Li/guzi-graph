@@ -933,7 +933,7 @@ const renderElementToSvg = (
               text.setAttribute(
                 "fill",
                 applyDarkModeFilter(
-                  element.strokeColor,
+                  run.color ?? element.strokeColor,
                   renderConfig.theme === THEME.DARK,
                 ),
               );

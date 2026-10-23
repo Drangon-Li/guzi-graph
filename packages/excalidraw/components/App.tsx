@@ -809,6 +809,7 @@ class App extends React.Component<AppProps, AppState> {
       isDestroyed: false,
       commitEditing: () => this.text.textWysiwygSubmitHandler?.(),
       desktopSave: (saveAs = false) => saveDesktopDocument(this, saveAs),
+      pasteFromClipboard: (event) => this.clipboard.pasteFromHost(event),
       updateScene: this.updateScene,
       applyDeltas: this.applyDeltas,
       mutateElement: this.mutateElement,
@@ -4685,7 +4686,11 @@ class App extends React.Component<AppProps, AppState> {
   addElementsFromPasteOrLibrary = (opts: {
     elements: readonly ExcalidrawElement[];
     files: BinaryFiles | null;
-    position: { clientX: number; clientY: number } | "cursor" | "center";
+    position:
+      | { clientX: number; clientY: number }
+      | "cursor"
+      | "center"
+      | "original";
     retainSeed?: boolean;
     fit?: SetViewportOptions["fit"];
     preserveFrameChildrenOrder?: boolean;
@@ -4706,12 +4711,16 @@ class App extends React.Component<AppProps, AppState> {
         ? this.viewport.lastPosition.y
         : this.state.height / 2 + this.state.offsetTop;
 
+    const [minX, minY, maxX, maxY] = getCommonBounds(elements);
     const duplication = this.duplicate.duplicateAtSceneCoords(
       elements,
-      viewportCoordsToSceneCoords({ clientX, clientY }, this.state),
+      opts.position === "original"
+        ? { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
+        : viewportCoordsToSceneCoords({ clientX, clientY }, this.state),
       {
         retainSeed: opts.retainSeed,
         preserveFrameChildrenOrder: opts.preserveFrameChildrenOrder,
+        preservePosition: opts.position === "original",
       },
     );
 

@@ -10,8 +10,10 @@ import {
 
 import { loadFromBlob } from "@excalidraw/excalidraw";
 import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
+import { Fonts } from "@excalidraw/excalidraw/fonts";
 
-import { getSystemFontId } from "@excalidraw/common";
+import { FONT_FAMILY, getSystemFontId } from "@excalidraw/common";
+import { API } from "@excalidraw/excalidraw/tests/helpers/api";
 import {
   createTableData,
   createTableElements,
@@ -2153,6 +2155,324 @@ describe("desktop document workspace", () => {
     });
     expect(api.updateScene).toHaveBeenCalledTimes(1);
     expect(child.updateScene).not.toHaveBeenCalled();
+  });
+
+  it("replaces only the active canvas layer and skips locked text", async () => {
+    const hook = await mount();
+    let document!: CanvasDocument;
+    act(() => {
+      document = hook.result.current.newDocument();
+    });
+    const editor = attachSlide(hook, document);
+    const text = API.createElement({
+      type: "text",
+      id: "root-text",
+      fontFamily: FONT_FAMILY.Excalifont,
+    });
+    const locked = API.createElement({
+      type: "text",
+      id: "locked",
+      fontFamily: FONT_FAMILY.Excalifont,
+      locked: true,
+    });
+    const childText = API.createElement({
+      type: "text",
+      id: "child-text",
+      fontFamily: FONT_FAMILY.Excalifont,
+    });
+    editor.edit({
+      ...snapshot(),
+      elements: [text, locked],
+      appState: {
+        ...snapshot().appState,
+        subscenes: {
+          child: {
+            version: 1,
+            title: "child",
+            elements: [childText],
+            appState: {},
+          },
+        },
+      },
+    });
+    await act(async () =>
+      hook.result.current.applyFontToCurrentLayer(document, FONT_FAMILY.Nunito),
+    );
+    expect(editor.api.getSceneElementsIncludingDeleted()[0]).toMatchObject({
+      fontFamily: FONT_FAMILY.Nunito,
+    });
+    expect(editor.api.getSceneElementsIncludingDeleted()[1]).toBe(locked);
+    expect(editor.api.getAppState().currentItemFontFamily).toBe(
+      FONT_FAMILY.Nunito,
+    );
+    expect(editor.api.getAppState().subscenes.child.elements[0]).toBe(
+      childText,
+    );
+    expect(editor.api.updateScene).toHaveBeenLastCalledWith(
+      expect.objectContaining({ captureUpdate: "IMMEDIATELY" }),
+    );
+    expect(document.dirty).toBe(true);
+  });
+
+  it.each(["empty", "same-font", "locked"])(
+    "sets the current layer default on a %s canvas without changing its text",
+    async (kind) => {
+      const hook = await mount();
+      let document!: CanvasDocument;
+      act(() => {
+        document = hook.result.current.newDocument();
+      });
+      const editor = attachSlide(hook, document);
+      const elements =
+        kind === "empty"
+          ? []
+          : [
+              API.createElement({
+                type: "text",
+                fontFamily:
+                  kind === "same-font"
+                    ? FONT_FAMILY.Nunito
+                    : FONT_FAMILY.Excalifont,
+                locked: kind === "locked",
+              }),
+            ];
+      editor.edit({ ...snapshot(), elements });
+      await act(async () =>
+        hook.result.current.applyFontToCurrentLayer(
+          document,
+          FONT_FAMILY.Nunito,
+        ),
+      );
+      expect(editor.api.getAppState().currentItemFontFamily).toBe(
+        FONT_FAMILY.Nunito,
+      );
+      expect(editor.api.getSceneElementsIncludingDeleted()).toBe(elements);
+      expect(
+        hook.result.current.settings.editorPreferences?.defaultFontFamily,
+      ).not.toBe(FONT_FAMILY.Nunito);
+    },
+  );
+
+  it("keeps current layer content and dirty state unchanged when font loading fails", async () => {
+    const hook = await mount();
+    let document!: CanvasDocument;
+    act(() => {
+      document = hook.result.current.newDocument();
+    });
+    document.initialData = {
+      elements: [
+        API.createElement({ type: "text", fontFamily: FONT_FAMILY.Excalifont }),
+      ],
+    };
+    const editor = attachSlide(hook, document);
+    const content = document.content;
+    const load = vi
+      .spyOn(Fonts, "loadElementsFonts")
+      .mockRejectedValueOnce(new Error("font unavailable"));
+    try {
+      await act(async () => {
+        await expect(
+          hook.result.current.applyFontToCurrentLayer(
+            document,
+            FONT_FAMILY.Nunito,
+          ),
+        ).rejects.toThrow("font unavailable");
+      });
+      expect(editor.api.updateScene).not.toHaveBeenCalled();
+      expect(document.content).toBe(content);
+      expect(document.dirty).toBe(false);
+    } finally {
+      load.mockRestore();
+    }
+  });
+
+  it("replaces every open document and hidden presentation page while retaining cached undo history", async () => {
+    const hook = await mount();
+    let canvas!: CanvasDocument;
+    let deck!: CanvasDocument;
+    act(() => {
+      canvas = hook.result.current.newDocument();
+      deck = hook.result.current.newPresentation()!;
+    });
+    const text = API.createElement({
+      type: "text",
+      id: "root-text",
+      fontFamily: FONT_FAMILY.Excalifont,
+    });
+    const childText = API.createElement({
+      type: "text",
+      id: "child-text",
+      fontFamily: FONT_FAMILY.Excalifont,
+    });
+    const pin = {
+      ...API.createElement({ type: "stickynote", id: "pin" }),
+      customData: { subcanvas: { sceneId: "child" } },
+    };
+    const scene = {
+      ...snapshot(),
+      elements: [text, pin],
+      appState: {
+        ...snapshot().appState,
+        subscenes: {
+          child: {
+            version: 1 as const,
+            title: "child",
+            elements: [childText],
+            appState: {},
+          },
+        },
+      },
+    };
+    const canvasEditor = attachSlide(hook, canvas);
+    canvasEditor.edit(scene);
+    const firstId = deck.activeSlideId!;
+    const firstEditor = attachSlide(hook, deck);
+    firstEditor.edit(scene);
+    const checkpoint = { undo: [], redo: [] };
+    vi.mocked(firstEditor.api.history.checkpoint!).mockReturnValue(checkpoint);
+    act(() => hook.result.current.addSlide(deck));
+    const secondEditor = attachSlide(hook, deck);
+    secondEditor.edit({
+      ...scene,
+      elements: [
+        API.createElement({
+          type: "text",
+          id: "second-text",
+          fontFamily: FONT_FAMILY.Excalifont,
+        }),
+      ],
+    });
+    await act(async () =>
+      hook.result.current.applyFontToCurrentLayer(
+        deck,
+        FONT_FAMILY["Comic Shanns"],
+      ),
+    );
+    expect(
+      secondEditor.api.getSceneElementsIncludingDeleted()[0],
+    ).toMatchObject({ fontFamily: FONT_FAMILY["Comic Shanns"] });
+    expect(
+      deck.presentation!.slides.find((slide) => slide.id === firstId)!.scene
+        .elements![0],
+    ).toMatchObject({ fontFamily: FONT_FAMILY.Excalifont });
+    expect(
+      canvasEditor.api.getSceneElementsIncludingDeleted()[0],
+    ).toMatchObject({ fontFamily: FONT_FAMILY.Excalifont });
+    await act(async () =>
+      hook.result.current.applyFontToOpenDocuments(FONT_FAMILY.Nunito),
+    );
+    expect(
+      canvasEditor.api.getSceneElementsIncludingDeleted()[0],
+    ).toMatchObject({ fontFamily: FONT_FAMILY.Nunito });
+    expect(canvasEditor.api.getAppState().currentItemFontFamily).toBe(
+      FONT_FAMILY.Nunito,
+    );
+    expect(
+      canvasEditor.api.getAppState().subscenes.child.elements[0],
+    ).toMatchObject({ fontFamily: FONT_FAMILY.Nunito });
+    expect(
+      secondEditor.api.getSceneElementsIncludingDeleted()[0],
+    ).toMatchObject({ fontFamily: FONT_FAMILY.Nunito });
+    expect(secondEditor.api.getAppState().currentItemFontFamily).toBe(
+      FONT_FAMILY.Nunito,
+    );
+    const hidden = deck.presentation!.slides.find(
+      (slide) => slide.id === firstId,
+    )!;
+    const runtime = deck.slideRuntime!.get(firstId)!;
+    expect(hidden.scene.elements![0]).toMatchObject({
+      fontFamily: FONT_FAMILY.Nunito,
+    });
+    expect(hidden.scene.appState!.subscenes!.child.elements[0]).toMatchObject({
+      fontFamily: FONT_FAMILY.Nunito,
+    });
+    expect(runtime.snapshot!.elements).toBe(hidden.scene.elements);
+    expect(runtime.history!.undo).toHaveLength(1);
+    expect(runtime.children.get("child")!.undo).toHaveLength(1);
+    expect(checkpoint.undo).toHaveLength(0);
+    expect(canvas.dirty).toBe(true);
+    expect(deck.dirty).toBe(true);
+    expect(
+      JSON.parse(deck.content).slides.every(
+        (slide: any) =>
+          slide.scene.elements[0].fontFamily === FONT_FAMILY.Nunito,
+      ),
+    ).toBe(true);
+    act(() => hook.result.current.selectSlide(deck, firstId));
+    const restored = attachSlide(hook, deck);
+    expect(restored.api.getSceneElementsIncludingDeleted()[0]).toMatchObject({
+      fontFamily: FONT_FAMILY.Nunito,
+    });
+    await waitFor(() =>
+      expect(desktop.writeDraft).toHaveBeenCalledWith(
+        expect.objectContaining({ id: deck.id, content: deck.content }),
+      ),
+    );
+  });
+
+  it("uses the global default for new text when reopening old files or visiting hidden slides", async () => {
+    vi.mocked(desktop.getSettings).mockResolvedValue({
+      ...settings,
+      editorPreferences: {
+        ...DEFAULT_EDITOR_PREFERENCES,
+        defaultFontFamily: FONT_FAMILY.Nunito,
+      },
+    });
+    const text = API.createElement({
+      type: "text",
+      fontFamily: FONT_FAMILY.Excalifont,
+    });
+    vi.mocked(desktop.openFiles).mockResolvedValue([
+      disk(
+        "/drawings/fonts.excalidraw",
+        createSceneTracker()({ ...snapshot(), elements: [text] }),
+      ),
+      disk("/drawings/fonts.guzi-presentation", presentationContent()),
+    ]);
+    const hook = await mount();
+    await act(async () => hook.result.current.openFiles());
+    const [canvas, deck] = hook.result.current.documents;
+    expect(canvas.initialData.appState?.currentItemFontFamily).toBe(
+      FONT_FAMILY.Nunito,
+    );
+    expect(canvas.initialData.elements![0]).toMatchObject({
+      fontFamily: FONT_FAMILY.Excalifont,
+    });
+    attachSlide(hook, deck);
+    const next = deck.presentation!.slides.find(
+      (slide) => slide.id !== deck.activeSlideId,
+    )!;
+    act(() => hook.result.current.selectSlide(deck, next.id));
+    expect(deck.initialData.appState?.currentItemFontFamily).toBe(
+      FONT_FAMILY.Nunito,
+    );
+  });
+
+  it("retains dirty replacements made before an open canvas has mounted", async () => {
+    const hook = await mount();
+    let document!: CanvasDocument;
+    act(() => {
+      document = hook.result.current.newDocument();
+    });
+    document.initialData = {
+      elements: [
+        API.createElement({ type: "text", fontFamily: FONT_FAMILY.Excalifont }),
+      ],
+    };
+    await act(async () =>
+      hook.result.current.applyFontToOpenDocuments(FONT_FAMILY.Nunito),
+    );
+    expect(document.initialData.elements![0]).toMatchObject({
+      fontFamily: FONT_FAMILY.Nunito,
+    });
+    expect(document.dirty).toBe(true);
+    attachSlide(hook, document);
+    expect(document.dirty).toBe(true);
+    await waitFor(() =>
+      expect(desktop.writeDraft).toHaveBeenCalledWith(
+        expect.objectContaining({ id: document.id, content: document.content }),
+      ),
+    );
   });
 
   it("remembers sticky mode in new drawings and synchronizes open root and child editors", async () => {

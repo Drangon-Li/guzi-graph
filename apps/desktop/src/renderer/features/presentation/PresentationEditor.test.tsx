@@ -1,7 +1,11 @@
 import { useEffect } from "react";
 
-import { KEYS } from "@excalidraw/common";
-import { CaptureUpdateAction } from "@excalidraw/element";
+import { KEYS, FONT_FAMILY } from "@excalidraw/common";
+import {
+  CaptureUpdateAction,
+  newElementWith,
+  isTextElement,
+} from "@excalidraw/element";
 import { API } from "@excalidraw/excalidraw/tests/helpers/api";
 import {
   act,
@@ -9,9 +13,13 @@ import {
   render,
   waitFor,
 } from "@excalidraw/excalidraw/tests/test-utils";
+import { getNormalizedZoom } from "@excalidraw/excalidraw/scene/normalize";
 import { convertStickyNoteToSubcanvas } from "@excalidraw/excalidraw/subcanvasActions";
 
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type {
+  BinaryFiles,
+  ExcalidrawImperativeAPI,
+} from "@excalidraw/excalidraw/types";
 
 import { useWorkspace } from "../workspace/workspace";
 
@@ -154,7 +162,7 @@ describe("presentation editor lifecycle", () => {
   const ids = (api: ExcalidrawImperativeAPI) =>
     api.getSceneElements().map((element) => element.id);
 
-  it("round trips two slides with independent undo and redo, retaining undone elements", async () => {
+  it("undoes page edits and slide creation in document order across page switches", async () => {
     const view = await mount();
     const first = await readyApi();
     act(() =>
@@ -163,48 +171,142 @@ describe("presentation editor lifecycle", () => {
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       }),
     );
-    await waitFor(() => expect(ids(first)).toEqual(["first-shape"]));
     fireEvent.click(view.getByRole("button", { name: "Add slide" }));
     const secondId = canvasDocument.activeSlideId!;
     const second = await readyApi(first);
-    expect(first.isDestroyed).toBe(true);
     act(() =>
       second.updateScene({
         elements: [API.createElement({ type: "ellipse", id: "second-shape" })],
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       }),
     );
+    expect(canvasDocument.presentationHistory!.undo).toHaveLength(3);
     undo(view.container.querySelector(".desktop-root-canvas .excalidraw")!);
     await waitFor(() => expect(ids(second)).toEqual([]));
     expect(second.getSceneElementsIncludingDeleted()).toMatchObject([
       { id: "second-shape", isDeleted: true },
     ]);
-
     fireEvent.click(view.getByRole("button", { name: "Select First" }));
-    const reopenedFirst = await readyApi(second);
-    expect(ids(reopenedFirst)).toEqual(["first-shape"]);
+    let current = await readyApi(second);
+    expect(ids(current)).toEqual(["first-shape"]);
     undo(view.container.querySelector(".desktop-root-canvas .excalidraw")!);
-    await waitFor(() => expect(ids(reopenedFirst)).toEqual([]));
+    await waitFor(() =>
+      expect(canvasDocument.presentation!.slides).toHaveLength(1),
+    );
+    expect(ids(current)).toEqual(["first-shape"]);
+    undo(view.container.querySelector(".desktop-root-canvas .excalidraw")!);
+    await waitFor(() => expect(ids(current)).toEqual([]));
     undo(
       view.container.querySelector(".desktop-root-canvas .excalidraw")!,
       true,
     );
-    await waitFor(() => expect(ids(reopenedFirst)).toEqual(["first-shape"]));
+    await waitFor(() => expect(ids(current)).toEqual(["first-shape"]));
+    undo(
+      view.container.querySelector(".desktop-root-canvas .excalidraw")!,
+      true,
+    );
+    current = await readyApi(current);
+    expect(canvasDocument.activeSlideId).toBe(secondId);
+    expect(ids(current)).toEqual([]);
+    fireEvent.click(view.getByRole("button", { name: "Select First" }));
+    current = await readyApi(current);
+    undo(
+      view.container.querySelector(".desktop-root-canvas .excalidraw")!,
+      true,
+    );
+    current = await readyApi(current);
+    await waitFor(() => expect(ids(current)).toEqual(["second-shape"]));
+    expect(canvasDocument.activeSlideId).toBe(secondId);
+    expect(canvasDocument.presentationHistory!.redo).toHaveLength(0);
+  });
 
-    act(() => workspace.selectSlide(canvasDocument, secondId));
-    const reopenedSecond = await readyApi(reopenedFirst);
-    expect(ids(reopenedSecond)).toEqual([]);
-    expect(reopenedSecond.getSceneElementsIncludingDeleted()).toMatchObject([
-      { id: "second-shape", isDeleted: true },
-    ]);
+  it("switches to the edited page and excludes selection and viewport history", async () => {
+    const deck = createPresentation("first", "First");
+    deck.slides.push({ id: "second", title: "Second", scene: {} });
+    const view = await mount(deck);
+    const first = await readyApi();
+    act(() =>
+      first.updateScene({
+        elements: [API.createElement({ type: "rectangle", id: "shape" })],
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      }),
+    );
+    act(() =>
+      first.updateScene({
+        appState: { selectedElementIds: { shape: true }, scrollX: 100 },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      }),
+    );
+    expect(canvasDocument.presentationHistory!.undo).toHaveLength(1);
+    act(() => workspace.selectSlide(canvasDocument, "second"));
+    const second = await readyApi(first);
+    undo(view.container.querySelector(".desktop-root-canvas .excalidraw")!);
+    const reopened = await readyApi(second);
+    await waitFor(() => expect(ids(reopened)).toEqual([]));
+    expect(canvasDocument.activeSlideId).toBe("first");
     undo(
       view.container.querySelector(".desktop-root-canvas .excalidraw")!,
       true,
     );
-    await waitFor(() => expect(ids(reopenedSecond)).toEqual(["second-shape"]));
-    expect(canvasDocument.presentation!.slides[0].scene.elements).toMatchObject(
-      [{ id: "first-shape", isDeleted: false }],
+    await waitFor(() => expect(ids(reopened)).toEqual(["shape"]));
+    undo(view.container.querySelector(".desktop-root-canvas .excalidraw")!);
+    act(() =>
+      reopened.updateScene({
+        appState: { viewBackgroundColor: "#ff0000" },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      }),
     );
+    expect(canvasDocument.presentationHistory!.redo).toHaveLength(0);
+    undo(view.container.querySelector(".desktop-root-canvas .excalidraw")!);
+    await waitFor(() =>
+      expect(reopened.getAppState().viewBackgroundColor).toBe("#ffffff"),
+    );
+    expect(ids(reopened)).toEqual([]);
+  });
+
+  it("restores a deleted current slide with image files and child scenes", async () => {
+    const note = API.createElement({ type: "stickynote", id: "pin" });
+    const converted = convertStickyNoteToSubcanvas([note], note.id, {})!;
+    const file: BinaryFiles[string] = {
+      id: "image-file" as BinaryFiles[string]["id"],
+      dataURL:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==" as BinaryFiles[string]["dataURL"],
+      mimeType: "image/png",
+      created: 1,
+    };
+    const image = API.createElement({
+      type: "image",
+      id: "image",
+      fileId: file.id,
+    });
+    const deck = createPresentation("first", "First", {
+      elements: [...converted.elements, image],
+      appState: { subscenes: converted.scenes },
+      files: { [file.id]: file },
+    });
+    deck.slides.push({ id: "second", title: "Second", scene: {} });
+    const view = await mount(deck);
+    const first = await readyApi();
+    const children = first.getAppState().subscenes;
+    act(() => workspace.deleteSlide(canvasDocument, "first"));
+    const second = await readyApi(first);
+    expect(
+      canvasDocument.presentation!.slides.map((slide) => slide.id),
+    ).toEqual(["second"]);
+    undo(view.container.querySelector(".desktop-root-canvas .excalidraw")!);
+    const restored = await readyApi(second);
+    expect(canvasDocument.activeSlideId).toBe("first");
+    expect(ids(restored)).toEqual(["pin", "image"]);
+    expect(restored.getFiles()[file.id]).toEqual(file);
+    expect(restored.getAppState().subscenes).toEqual(children);
+    undo(
+      view.container.querySelector(".desktop-root-canvas .excalidraw")!,
+      true,
+    );
+    await readyApi(restored);
+    expect(
+      canvasDocument.presentation!.slides.map((slide) => slide.id),
+    ).toEqual(["second"]);
   });
 
   it("keeps child scene contents and child undo/redo history across page switches", async () => {
@@ -284,6 +386,235 @@ describe("presentation editor lifecycle", () => {
     ]);
     undo(view.container.querySelector(".desktop-subcanvas .excalidraw")!, true);
     await waitFor(() => expect(ids(redoChild)).toEqual(["child-shape"]));
+  });
+
+  it("undoes duplicate, reorder and rename in sequence and returns to the saved state", async () => {
+    const deck = createPresentation("first", "First");
+    deck.slides.push({ id: "second", title: "Second", scene: {} });
+    const view = await mount(deck);
+    const first = await readyApi();
+    canvasDocument.savedContent = canvasDocument.content;
+    canvasDocument.dirty = false;
+    canvasDocument.unsavedCopy = false;
+    act(() => workspace.renameSlide(canvasDocument, "first", "Renamed"));
+    act(() => workspace.moveSlide(canvasDocument, "first", 1));
+    act(() => workspace.addSlide(canvasDocument, "first"));
+    const duplicate = await readyApi(first);
+    expect(canvasDocument.presentationHistory!.undo).toHaveLength(3);
+    expect(canvasDocument.dirty).toBe(true);
+    undo(view.container.querySelector(".desktop-root-canvas .excalidraw")!);
+    const reopened = await readyApi(duplicate);
+    expect(
+      canvasDocument.presentation!.slides.map((slide) => slide.title),
+    ).toEqual(["Second", "Renamed"]);
+    undo(view.container.querySelector(".desktop-root-canvas .excalidraw")!);
+    expect(
+      canvasDocument.presentation!.slides.map((slide) => slide.title),
+    ).toEqual(["Renamed", "Second"]);
+    undo(view.container.querySelector(".desktop-root-canvas .excalidraw")!);
+    expect(
+      canvasDocument.presentation!.slides.map((slide) => slide.title),
+    ).toEqual(["First", "Second"]);
+    expect(canvasDocument.dirty).toBe(false);
+    expect(reopened.isDestroyed).toBe(false);
+    expect(canvasDocument.presentationHistory!.redo).toHaveLength(3);
+  });
+
+  it("retains child contents and local history through undo and redo of an inserted slide", async () => {
+    const view = await mount();
+    const first = await readyApi();
+    fireEvent.click(view.getByRole("button", { name: "Add slide" }));
+    const second = await readyApi(first);
+    const secondId = canvasDocument.activeSlideId;
+    const note = API.createElement({ type: "stickynote", id: "new-pin" });
+    const converted = convertStickyNoteToSubcanvas([note], note.id, {})!;
+    act(() =>
+      second.updateScene({
+        elements: converted.elements,
+        appState: {
+          subscenes: converted.scenes,
+          selectedElementIds: { "new-pin": true },
+        },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      }),
+    );
+    fireEvent.click(
+      await view.findByRole("button", { name: "Open subcanvas" }),
+    );
+    await waitFor(() =>
+      expect(canvasDocument.activeEditor?.()?.getAppState().isLoading).toBe(
+        false,
+      ),
+    );
+    const child = canvasDocument.activeEditor!()!;
+    act(() =>
+      child.updateScene({
+        elements: [
+          API.createElement({ type: "rectangle", id: "retained-child" }),
+        ],
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      }),
+    );
+    fireEvent.click(view.getByRole("button", { name: "Collapse subcanvas" }));
+    undo(view.container.querySelector(".desktop-root-canvas .excalidraw")!);
+    await waitFor(() => expect(ids(second)).toEqual([]));
+    undo(view.container.querySelector(".desktop-root-canvas .excalidraw")!);
+    const returnedFirst = await readyApi(second);
+    expect(canvasDocument.presentation!.slides).toHaveLength(1);
+    undo(
+      view.container.querySelector(".desktop-root-canvas .excalidraw")!,
+      true,
+    );
+    const returnedSecond = await readyApi(returnedFirst);
+    expect(canvasDocument.activeSlideId).toBe(secondId);
+    undo(
+      view.container.querySelector(".desktop-root-canvas .excalidraw")!,
+      true,
+    );
+    await waitFor(() => expect(ids(returnedSecond)).toEqual(["new-pin"]));
+    expect(
+      returnedSecond.getAppState().subscenes[converted.sceneId].elements[0].id,
+    ).toBe("retained-child");
+    act(() =>
+      returnedSecond.updateScene({
+        appState: { selectedElementIds: { "new-pin": true } },
+      }),
+    );
+    fireEvent.click(
+      await view.findByRole("button", { name: "Open subcanvas" }),
+    );
+    await waitFor(() =>
+      expect(canvasDocument.activeEditor?.()?.getAppState().isLoading).toBe(
+        false,
+      ),
+    );
+    const reopenedChild = canvasDocument.activeEditor!()!;
+    expect(ids(reopenedChild)).toEqual(["retained-child"]);
+    undo(view.container.querySelector(".desktop-subcanvas .excalidraw")!);
+    await waitFor(() => expect(ids(reopenedChild)).toEqual([]));
+  });
+
+  it("undoes a deck font replacement as one action and preserves later child content and viewport", async () => {
+    const note = API.createElement({ type: "stickynote", id: "pin" });
+    const converted = convertStickyNoteToSubcanvas([note], note.id, {})!;
+    const text = (id: string) =>
+      API.createElement({
+        type: "text",
+        id,
+        text: "original",
+        fontFamily: FONT_FAMILY.Excalifont,
+      });
+    converted.scenes[converted.sceneId] = {
+      ...converted.scenes[converted.sceneId],
+      elements: [text("child-text")],
+    };
+    const deck = createPresentation("first", "First", {
+      elements: [...converted.elements, text("root-text")],
+      appState: { subscenes: converted.scenes },
+    });
+    deck.slides.push({
+      id: "second",
+      title: "Second",
+      scene: { elements: [text("hidden-text")] },
+    });
+    const view = await mount(deck);
+    const rootApi = await readyApi();
+    await act(async () => {
+      await workspace.applyFontToOpenDocuments(FONT_FAMILY.Nunito);
+    });
+    expect(canvasDocument.presentationHistory!.undo).toHaveLength(1);
+    expect(
+      rootApi.getSceneElements().find((element) => element.id === "root-text"),
+    ).toMatchObject({ fontFamily: FONT_FAMILY.Nunito });
+    act(() =>
+      rootApi.updateScene({ appState: { selectedElementIds: { pin: true } } }),
+    );
+    fireEvent.click(
+      await view.findByRole("button", { name: "Open subcanvas" }),
+    );
+    await waitFor(() => {
+      expect(canvasDocument.activeEditor?.()).not.toBe(rootApi);
+      expect(canvasDocument.activeEditor?.()?.getAppState().isLoading).toBe(
+        false,
+      );
+    });
+    const child = canvasDocument.activeEditor!()!;
+    await waitFor(() => expect(child.getAppState().isLoading).toBe(false));
+    const childText = child.getSceneElements()[0];
+    if (!isTextElement(childText)) {
+      throw new Error("Expected the child text element");
+    }
+    act(() =>
+      child.updateScene({
+        elements: [
+          newElementWith(childText, {
+            text: "updated child text",
+            originalText: "updated child text",
+            locked: true,
+          }),
+          API.createElement({ type: "rectangle", id: "later-child-shape" }),
+        ],
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      }),
+    );
+    fireEvent.click(view.getByRole("button", { name: "Collapse subcanvas" }));
+    act(() =>
+      rootApi.updateScene({
+        appState: {
+          scrollX: 123,
+          scrollY: 456,
+          zoom: { value: getNormalizedZoom(0.75) },
+        },
+      }),
+    );
+    undo(view.container.querySelector(".desktop-root-canvas .excalidraw")!);
+    await waitFor(() =>
+      expect(
+        rootApi
+          .getSceneElements()
+          .find((element) => element.id === "root-text"),
+      ).toMatchObject({ fontFamily: FONT_FAMILY.Excalifont }),
+    );
+    expect(rootApi.getAppState()).toMatchObject({
+      scrollX: 123,
+      scrollY: 456,
+      zoom: { value: 0.75 },
+    });
+    const restoredChild = rootApi.getAppState().subscenes[converted.sceneId];
+    expect(restoredChild.elements.map((element) => element.id)).toEqual([
+      "child-text",
+      "later-child-shape",
+    ]);
+    expect(restoredChild.elements[0]).toMatchObject({
+      fontFamily: FONT_FAMILY.Excalifont,
+      originalText: "updated child text",
+      text: "updated child text",
+      locked: true,
+    });
+    expect(
+      canvasDocument.presentation!.slides[1].scene.elements![0],
+    ).toMatchObject({ fontFamily: FONT_FAMILY.Excalifont });
+    undo(
+      view.container.querySelector(".desktop-root-canvas .excalidraw")!,
+      true,
+    );
+    await waitFor(() =>
+      expect(
+        rootApi
+          .getSceneElements()
+          .find((element) => element.id === "root-text"),
+      ).toMatchObject({ fontFamily: FONT_FAMILY.Nunito }),
+    );
+    expect(
+      rootApi.getAppState().subscenes[converted.sceneId].elements[0],
+    ).toMatchObject({
+      fontFamily: FONT_FAMILY.Nunito,
+      originalText: "updated child text",
+    });
+    expect(
+      rootApi.getAppState().subscenes[converted.sceneId].elements[1].id,
+    ).toBe("later-child-shape");
+    expect(canvasDocument.presentationHistory!.undo).toHaveLength(1);
   });
 
   it("disables editor shortcuts and slide mutation while presenting", async () => {

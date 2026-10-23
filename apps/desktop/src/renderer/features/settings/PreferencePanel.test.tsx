@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -6,7 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 
-import { getSystemFontId } from "@excalidraw/common";
+import { FONT_FAMILY, getSystemFontId } from "@excalidraw/common";
 
 import { DEFAULT_EDITOR_PREFERENCES, PreferencePanel } from "./PreferencePanel";
 
@@ -55,6 +56,7 @@ it("enumerates real installed font names and saves a stable id with the family",
     configurable: true,
   });
   const onChange = vi.fn();
+  const replaceFonts = vi.fn(async () => {});
   render(
     <PreferencePanel
       root={document.body}
@@ -62,6 +64,7 @@ it("enumerates real installed font names and saves a stable id with the family",
       section="fonts"
       language="zh-CN"
       onChange={onChange}
+      onApplyFontToOpenDocuments={replaceFonts}
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: "读取本机已安装字体" }));
@@ -69,6 +72,8 @@ it("enumerates real installed font names and saves a stable id with the family",
   expect(queryLocalFonts).toHaveBeenCalledTimes(1);
   expect(screen.getAllByRole("option", { name: "Songti SC" })).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "添加并设为默认字体" }));
+  expect(onChange).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "同时替换已打开文档" }));
   await waitFor(() =>
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -79,6 +84,151 @@ it("enumerates real installed font names and saves a stable id with the family",
         ],
       }),
     ),
+  );
+  expect(replaceFonts).toHaveBeenCalledWith(getSystemFontId("Songti SC"));
+});
+
+const chooseDefaultFont = () =>
+  fireEvent.change(screen.getByRole("combobox", { name: "默认字体" }), {
+    target: { value: String(FONT_FAMILY.Nunito) },
+  });
+
+it("asks before changing the default and cancels without changing documents", () => {
+  const onChange = vi.fn();
+  const replaceFonts = vi.fn();
+  render(
+    <PreferencePanel
+      root={document.body}
+      section="fonts"
+      language="zh-CN"
+      onChange={onChange}
+      onApplyFontToOpenDocuments={replaceFonts}
+    />,
+  );
+  chooseDefaultFont();
+  expect(screen.getByRole("group", { name: "应用默认字体" })).toHaveTextContent(
+    "全部已打开文档",
+  );
+  expect(onChange).not.toHaveBeenCalled();
+  expect(replaceFonts).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  expect(screen.queryByRole("group", { name: "应用默认字体" })).toBeNull();
+  expect(screen.getByRole("combobox", { name: "默认字体" })).toHaveValue(
+    String(DEFAULT_EDITOR_PREFERENCES.defaultFontFamily),
+  );
+  expect(onChange).not.toHaveBeenCalled();
+  expect(replaceFonts).not.toHaveBeenCalled();
+});
+
+it.each([false, true])(
+  "persists the default before optionally replacing open documents (%s)",
+  async (replaceExisting) => {
+    const calls: string[] = [];
+    const onChange = vi.fn(async () => {
+      calls.push("save");
+    });
+    const replaceFonts = vi.fn(async () => {
+      calls.push("replace");
+    });
+    render(
+      <PreferencePanel
+        root={document.body}
+        section="fonts"
+        language="zh-CN"
+        onChange={onChange}
+        onApplyFontToOpenDocuments={replaceFonts}
+      />,
+    );
+    chooseDefaultFont();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: replaceExisting ? "同时替换已打开文档" : "仅用于新内容",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("group", { name: "应用默认字体" })).toBeNull(),
+    );
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultFontFamily: FONT_FAMILY.Nunito }),
+    );
+    expect(calls).toEqual(replaceExisting ? ["save", "replace"] : ["save"]);
+    if (replaceExisting) {
+      expect(replaceFonts).toHaveBeenCalledWith(FONT_FAMILY.Nunito);
+    }
+    expect(screen.getByRole("combobox", { name: "默认字体" })).toHaveValue(
+      String(FONT_FAMILY.Nunito),
+    );
+  },
+);
+
+it("does not replace existing text when saving the default fails", async () => {
+  const replaceFonts = vi.fn();
+  render(
+    <PreferencePanel
+      root={document.body}
+      section="fonts"
+      language="zh-CN"
+      onChange={async () => {
+        throw new Error("设置保存失败");
+      }}
+      onApplyFontToOpenDocuments={replaceFonts}
+    />,
+  );
+  chooseDefaultFont();
+  fireEvent.click(screen.getByRole("button", { name: "同时替换已打开文档" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("设置保存失败");
+  expect(replaceFonts).not.toHaveBeenCalled();
+  expect(screen.getByRole("combobox", { name: "默认字体" })).toHaveValue(
+    String(DEFAULT_EDITOR_PREFERENCES.defaultFontFamily),
+  );
+});
+
+it("waits for persistence and prevents duplicate font replacements", async () => {
+  let finishSave!: () => void;
+  const onChange = vi.fn(
+    () => new Promise<void>((resolve) => (finishSave = resolve)),
+  );
+  const replaceFonts = vi.fn(async () => {});
+  render(
+    <PreferencePanel
+      root={document.body}
+      section="fonts"
+      language="zh-CN"
+      onChange={onChange}
+      onApplyFontToOpenDocuments={replaceFonts}
+    />,
+  );
+  chooseDefaultFont();
+  const apply = screen.getByRole("button", { name: "同时替换已打开文档" });
+  fireEvent.click(apply);
+  fireEvent.click(apply);
+  expect(apply).toBeDisabled();
+  expect(screen.getByRole("button", { name: "取消" })).toBeDisabled();
+  expect(onChange).toHaveBeenCalledTimes(1);
+  expect(replaceFonts).not.toHaveBeenCalled();
+  await act(async () => finishSave());
+  expect(replaceFonts).toHaveBeenCalledTimes(1);
+});
+
+it("reports a replacement failure separately from the saved default", async () => {
+  render(
+    <PreferencePanel
+      root={document.body}
+      section="fonts"
+      language="zh-CN"
+      onChange={async () => {}}
+      onApplyFontToOpenDocuments={async () => {
+        throw new Error("字体无法加载");
+      }}
+    />,
+  );
+  chooseDefaultFont();
+  fireEvent.click(screen.getByRole("button", { name: "同时替换已打开文档" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "默认字体已保存，但替换已有文字失败：字体无法加载",
+  );
+  expect(screen.getByRole("combobox", { name: "默认字体" })).toHaveValue(
+    String(FONT_FAMILY.Nunito),
   );
 });
 

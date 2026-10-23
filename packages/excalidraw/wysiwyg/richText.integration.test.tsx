@@ -1,7 +1,9 @@
 import {
   DEFAULT_ELEMENT_BACKGROUND_PICKS,
+  applyDarkModeFilter,
   FONT_FAMILY,
   KEYS,
+  THEME,
 } from "@excalidraw/common";
 import {
   CaptureUpdateAction,
@@ -11,6 +13,10 @@ import {
   richTextFromPlainText,
 } from "@excalidraw/element";
 import { exportToCanvas } from "@excalidraw/utils";
+import {
+  CONTROLLED_TEXT_INSERTION_COMMAND,
+  getNearestEditorFromDOMNode,
+} from "lexical";
 
 import type { ExcalidrawTextElement } from "@excalidraw/element/types";
 
@@ -25,6 +31,7 @@ import { exportToSvg } from "../scene/export";
 import { restoreElements } from "../data/restore";
 import { serializeAsJSON } from "../data/json";
 import * as dataModule from "../data";
+import { actionChangeStrokeColor } from "../actions/actionProperties";
 
 import {
   executeRichTextCommand,
@@ -57,6 +64,457 @@ describe("rich text application integration", () => {
   beforeEach(async () => {
     rendered = await render(<Excalidraw handleKeyboardGlobally />);
   });
+
+  it("changes only selected textarea characters through the stroke action", async () => {
+    const text = API.createElement({ type: "text", text: "abc中文def" });
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+    Keyboard.keyPress(KEYS.ENTER);
+    const textarea = await getTextEditor();
+    textarea.setSelectionRange(3, 5);
+    act(() =>
+      h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+        color: "#e03131",
+      }),
+    );
+    await waitFor(() =>
+      expect(current(text.id).richText?.paragraphs[0].runs).toEqual([
+        { text: "abc" },
+        { text: "中文", color: "#e03131" },
+        { text: "def" },
+      ]),
+    );
+    expect(current(text.id).strokeColor).toBe(text.strokeColor);
+    fireEvent.keyDown(getRichEditor(), { key: "Escape" });
+  });
+
+  it.each([false, true])(
+    "preserves the textarea selection through a complete stroke-swatch pointer and focus sequence (docked=%s)",
+    async (docked) => {
+      if (docked) {
+        API.setAppState({ width: 1600, height: 1000 });
+        rendered.rerender(
+          <Excalidraw
+            handleKeyboardGlobally
+            desktopIntegration={{
+              save: async () => true,
+              open: async () => {},
+              selectionToolbar: false,
+              toolPanel: {
+                dock: "left",
+                pinned: true,
+                width: 280,
+                onDockChange: () => {},
+                onWidthChange: () => {},
+                labels: {
+                  title: "Tools",
+                  canvas: "Canvas",
+                  properties: "Properties",
+                  pinLeft: "Dock left",
+                  pinRight: "Dock right",
+                  unpin: "Unpin",
+                  collapse: "Collapse",
+                  expand: "Expand",
+                  resize: "Resize",
+                },
+              },
+            }}
+          />,
+        );
+      }
+      const text = API.createElement({
+        type: "text",
+        text: "颜色测试：局部红色，其余保持原色",
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      Keyboard.keyPress(KEYS.ENTER);
+      const textarea = await getTextEditor();
+      textarea.setSelectionRange(5, 9);
+      const swatch = rendered.container.querySelector<HTMLButtonElement>(
+        '.color-picker-container button[title="#e03131"]',
+      )!;
+      expect(swatch).not.toBeNull();
+      if (docked) {
+        expect(swatch.closest(".App-menu__left")).toBeNull();
+        expect(swatch.closest(".selected-shape-actions")).not.toBeNull();
+      }
+      fireEvent.pointerDown(swatch, { button: 0, pointerId: 1 });
+      fireEvent.mouseDown(swatch, { button: 0 });
+      act(() => swatch.focus());
+      expect(textarea.isConnected).toBe(true);
+      expect(h.state.editingTextElement?.id).toBe(text.id);
+      fireEvent.pointerUp(swatch, { button: 0, pointerId: 1 });
+      fireEvent.mouseUp(swatch, { button: 0 });
+      fireEvent.click(swatch);
+      await waitFor(() =>
+        expect(current(text.id).richText?.paragraphs[0].runs).toEqual([
+          { text: "颜色测试：" },
+          { text: "局部红色", color: "#e03131" },
+          { text: "，其余保持原色" },
+        ]),
+      );
+      fireEvent.keyDown(getRichEditor(), { key: "Escape" });
+      const restored = restoreElements(
+        JSON.parse(serializeAsJSON([current(text.id)], {}, {}, "local"))
+          .elements,
+        null,
+      );
+      expect(
+        restored.find((element) => element.type === "text")?.richText
+          ?.paragraphs[0].runs[1],
+      ).toEqual({ text: "局部红色", color: "#e03131" });
+    },
+  );
+
+  it("preserves a selected transparent color after submission and restore", async () => {
+    const text = API.createElement({ type: "text", text: "a中文z" });
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+    Keyboard.keyPress(KEYS.ENTER);
+    const textarea = await getTextEditor();
+    textarea.setSelectionRange(1, 3);
+    act(() =>
+      h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+        color: "transparent",
+      }),
+    );
+    const expected = [
+      { text: "a" },
+      { text: "中文", color: "transparent" },
+      { text: "z" },
+    ];
+    await waitFor(() =>
+      expect(current(text.id).richText?.paragraphs[0].runs).toEqual(expected),
+    );
+    fireEvent.keyDown(getRichEditor(), { key: "Escape" });
+    const restored = restoreElements(
+      JSON.parse(serializeAsJSON([current(text.id)], {}, {}, "local")).elements,
+      null,
+    );
+    expect(
+      restored.find((element) => element.type === "text")?.richText
+        ?.paragraphs[0].runs,
+    ).toEqual(expected);
+  });
+
+  it.each([false, true])(
+    "keeps the caret for continued typing and undo after whole-text recoloring (inlineColor=%s)",
+    async (inlineColor) => {
+      const base = API.createElement({ type: "text", text: "first\nabc中文" });
+      const richText = richTextFromPlainText(base.originalText);
+      if (inlineColor) {
+        richText.paragraphs[1].runs[0].color = "#e03131";
+      }
+      const text = newElementWith(base, { richText });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      API.setAppState({ editingTextElement: text });
+      act(() =>
+        h.app.text.handleTextWysiwyg(text, {
+          isExistingElement: true,
+          initialSelection: { start: 9, end: 9 },
+        }),
+      );
+      await waitFor(() => expect(getRichEditor()).not.toBeNull());
+      const originalNode = getRichEditor().querySelector("[data-lexical-text]");
+      act(() =>
+        h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+          color: "#abcdef",
+        }),
+      );
+      await act(async () => {});
+      if (!inlineColor) {
+        expect(getRichEditor().querySelector("[data-lexical-text]")).toBe(
+          originalNode,
+        );
+      }
+      act(() =>
+        getNearestEditorFromDOMNode(getRichEditor())!.dispatchCommand(
+          CONTROLLED_TEXT_INSERTION_COMMAND,
+          "X",
+        ),
+      );
+      await waitFor(() =>
+        expect(current(text.id).originalText).toBe("first\nabcX中文"),
+      );
+      fireEvent.keyDown(getRichEditor(), {
+        key: "z",
+        [KEYS.CTRL_OR_CMD]: true,
+      });
+      await waitFor(() =>
+        expect(current(text.id).originalText).toBe(base.originalText),
+      );
+      expect(
+        current(text.id).richText?.paragraphs.every((paragraph) =>
+          paragraph.runs.every((run) => !run.color),
+        ),
+      ).toBe(true);
+      expect(current(text.id).strokeColor).toBe("#abcdef");
+      fireEvent.keyDown(getRichEditor(), {
+        key: "z",
+        [KEYS.CTRL_OR_CMD]: true,
+        shiftKey: true,
+      });
+      await waitFor(() =>
+        expect(current(text.id).originalText).toBe("first\nabcX中文"),
+      );
+      fireEvent.keyDown(getRichEditor(), { key: "Escape" });
+    },
+  );
+
+  it.each([false, true])(
+    "undoes and redoes a whole-text recolor after submitting the editor (inlineColor=%s)",
+    async (inlineColor) => {
+      const base = API.createElement({ type: "text", text: "abc中文" });
+      const richText = richTextFromPlainText(base.originalText);
+      if (inlineColor) {
+        richText.paragraphs[0].runs[0].color = "#e03131";
+      }
+      const text = newElementWith(base, { richText });
+      API.updateScene({
+        elements: [text],
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      API.setSelectedElements([text]);
+      API.setAppState({ editingTextElement: text });
+      act(() =>
+        h.app.text.handleTextWysiwyg(text, {
+          isExistingElement: true,
+          initialSelection: { start: 3, end: 3 },
+        }),
+      );
+      await waitFor(() => expect(getRichEditor()).not.toBeNull());
+      act(() =>
+        h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+          color: "#abcdef",
+        }),
+      );
+      await act(async () => {});
+      fireEvent.keyDown(getRichEditor(), { key: "Escape" });
+      Keyboard.undo();
+      expect(h.state.selectedElementIds).toEqual({});
+      expect(current(text.id).strokeColor).toBe("#abcdef");
+      Keyboard.undo();
+      expect(current(text.id).strokeColor).toBe(base.strokeColor);
+      expect(current(text.id).richText).toEqual(richText);
+      Keyboard.redo();
+      expect(current(text.id).strokeColor).toBe("#abcdef");
+      expect(current(text.id).richText?.paragraphs[0].runs).toEqual([
+        { text: "abc中文" },
+      ]);
+    },
+  );
+
+  it("filters inline colors only for dark display while preserving raw colors through theme changes and edits", async () => {
+    const base = API.createElement({ type: "text", text: "a中文" });
+    const text = newElementWith(base, {
+      richText: {
+        version: 1,
+        paragraphs: [
+          {
+            runs: [
+              { text: "a" },
+              { text: "中文", color: "#e03131", background: "#fff3bf" },
+            ],
+          },
+        ],
+      },
+    });
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+    API.setAppState({ theme: THEME.DARK, editingTextElement: text });
+    act(() =>
+      h.app.text.handleTextWysiwyg(text, {
+        isExistingElement: true,
+        initialSelection: { start: 1, end: 3 },
+      }),
+    );
+    const coloredNode = () =>
+      Array.from(
+        getRichEditor().querySelectorAll<HTMLElement>("[data-lexical-text]"),
+      ).find((node) => node.textContent === "中文")!;
+    const expectedStyle =
+      getRichEditor().ownerDocument.createElement("span").style;
+    expectedStyle.webkitTextFillColor = applyDarkModeFilter("#e03131");
+    await waitFor(() =>
+      expect(coloredNode().style.webkitTextFillColor).toBe(
+        expectedStyle.webkitTextFillColor,
+      ),
+    );
+    expect(
+      getRichEditor().querySelector<HTMLElement>("[data-lexical-text]")!.style
+        .webkitTextFillColor,
+    ).toBe("");
+    expect(getRichEditor()).toHaveStyle({
+      color: applyDarkModeFilter(text.strokeColor),
+    });
+    API.setAppState({ theme: THEME.LIGHT });
+    await waitFor(() =>
+      expect(coloredNode().style.webkitTextFillColor).toBe(""),
+    );
+    API.setAppState({ theme: THEME.DARK });
+    await waitFor(() =>
+      expect(coloredNode().style.webkitTextFillColor).toBe(
+        expectedStyle.webkitTextFillColor,
+      ),
+    );
+    act(() => executeRichTextCommand(document, { type: "bold" }));
+    await waitFor(() =>
+      expect(current(text.id).richText?.paragraphs[0].runs[1]).toEqual({
+        text: "中文",
+        color: "#e03131",
+        background: "#fff3bf",
+        bold: true,
+      }),
+    );
+    fireEvent.keyDown(getRichEditor(), { key: "Escape" });
+    const restored = restoreElements(
+      JSON.parse(serializeAsJSON([current(text.id)], {}, {}, "local")).elements,
+      null,
+    );
+    expect(
+      restored.find((element) => element.type === "text")?.richText
+        ?.paragraphs[0].runs[1].color,
+    ).toBe("#e03131");
+  });
+
+  it("retains a mixed-color range through the stroke picker's input and undo/redo", async () => {
+    const base = API.createElement({ type: "text", text: "a中文z" });
+    const text = newElementWith(base, {
+      richText: {
+        version: 1,
+        paragraphs: [
+          {
+            runs: [
+              { text: "a" },
+              {
+                text: "中",
+                color: "#1971c2",
+                bold: true,
+                background: "#fff3bf",
+              },
+              { text: "文", color: "#e03131", italic: true },
+              { text: "z" },
+            ],
+          },
+        ],
+      },
+    });
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+    API.setAppState({ editingTextElement: text });
+    act(() =>
+      h.app.text.handleTextWysiwyg(text, {
+        isExistingElement: true,
+        initialSelection: { start: 1, end: 3 },
+      }),
+    );
+    await waitFor(() =>
+      expect(getRichTextSelectionState(document)).toMatchObject({
+        hasSelection: true,
+        color: null,
+      }),
+    );
+    fireEvent.click(
+      rendered.container.querySelector('[data-openpopup="elementStroke"]')!,
+    );
+    const input = await waitFor(() => {
+      const input = document.querySelector<HTMLInputElement>(
+        ".color-picker-input",
+      )!;
+      expect(input).not.toBeNull();
+      return input;
+    });
+    act(() => {
+      input.focus();
+      input.ownerDocument.defaultView!.getSelection()?.removeAllRanges();
+      fireEvent(input.ownerDocument, new Event("selectionchange"));
+    });
+    fireEvent.change(input, { target: { value: "abcdef" } });
+    const expected = [
+      { text: "a" },
+      { text: "中", color: "#abcdef", bold: true, background: "#fff3bf" },
+      { text: "文", color: "#abcdef", italic: true },
+      { text: "z" },
+    ];
+    await waitFor(() =>
+      expect(current(text.id).richText?.paragraphs[0].runs).toEqual(expected),
+    );
+    expect(current(text.id).strokeColor).toBe(base.strokeColor);
+    fireEvent.keyDown(getRichEditor(), { key: "z", [KEYS.CTRL_OR_CMD]: true });
+    await waitFor(() =>
+      expect(current(text.id).richText).toEqual(text.richText),
+    );
+    fireEvent.keyDown(getRichEditor(), {
+      key: "z",
+      [KEYS.CTRL_OR_CMD]: true,
+      shiftKey: true,
+    });
+    await waitFor(() =>
+      expect(current(text.id).richText?.paragraphs[0].runs).toEqual(expected),
+    );
+    fireEvent.keyDown(getRichEditor(), { key: "Escape" });
+    const restored = restoreElements(
+      JSON.parse(serializeAsJSON([current(text.id)], {}, {}, "local")).elements,
+      null,
+    );
+    expect(
+      restored.find((element) => element.type === "text")?.richText
+        ?.paragraphs[0].runs,
+    ).toEqual(expected);
+  });
+
+  it.each([false, true])(
+    "changes the whole text when no text range is selected (editing=%s)",
+    async (editing) => {
+      const base = API.createElement({ type: "text", text: "abc中文" });
+      const text = newElementWith(base, {
+        richText: {
+          version: 1,
+          paragraphs: [
+            {
+              runs: [
+                { text: "abc", color: "#1971c2" },
+                { text: "中文", color: "#e03131", background: "#fff3bf" },
+              ],
+            },
+          ],
+        },
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      if (editing) {
+        API.setAppState({ editingTextElement: text });
+        act(() =>
+          h.app.text.handleTextWysiwyg(text, {
+            isExistingElement: true,
+            initialSelection: { start: 1, end: 1 },
+          }),
+        );
+        await waitFor(() => expect(getRichEditor()).not.toBeNull());
+      }
+      act(() =>
+        h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+          color: "#abcdef",
+        }),
+      );
+      expect(current(text.id).strokeColor).toBe("#abcdef");
+      expect(current(text.id).richText?.paragraphs[0].runs).toEqual([
+        { text: "abc" },
+        { text: "中文", background: "#fff3bf" },
+      ]);
+      if (editing) {
+        await act(async () => {});
+        fireEvent.keyDown(getRichEditor(), { key: "Escape" });
+        expect(
+          current(text.id).richText?.paragraphs[0].runs.every(
+            (run) => !run.color,
+          ),
+        ).toBe(true);
+      }
+    },
+  );
 
   it("uses compact spacing presets and keeps custom numeric input inside its popover", async () => {
     const text = API.createElement({ type: "text", text: "first\nsecond" });

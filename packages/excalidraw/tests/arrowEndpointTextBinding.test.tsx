@@ -1,6 +1,11 @@
 import { CURSOR_TYPE, KEYS } from "@excalidraw/common";
 
-import { isTextElement } from "@excalidraw/element";
+import {
+  CaptureUpdateAction,
+  isTextElement,
+  layoutRichText,
+  newElementWith,
+} from "@excalidraw/element";
 
 import { pointFrom } from "@excalidraw/math";
 
@@ -543,6 +548,85 @@ describe("binding text to an arrow endpoint", () => {
       // treated as no drag at all — the text keeps autogrowing
       expect(text.autoResize).toBe(true);
       expect(text.x).toBeCloseTo(306, 0);
+    });
+
+    it("unwraps rich lists with paragraph spacing without clipping and restores them on undo", () => {
+      const rich = newElementWith(
+        API.createElement({
+          type: "text",
+          text: "first list item\nsecond list item\nlast paragraph",
+          x: 200,
+          y: 100,
+          textAlign: "right",
+        }),
+        {
+          autoResize: false,
+          paragraphSpacing: 0.75,
+          richText: {
+            version: 1,
+            paragraphs: [
+              {
+                list: { kind: "ordered", indent: 0 },
+                runs: [{ text: "first list item", bold: true }],
+              },
+              {
+                list: { kind: "bullet", indent: 1 },
+                runs: [{ text: "second list item", italic: true }],
+              },
+              {
+                runs: [
+                  {
+                    text: "last paragraph",
+                    underline: true,
+                    background: "#ffc9c9",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      );
+      const { width, height, text } = layoutRichText(rich, 120);
+      const wrapped = newElementWith(rich, { width, height, text });
+      API.updateScene({
+        elements: [wrapped],
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      API.setSelectedElements([wrapped]);
+      const expected = layoutRichText(wrapped, Infinity);
+
+      API.executeAction(actionTextAutoResize);
+
+      const resized = getText();
+      expect(resized.autoResize).toBe(true);
+      expect(resized.height).toBe(expected.height);
+      expect(resized.width).toBe(expected.width);
+      expect(resized.text).toBe(
+        "1. first list item\n• second list item\nlast paragraph",
+      );
+      expect(resized.text).toBe(expected.text);
+      expect(resized.richText).toEqual(wrapped.richText);
+      expect(resized.paragraphSpacing).toBe(0.75);
+      expect(resized.originalText).toBe(wrapped.originalText);
+      expect(resized.x + resized.width).toBeCloseTo(
+        wrapped.x + wrapped.width,
+        4,
+      );
+      const bottomLine = expected.lines[expected.lines.length - 1];
+      expect(
+        bottomLine.y + resized.fontSize * resized.lineHeight,
+      ).toBeLessThanOrEqual(resized.height);
+
+      Keyboard.undo();
+
+      expect(getText()).toMatchObject({
+        autoResize: false,
+        width: wrapped.width,
+        height: wrapped.height,
+        text: wrapped.text,
+        richText: wrapped.richText,
+        paragraphSpacing: wrapped.paragraphSpacing,
+      });
     });
 
     // the autoResize handle unwraps the text back to one line; anchoring that

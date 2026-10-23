@@ -1,5 +1,5 @@
 import { CaptureUpdateAction, isNonDeletedElement } from "@excalidraw/element";
-import { KEYS } from "@excalidraw/common";
+import { FONT_FAMILY, KEYS } from "@excalidraw/common";
 
 import { API } from "@excalidraw/excalidraw/tests/helpers/api";
 import {
@@ -27,6 +27,151 @@ import { SubcanvasEditor } from "./SubcanvasEditor";
 import type { CanvasDocument } from "../workspace/workspace";
 
 describe("desktop nested canvas lifecycle", () => {
+  it("creates new text with the replacement default on an empty canvas", async () => {
+    const document = { title: "Empty" } as CanvasDocument;
+    let parent!: ExcalidrawImperativeAPI;
+    const view = await render(
+      <SubcanvasEditor
+        document={document}
+        onExcalidrawAPI={(api) => {
+          if (api) {
+            parent = api;
+          }
+        }}
+        handleKeyboardGlobally
+      />,
+    );
+    await waitFor(() => expect(parent.getAppState().isLoading).toBe(false));
+    act(() => document.replaceAllSceneFonts!(FONT_FAMILY.Nunito));
+    fireEvent.doubleClick(view.container.querySelector("canvas.interactive")!, {
+      clientX: 200,
+      clientY: 200,
+    });
+    await waitFor(() =>
+      expect(parent.getAppState().editingTextElement).toMatchObject({
+        fontFamily: FONT_FAMILY.Nunito,
+      }),
+    );
+  });
+
+  it("replaces live and hidden child fonts while retaining each child's undo history", async () => {
+    const note = API.createElement({ type: "stickynote", id: "font-pin" });
+    const converted = convertStickyNoteToSubcanvas([note], note.id, {})!;
+    const text = API.createElement({
+      type: "text",
+      id: "font-text",
+      fontFamily: FONT_FAMILY.Excalifont,
+    });
+    converted.scenes[converted.sceneId].elements = [text];
+    const document = { title: "Parent" } as CanvasDocument;
+    let parent!: ExcalidrawImperativeAPI;
+    const view = await render(
+      <SubcanvasEditor
+        document={document}
+        initialData={{
+          elements: [...converted.elements, { ...text, id: "root-font-text" }],
+          appState: { subscenes: converted.scenes },
+        }}
+        onExcalidrawAPI={(api) => {
+          if (api) {
+            parent = api;
+          }
+        }}
+        desktopIntegration={{
+          save: async () => true,
+          open: async () => {},
+          localOnly: true,
+        }}
+        interaction
+        handleKeyboardGlobally
+        langCode="zh-CN"
+      />,
+    );
+    await waitFor(() =>
+      expect(typeof document.replaceAllSceneFonts).toBe("function"),
+    );
+    act(() => document.replaceAllSceneFonts!(FONT_FAMILY.Nunito));
+    expect(parent.getAppState().currentItemFontFamily).toBe(FONT_FAMILY.Nunito);
+    expect(
+      document.getSnapshot!().appState.subscenes[converted.sceneId].elements[0],
+    ).toMatchObject({ fontFamily: FONT_FAMILY.Nunito });
+    act(() =>
+      parent.updateScene({
+        appState: { selectedElementIds: { "font-pin": true } },
+      }),
+    );
+    fireEvent.click(await view.findByRole("button", { name: "打开子画布" }));
+    await waitFor(() =>
+      expect(document.activeEditor?.()?.getAppState().isLoading).toBe(false),
+    );
+    const child = document.activeEditor!()!;
+    expect(child.getSceneElements()[0]).toMatchObject({
+      fontFamily: FONT_FAMILY.Nunito,
+    });
+    expect(child.getAppState().currentItemFontFamily).toBe(FONT_FAMILY.Nunito);
+    act(() =>
+      child.updateScene({
+        appState: { currentItemFontFamily: FONT_FAMILY.Excalifont },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      }),
+    );
+    act(() => document.replaceAllSceneFonts!(FONT_FAMILY.Nunito));
+    expect(child.getAppState().currentItemFontFamily).toBe(FONT_FAMILY.Nunito);
+    const editor = view.container.querySelector(
+      ".desktop-subcanvas .excalidraw",
+    )!;
+    fireEvent.keyDown(editor, {
+      key: "z",
+      code: "KeyZ",
+      [KEYS.CTRL_OR_CMD]: true,
+    });
+    await waitFor(() =>
+      expect(child.getSceneElements()[0]).toMatchObject({
+        fontFamily: FONT_FAMILY.Excalifont,
+      }),
+    );
+    fireEvent.keyDown(editor, {
+      key: "z",
+      code: "KeyZ",
+      [KEYS.CTRL_OR_CMD]: true,
+      shiftKey: true,
+    });
+    await waitFor(() =>
+      expect(child.getSceneElements()[0]).toMatchObject({
+        fontFamily: FONT_FAMILY.Nunito,
+      }),
+    );
+    act(() => document.replaceAllSceneFonts!(FONT_FAMILY["Comic Shanns"]));
+    expect(child.getAppState().currentItemFontFamily).toBe(
+      FONT_FAMILY["Comic Shanns"],
+    );
+    expect(parent.getAppState().currentItemFontFamily).toBe(
+      FONT_FAMILY["Comic Shanns"],
+    );
+    expect(child.getSceneElements()[0]).toMatchObject({
+      fontFamily: FONT_FAMILY["Comic Shanns"],
+    });
+    expect(
+      parent
+        .getSceneElements()
+        .find((element) => element.id === "root-font-text"),
+    ).toMatchObject({ fontFamily: FONT_FAMILY["Comic Shanns"] });
+    fireEvent.keyDown(editor, {
+      key: "z",
+      code: "KeyZ",
+      [KEYS.CTRL_OR_CMD]: true,
+    });
+    await waitFor(() =>
+      expect(child.getSceneElements()[0]).toMatchObject({
+        fontFamily: FONT_FAMILY.Nunito,
+      }),
+    );
+    fireEvent.click(view.getByRole("button", { name: "收起子画布" }));
+    expect(
+      document.getSnapshot!().appState.subscenes[converted.sceneId].elements[0],
+    ).toMatchObject({ fontFamily: FONT_FAMILY.Nunito });
+  });
+
   it("saves nested edits, releases closed editors and restores separate undo history", async () => {
     const note = API.createElement({ type: "stickynote", id: "pin" });
     const converted = convertStickyNoteToSubcanvas([note], note.id, {})!;

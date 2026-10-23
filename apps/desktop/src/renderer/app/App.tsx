@@ -310,7 +310,17 @@ const Editor = ({
         }
         desktopIntegration={{
           localOnly: true,
+          elementPastePosition: document.presentation ? "original" : undefined,
           onConfigurePreferences: onPreferences,
+          onReplaceSceneFont: (fontFamily) =>
+            workspace.applyFontToCurrentLayer(document, fontFamily),
+          sceneFontLabel: document.presentation
+            ? workspace.settings.language === "en"
+              ? "Replace fonts on this slide"
+              : "替换当前页字体"
+            : workspace.settings.language === "en"
+            ? "Replace fonts on this canvas"
+            : "替换当前画布字体",
           backgroundTopPicks:
             workspace.settings.editorPreferences?.backgroundTopPicks,
           fontSizePresets: resolveEditorPreferences(
@@ -853,6 +863,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
             settings={workspace.settings}
             onChange={workspace.updateSettings}
             onChangeDirectory={workspace.changeDirectory}
+            onApplyFontToOpenDocuments={workspace.applyFontToOpenDocuments}
           />
           <footer>
             <span>
@@ -905,6 +916,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
               preferences={workspace.settings.editorPreferences}
               section={preferencesSection}
               language={workspace.settings.language}
+              onApplyFontToOpenDocuments={workspace.applyFontToOpenDocuments}
               onChange={async (editorPreferences) => {
                 if (!(await workspace.updateSettings({ editorPreferences }))) {
                   throw new Error(

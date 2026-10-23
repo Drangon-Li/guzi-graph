@@ -1,4 +1,11 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { MIME_TYPES } from "@excalidraw/common";
+import {
+  createPasteEvent,
+  parseDataTransferEvent,
+  readSystemClipboard,
+} from "@excalidraw/excalidraw/clipboard";
 
 import type { AppState, ExcalidrawProps } from "@excalidraw/excalidraw/types";
 
@@ -12,6 +19,8 @@ import "./PresentationEditor.scss";
 
 import type { CanvasDocument, Workspace } from "../workspace/workspace";
 
+type PendingPaste = { slideId: string; event?: ClipboardEvent };
+
 export const PresentationEditor = ({
   document,
   workspace,
@@ -24,6 +33,9 @@ export const PresentationEditor = ({
   const [presenting, setPresenting] = useState(false);
   const boundary = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
+  const pendingPastes = useRef<PendingPaste[]>([]);
+  const pasteEnabled = useRef(true);
+  pasteEnabled.current = props.interaction !== false && !presenting;
   let runtime = document.slideRuntime!.get(slideId);
   if (!runtime) {
     runtime = { children: new Map() };
@@ -56,6 +68,69 @@ export const PresentationEditor = ({
     }
   };
 
+  const flushPendingPastes = useCallback(() => {
+    const api = document.api;
+    if (
+      !pasteEnabled.current ||
+      !api ||
+      api.isDestroyed ||
+      api.getAppState().isLoading
+    ) {
+      return;
+    }
+    const ready = pendingPastes.current.filter(
+      (paste) => paste.slideId === document.activeSlideId && paste.event,
+    );
+    pendingPastes.current = pendingPastes.current.filter(
+      (paste) => !ready.includes(paste),
+    );
+    ready.forEach((paste) => api.pasteFromClipboard(paste.event!));
+  }, [document]);
+
+  useEffect(() => {
+    flushPendingPastes();
+  }, [props.interaction, presenting, flushPendingPastes]);
+
+  const pasteToCanvas = (event: ClipboardEvent) => {
+    const api = document.api;
+    if (api && !api.isDestroyed && !api.getAppState().isLoading) {
+      api.pasteFromClipboard(event);
+      return;
+    }
+    const ownerWindow = container.current!.ownerDocument.defaultView!;
+    const paste: PendingPaste = {
+      slideId: document.activeSlideId!,
+    };
+    pendingPastes.current.push(paste);
+    // Capture native data and request web custom formats before activation expires.
+    const captured = parseDataTransferEvent(event);
+    const customFormats =
+      event.isTrusted &&
+      Array.from(event.clipboardData?.files ?? []).some(
+        (file) => file.type === MIME_TYPES.png,
+      )
+        ? readSystemClipboard(ownerWindow).catch(() => null)
+        : Promise.resolve(null);
+    void Promise.all([captured, customFormats])
+      .then(([data, custom]) => {
+        const types = Object.fromEntries(
+          data.flatMap((item) =>
+            item.kind === "string" ? [[item.type, item.value]] : [],
+          ),
+        );
+        const elements = custom?.[MIME_TYPES.excalidrawClipboard];
+        if (typeof elements === "string") {
+          types[MIME_TYPES.excalidrawClipboard] = elements;
+        }
+        paste.event = createPasteEvent(
+          { types, files: data.getFiles().map(({ file }) => file) },
+          ownerWindow,
+        );
+        flushPendingPastes();
+      })
+      .catch(workspace.reportError);
+  };
+
   return (
     <PresentationLayout
       presentation={deck}
@@ -73,6 +148,10 @@ export const PresentationEditor = ({
           .pasteSlide(document, content)
           .catch(workspace.reportError);
       }}
+      onCanvasPaste={pasteToCanvas}
+      onHistory={(direction) =>
+        workspace.performPresentationHistory(document, direction)
+      }
       onDelete={(id) => workspace.deleteSlide(document, id)}
       onRename={(id, title) => workspace.renameSlide(document, id, title)}
       onMove={(id, index) => workspace.moveSlide(document, id, index)}
@@ -107,9 +186,32 @@ export const PresentationEditor = ({
           initialData={{ ...document.initialData, scrollToContent: false }}
           interaction={props.interaction !== false && !presenting}
           handleKeyboardGlobally={!!props.handleKeyboardGlobally && !presenting}
+          desktopIntegration={
+            props.desktopIntegration && {
+              ...props.desktopIntegration,
+              history: {
+                undoAvailable:
+                  !!document.presentationHistory?.undo.length &&
+                  !document.presentationHistory.pending,
+                redoAvailable:
+                  !!document.presentationHistory?.redo.length &&
+                  !document.presentationHistory.pending,
+                perform: (direction) =>
+                  workspace.performPresentationHistory(document, direction),
+              },
+            }
+          }
           onExcalidrawAPI={(api) => {
             if (document.activeSlideId === slideId) {
               props.onExcalidrawAPI?.(api);
+              api?.onIncrement((increment) => {
+                if (
+                  document.activeSlideId === slideId &&
+                  document.api === api
+                ) {
+                  workspace.recordPresentationIncrement(document, increment);
+                }
+              });
             }
           }}
           onInitialize={(api) => {
@@ -120,6 +222,8 @@ export const PresentationEditor = ({
               api.history.restoreCheckpoint?.(runtime.history);
             }
             props.onInitialize?.(api);
+            workspace.resumePresentationHistory(document, api);
+            flushPendingPastes();
             if (runtime.snapshot) {
               positionBoundary(api.getAppState());
             } else {

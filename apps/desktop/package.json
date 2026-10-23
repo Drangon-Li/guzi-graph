@@ -1,6 +1,6 @@
 {
   "name": "excalidraw-local-desktop",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "description": "A local macOS workspace for Excalidraw drawings",
   "author": "Local",
@@ -14,6 +14,7 @@
     "test": "node --test src/main/*.test.cjs src/main/i18n/*.test.cjs && npm run test:renderer",
     "package": "npm run build && electron-builder --mac dmg --arm64",
     "package:dev-ppt": "VITE_DESKTOP_BUILD_CHANNEL=dev-ppt npm run build && electron-builder --config electron-builder.dev-ppt.cjs --mac dmg --arm64",
+    "package:test": "VITE_DESKTOP_BUILD_CHANNEL=test npm run build && electron-builder --config electron-builder.testing.cjs --mac dmg --arm64",
     "package:dir": "npm run build && electron-builder --mac dir --arm64",
     "test:renderer": "cd ../.. && vitest --config tooling/config/test/vitest.config.mts run apps/desktop/src/renderer --reporter=dot",
     "test:mcp:e2e": "node scripts/mcp-e2e.cjs",
