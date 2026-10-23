@@ -1,6 +1,12 @@
 import type { FontSizePresets } from "@excalidraw/common";
 
-import type { PluginRequest, PluginResponse, PluginState } from "./plugins";
+import type {
+  PluginRequest,
+  PluginResponse,
+  PluginState,
+  UserPluginPackage,
+  UserPluginState,
+} from "./plugins";
 
 export interface StylePreset {
   id: string;
@@ -112,6 +118,22 @@ export type DesktopCommand =
   | "close-window";
 
 export interface DesktopAPI {
+  getUserPlugins(): Promise<UserPluginState[]>;
+  installUserPlugin(
+    plugin: UserPluginPackage,
+    overwrite?: boolean,
+  ): Promise<UserPluginState[]>;
+  setUserPluginEnabled(
+    id: string,
+    enabled: boolean,
+  ): Promise<UserPluginState[]>;
+  removeUserPlugin(id: string): Promise<UserPluginState[]>;
+  runUserPluginCommand(
+    id: string,
+    commandId: string,
+    args?: Record<string, unknown>,
+  ): Promise<unknown>;
+  onUserPluginState(callback: (plugins: UserPluginState[]) => void): () => void;
   getPlugins(): Promise<PluginState[]>;
   setPluginEnabled(id: string, enabled: boolean): Promise<PluginState[]>;
   configurePlugin(

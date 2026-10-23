@@ -19,6 +19,7 @@ import {
 
 import { translate } from "../../shared/i18n/i18n";
 
+import { McpSettingsPanel } from "./McpSettingsPanel";
 import { PreferencePanel } from "./PreferencePanel";
 import { StylePresetPanel } from "./StylePresetPanel";
 
@@ -32,6 +33,7 @@ type SettingsCategory =
   | "tools"
   | "defaults"
   | "shortcuts"
+  | "mcp"
   | "files";
 
 const SettingsRow = ({
@@ -89,6 +91,11 @@ export const SettingsPanel = ({
       icon: <span className="desktop-settings-command">⌘</span>,
     },
     {
+      id: "mcp",
+      label: t("内置 MCP"),
+      icon: <span className="desktop-settings-command">⌘</span>,
+    },
+    {
       id: "files",
       label: en ? "Files & export" : "文件与导出",
       icon: LoadIcon,
@@ -115,6 +122,7 @@ export const SettingsPanel = ({
     shortcuts: en
       ? "Keep your favorite drawing styles one shortcut away."
       : "用快捷键快速调用常用绘图样式。",
+    mcp: t("连接 AI 客户端，读取、编辑和导出画布。"),
     files: en
       ? "Manage your drawing folder and export preferences."
       : "设置画布存放位置与导出方式。",
@@ -294,6 +302,9 @@ export const SettingsPanel = ({
             language={settings.language}
             onChange={(stylePresets) => savePreferences({ stylePresets })}
           />
+        )}
+        {category === "mcp" && (
+          <McpSettingsPanel root={root} language={settings.language} />
         )}
         {category === "files" && (
           <>

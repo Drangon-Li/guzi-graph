@@ -22,6 +22,9 @@ const { buildChannel } = require("../../package.json");
 const { translate } = require("./i18n/i18n.cjs");
 const { renderPdf, validatePdfRequest } = require("./pdf.cjs");
 const { PluginHost } = require("./plugins.cjs");
+const { UserPluginStore } = require("./user-plugin-store.cjs");
+const { UserPluginRuntime } = require("./user-plugin-runtime.cjs");
+const { UserPlugins } = require("./user-plugins.cjs");
 const {
   DesktopStorage,
   atomicWrite,
@@ -61,6 +64,9 @@ protocol.registerSchemesAsPrivileged([
 let window = null;
 let storage;
 let plugins;
+let userPlugins;
+const setHostsReady = (ready) =>
+  Promise.all([userPlugins?.setReady(ready), plugins?.setReady(ready)]);
 const t = (message, values) =>
   translate(storage?.getSettings().language || "zh-CN", message, values);
 let closePending = false;
@@ -337,13 +343,30 @@ function installIPC() {
       }
     });
   handle("get-plugins", () => plugins.list());
+  handle("get-user-plugins", () => {
+    if (userPlugins.store.configurationError)
+      throw new Error(userPlugins.store.configurationError);
+    return userPlugins.list();
+  });
+  handle("install-user-plugin", (plugin, overwrite = false) =>
+    userPlugins.install(plugin, overwrite),
+  );
+  handle("set-user-plugin-enabled", (id, enabled) =>
+    userPlugins.setEnabled(id, enabled),
+  );
+  handle("remove-user-plugin", (id) => userPlugins.remove(id));
+  handle("run-user-plugin-command", (id, commandId, args) =>
+    userPlugins.run(id, commandId, args),
+  );
   handle("set-plugin-enabled", (id, enabled) =>
     plugins.setEnabled(id, enabled),
   );
   handle("configure-plugin", (id, configuration) =>
     plugins.configure(id, configuration),
   );
-  handle("set-plugin-host-ready", (ready) => plugins.setReady(ready));
+  handle("set-plugin-host-ready", async (ready) => {
+    await setHostsReady(ready);
+  });
   ipcMain.on("desktop:plugin-response", (event, response) => {
     try {
       assertSender(event);
@@ -685,11 +708,11 @@ function createWindow() {
     (_event, _url, _inPlace, isMainFrame) => {
       if (isMainFrame) {
         filesConsumerReady = false;
-        plugins?.setReady(false);
+        void setHostsReady(false);
       }
     },
   );
-  window.webContents.on("render-process-gone", () => plugins?.setReady(false));
+  window.webContents.on("render-process-gone", () => void setHostsReady(false));
   window.webContents.on("will-navigate", (event, url) => {
     if (!trustedURL(url)) {
       event.preventDefault();
@@ -710,7 +733,7 @@ function createWindow() {
     }
   });
   window.on("closed", () => {
-    plugins?.setReady(false);
+    void setHostsReady(false);
     window = null;
     closePending = false;
     filesConsumerReady = false;
@@ -837,7 +860,7 @@ if (!hasLock) {
       event.preventDefault();
       requestClose(true);
     } else {
-      plugins?.setReady(false);
+      void setHostsReady(false);
     }
   });
   app.on("window-all-closed", () => {
@@ -856,7 +879,26 @@ if (!hasLock) {
           if (window && !window.isDestroyed())
             window.webContents.send(`desktop:${channel}`, value);
         },
+        handleCommand: (command, args) =>
+          userPlugins.handleCommand(command, args),
       }).initialize();
+      userPlugins = new UserPlugins({
+        store: await new UserPluginStore({
+          userData: app.getPath("userData"),
+        }).initialize(),
+        createRuntime: (options) =>
+          new UserPluginRuntime({
+            BrowserWindow,
+            session,
+            ipcMain,
+            ...options,
+          }),
+        execute: (...args) => plugins.execute(...args),
+        send: (value) => {
+          if (window && !window.isDestroyed())
+            window.webContents.send("desktop:user-plugin-state", value);
+        },
+      });
       secureSession();
       if (!developmentURL) {
         await installLocalProtocol();

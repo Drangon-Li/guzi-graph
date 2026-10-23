@@ -131,6 +131,22 @@
       line-height: 1.6;
     }
   }
+  .desktop-mcp-settings {
+    padding-bottom: 0;
+
+    .desktop-market-card {
+      min-width: 0;
+      padding: 16px;
+
+      > header {
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      h2 {
+        font-size: 16px;
+      }
+    }
+  }
   .desktop-settings-item {
     display: flex;
     align-items: center;

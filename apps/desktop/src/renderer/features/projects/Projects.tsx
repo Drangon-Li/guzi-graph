@@ -257,7 +257,7 @@ export const Projects = ({
             </h1>
             <p>
               {view === "market"
-                ? t("管理内置插件，连接你的画布与 AI 工具。")
+                ? t("管理本地 JavaScript 插件，扩展你的画布。")
                 : examplesVisible
                 ? t("打开示例副本自由编辑，保存时选择自己的位置。")
                 : historyVisible

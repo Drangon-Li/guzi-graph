@@ -190,6 +190,12 @@ describe("desktop document workspace", () => {
     plugin = () => {};
     cancelPlugin = () => {};
     desktop = {
+      getUserPlugins: vi.fn().mockResolvedValue([]),
+      installUserPlugin: vi.fn().mockResolvedValue([]),
+      setUserPluginEnabled: vi.fn().mockResolvedValue([]),
+      removeUserPlugin: vi.fn().mockResolvedValue([]),
+      runUserPluginCommand: vi.fn().mockResolvedValue(null),
+      onUserPluginState: vi.fn(() => () => {}),
       getSettings: vi.fn().mockResolvedValue(settings),
       getPlugins: vi.fn().mockResolvedValue([]),
       setPluginEnabled: vi.fn().mockResolvedValue([]),

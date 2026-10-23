@@ -6,6 +6,7 @@ const net = require("node:net");
 const { createHash } = require("node:crypto");
 const { execFileSync } = require("node:child_process");
 const { _electron } = require("playwright");
+const { enableMcpInSettings } = require("./mcp-settings-ui.cjs");
 
 const desktopDirectory = path.resolve(__dirname, "..");
 const repository = path.resolve(desktopDirectory, "../..");
@@ -427,7 +428,6 @@ async function main() {
   );
   page.on("pageerror", (error) => report.pageErrors.push(error.message));
   step("Enable isolated MCP endpoint");
-  await page.getByRole("button", { name: "插件市场", exact: true }).click();
   const server = net.createServer();
   await new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -435,13 +435,7 @@ async function main() {
   });
   const port = server.address().port;
   await new Promise((resolve) => server.close(resolve));
-  await page.getByRole("spinbutton", { name: "本地端口" }).fill(String(port));
-  await page.getByRole("button", { name: "应用端口", exact: true }).click();
-  await page.getByRole("switch", { name: "启用插件" }).click();
-  await page.getByText("运行中", { exact: true }).waitFor();
-  const plugin = await page.evaluate(
-    async () => (await window.desktop.getPlugins())[0],
-  );
+  const plugin = await enableMcpInSettings(page, port);
   assert.equal(plugin.status, "running", plugin.error || plugin.status);
   endpoint = plugin.endpoint;
   const { Client, StreamableHTTPClientTransport } = await import(

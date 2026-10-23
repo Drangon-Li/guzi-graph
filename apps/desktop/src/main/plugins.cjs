@@ -1,7 +1,8 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const { randomBytes } = require("node:crypto");
+const { randomBytes, randomUUID } = require("node:crypto");
 const { atomicWrite } = require("./storage.cjs");
+const { DEVELOPMENT_COMMANDS } = require("./plugin-development.cjs");
 
 const COMMANDS = new Set([
   "get_capabilities",
@@ -20,7 +21,9 @@ const COMMANDS = new Set([
   "control_presentation",
   "export_presentation",
   "save_presentation",
+  ...DEVELOPMENT_COMMANDS,
 ]);
+const MANAGEMENT_COMMANDS = new Set(DEVELOPMENT_COMMANDS);
 const BUILTIN_PLUGINS = [
   {
     id: "mcp",
@@ -46,10 +49,12 @@ class PluginHost {
     requestTimeout = REQUEST_TIMEOUT,
     stopTimeout = 3000,
     registry = BUILTIN_PLUGINS,
+    handleCommand,
   }) {
     this.configPath = path.join(userData, "plugins.json");
     this.fork = fork;
     this.send = send;
+    this.handleCommand = handleCommand;
     this.requestTimeout = requestTimeout;
     this.stopTimeout = stopTimeout;
     this.ready = false;
@@ -224,7 +229,10 @@ class PluginHost {
     this.ready = ready;
     // Cancel synchronously before renderer initialization can resume.
     if (!ready)
-      for (const runtime of this.runtimes.values())
+      for (const runtime of new Set([
+        ...this.runtimes.values(),
+        ...[...this.pending.values()].map((pending) => pending.runtime),
+      ]))
         this.cancelRequests(runtime);
     return this.serialize(async () => {
       await Promise.all(
@@ -385,11 +393,63 @@ class PluginHost {
     }, this.requestTimeout);
     timer.unref?.();
     this.pending.set(requestId, { runtime, timer });
+    if (MANAGEMENT_COMMANDS.has(command) && this.handleCommand) {
+      void Promise.resolve()
+        .then(() =>
+          this.pending.has(requestId)
+            ? this.handleCommand(command, args)
+            : undefined,
+        )
+        .then(
+          (result) => this.respond({ requestId, result }),
+          (error) =>
+            this.respond({
+              requestId,
+              error: failure(error.code || "PLUGIN_ERROR", error.message),
+            }),
+        );
+      return;
+    }
     this.send("plugin-request", {
       requestId,
       command,
       arguments: args,
       expiresAt: Date.now() + this.requestTimeout,
+    });
+  }
+
+  execute(command, args, signal) {
+    return new Promise((resolve, reject) => {
+      const requestId = `user-${randomUUID()}`;
+      const runtime = {
+        manifest: {
+          commands: [...COMMANDS].filter(
+            (name) => !MANAGEMENT_COMMANDS.has(name),
+          ),
+        },
+        child: {
+          postMessage: (response) => {
+            signal?.removeEventListener("abort", cancel);
+            if (response.error) {
+              reject(
+                Object.assign(
+                  new Error(response.error.message),
+                  response.error,
+                ),
+              );
+            } else resolve(response.result);
+          },
+        },
+      };
+      const cancel = () => this.cancelRequests(runtime);
+      if (signal?.aborted) {
+        reject(
+          Object.assign(new Error("插件操作已取消。"), { code: "CANCELLED" }),
+        );
+        return;
+      }
+      signal?.addEventListener("abort", cancel, { once: true });
+      this.forward(runtime, { requestId, command, arguments: args });
     });
   }
 

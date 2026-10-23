@@ -34,13 +34,13 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 - **自定义偏好**：设置默认字体、字号与颜色快捷项，可添加本机字体；配置绘图样式预设及其快捷键，选中元素时应用样式，未选中时切换绘图工具。
 - **桌面体验**：中英文界面、浅色／深色／跟随系统主题，支持调整工具提示和选区悬浮工具栏。
 - **演示文稿**：多页手绘幻灯片、拖拽排序与放映；底部缩略图跟随界面主题，支持保存、重开和整份 PDF 导出。
-- **Market 与 MCP**：在项目页的 Market 启停内置插件。MCP 插件提供本机接口，让 Codex 等客户端创建、编辑、保存和导出画布与演示文稿，默认采用手绘风格。
+- **Market 与 MCP**：在设置中启停内置 MCP，让 Codex 等客户端创建、编辑、保存和导出画布与演示文稿；通过 MCP 开发自己的插件，再在 Market 导入、启用或停用，默认采用手绘风格。
 - **图片复制**：复制选中元素后，粘贴到聊天或文档时呈现图片，在画板内部粘贴仍可编辑，并保留关联子画布。
 - **多种导出**：PNG、SVG、PDF，以及带图片附件的 JSON / Markdown 结构化导出。
 
 ## 安装
 
-v0.5.0 面向 **macOS Apple Silicon（arm64）**，安装包名为 `Excalidraw-Guzi-0.5.0-arm64.dmg`。暂未提供 Intel Mac、Windows 或 Linux 安装包。
+v0.6.0 面向 **macOS Apple Silicon（arm64）**，安装包名为 `Excalidraw-Guzi-0.6.0-arm64.dmg`。暂未提供 Intel Mac、Windows 或 Linux 安装包。
 
 1. 在 [Releases](https://github.com/Drangon-Li/guzi-graph/releases) 下载对应版本的 DMG。
 2. 打开 DMG，将 **Excalidraw-Guzi.app** 拖入「应用程序」。
@@ -52,11 +52,11 @@ v0.5.0 面向 **macOS Apple Silicon（arm64）**，安装包名为 `Excalidraw-G
 
 ## 连接 MCP
 
-1. 打开项目页左侧的 **Market**，启用 **MCP** 插件。
-2. 使用插件卡片提供的地址和客户端配置连接 Codex 或其他支持 Streamable HTTP 的 MCP 客户端。命令行客户端需按配置设置 `GUZI_MCP_TOKEN`；令牌可在卡片中查看和复制，请勿提交到仓库。
+1. 打开项目页左侧的 **设置 → 内置 MCP**，启用 MCP 服务。
+2. 使用设置中提供的地址和客户端配置连接 Codex 或其他支持 Streamable HTTP 的 MCP 客户端。命令行客户端需按配置设置 `GUZI_MCP_TOKEN`；令牌可在设置中查看和复制，请勿提交到仓库。
 3. 保持谷子白板运行，即可让客户端创建画布、绘图、操作多页演示文稿、放映、导出和保存。新文件保存到设置的默认工作目录，已有文件沿用原位置。
 
-MCP 服务仅监听本机回环地址，并校验访问令牌。停用插件后会停止服务。首版支持内置插件启停，暂不支持安装外部插件。
+MCP 服务仅监听本机回环地址，并校验访问令牌；关闭设置中的开关后会停止服务。连接后可通过 `get_plugin_development_guide` 和 `get_plugin_api_schema` 获取开发指南与接口定义，校验并安装自己的 JavaScript 插件包。也可以在 Market 导入 `.json` 插件包；新安装或更新的插件默认停用，需要在 Market 手动启用。
 
 ## 开始使用与经典示例
 

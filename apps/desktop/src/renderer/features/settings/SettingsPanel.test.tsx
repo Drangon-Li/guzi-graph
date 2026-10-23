@@ -8,7 +8,7 @@ import {
 
 import { SettingsPanel } from "./SettingsPanel";
 
-import type { DesktopSettings } from "../../../shared/desktop-api";
+import type { DesktopAPI, DesktopSettings } from "../../../shared/desktop-api";
 
 afterEach(cleanup);
 
@@ -93,4 +93,26 @@ it("edits drawing defaults within settings and keeps save failures visible", asy
     screen.getByRole("tabpanel", { name: "字体与颜色" }),
   ).toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it("opens the built-in MCP settings category", async () => {
+  const getPlugins = vi.fn().mockResolvedValue([]);
+  document.defaultView!.desktop = {
+    getPlugins,
+    onPluginState: () => () => {},
+  } as unknown as DesktopAPI;
+  render(
+    <SettingsPanel
+      root={document.body}
+      settings={settings}
+      onChange={async () => settings}
+      onChangeDirectory={async () => {}}
+    />,
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "内置 MCP" }));
+  expect(
+    screen.getByRole("tabpanel", { name: "内置 MCP" }),
+  ).toBeInTheDocument();
+  await screen.findByText("内置 MCP 暂不可用。");
+  expect(getPlugins).toHaveBeenCalledTimes(1);
 });

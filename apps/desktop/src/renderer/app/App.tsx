@@ -1009,13 +1009,11 @@ export const App = ({ root }: { root: HTMLElement }) => {
           onClose={() => setStructuredExport(null)}
         />
       )}
-      {import.meta.env.VITE_DESKTOP_BUILD_CHANNEL === "dev-ppt" && (
-        <div
-          className="desktop-build-badge"
-          aria-label="测试版本：dev-ppt 功能开发"
-        >
-          <strong>dev-ppt</strong>
-          <span>功能开发</span>
+      {(import.meta.env.DEV ||
+        import.meta.env.VITE_DESKTOP_BUILD_CHANNEL === "dev-ppt" ||
+        import.meta.env.VITE_DESKTOP_BUILD_CHANNEL === "test") && (
+        <div className="desktop-build-badge" aria-label="测试版">
+          <strong>测试版</strong>
         </div>
       )}
       {workspace.closePrompt && (
