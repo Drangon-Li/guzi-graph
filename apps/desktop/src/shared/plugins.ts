@@ -26,3 +26,32 @@ export interface PluginResponse {
   result?: unknown;
   error?: { code: string; message: string };
 }
+
+export type UserPluginPermission =
+  | "canvas:read"
+  | "canvas:write"
+  | "presentation:read"
+  | "presentation:write"
+  | "storage";
+
+export interface UserPluginManifest {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  apiVersion: 1;
+  permissions: UserPluginPermission[];
+  commands: { id: string; title: string }[];
+}
+
+export interface UserPluginPackage {
+  manifest: UserPluginManifest;
+  source: string;
+}
+
+export interface UserPluginState {
+  manifest: UserPluginManifest;
+  enabled: boolean;
+  status: PluginStatus;
+  error?: string;
+}

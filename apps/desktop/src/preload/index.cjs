@@ -10,6 +10,15 @@ const listen = (name, callback) => {
 };
 
 contextBridge.exposeInMainWorld("desktop", {
+  getUserPlugins: () => invoke("get-user-plugins"),
+  installUserPlugin: (plugin, overwrite) =>
+    invoke("install-user-plugin", plugin, overwrite),
+  setUserPluginEnabled: (id, enabled) =>
+    invoke("set-user-plugin-enabled", id, enabled),
+  removeUserPlugin: (id) => invoke("remove-user-plugin", id),
+  runUserPluginCommand: (id, commandId, args) =>
+    invoke("run-user-plugin-command", id, commandId, args),
+  onUserPluginState: (callback) => listen("user-plugin-state", callback),
   getPlugins: () => invoke("get-plugins"),
   setPluginEnabled: (id, enabled) => invoke("set-plugin-enabled", id, enabled),
   configurePlugin: (id, configuration) =>

@@ -652,12 +652,37 @@ test("plugin settings IPC validates sender and unknown plugins", async (t) => {
     "set-plugin-enabled",
     "configure-plugin",
     "set-plugin-host-ready",
+    "get-user-plugins",
+    "install-user-plugin",
+    "set-user-plugin-enabled",
+    "remove-user-plugin",
+    "run-user-plugin-command",
   ]) {
     await assert.rejects(
       handlers.get(`desktop:${name}`)({ ...event, sender: {} }),
       /拒绝/,
     );
   }
+});
+
+test("user plugin IPC installs disabled packages and uninstalls without starting code", async (t) => {
+  const { invoke } = await harness(t);
+  const { EXAMPLE_PLUGIN } = require("./plugin-development.cjs");
+  assert.deepEqual(await invoke("get-user-plugins"), []);
+  const installed = await invoke("install-user-plugin", EXAMPLE_PLUGIN);
+  assert.equal(installed[0].manifest.id, EXAMPLE_PLUGIN.manifest.id);
+  assert.equal(installed[0].enabled, false);
+  assert.equal(installed[0].status, "disabled");
+  await assert.rejects(
+    invoke(
+      "run-user-plugin-command",
+      EXAMPLE_PLUGIN.manifest.id,
+      "insert-note",
+    ),
+    { code: "PLUGIN_DISABLED" },
+  );
+  await invoke("remove-user-plugin", EXAMPLE_PLUGIN.manifest.id);
+  assert.deepEqual(await invoke("get-user-plugins"), []);
 });
 
 test("presentation Save As uses its native extension and rejects drawing destinations", async (t) => {

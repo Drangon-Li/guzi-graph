@@ -51,6 +51,87 @@ test("built-in MCP is disabled by default and persists its private token separat
   assert.deepEqual(await fs.readdir(userData), ["plugins.json"]);
 });
 
+test("user runtime bridge works with MCP disabled and cancels outstanding requests on stop or reload", async (t) => {
+  const { host, events, children } = await fixture(t);
+  await host.setReady(true);
+  const signal = new AbortController();
+  const pending = host.execute(
+    "read_canvas",
+    { documentId: "canvas" },
+    signal.signal,
+  );
+  const request = events.at(-1).value;
+  host.respond({ requestId: request.requestId, result: { revision: 1 } });
+  assert.deepEqual(await pending, { revision: 1 });
+  assert.equal(children.length, 0);
+  const cancelled = host.execute(
+    "read_canvas",
+    { documentId: "canvas" },
+    signal.signal,
+  );
+  const cancelledRequest = events.at(-1).value;
+  const rejection = assert.rejects(cancelled, { code: "HOST_UNAVAILABLE" });
+  signal.abort();
+  await rejection;
+  assert.equal(events.at(-1).channel, "plugin-request-cancelled");
+  host.respond({
+    requestId: cancelledRequest.requestId,
+    result: { late: true },
+  });
+  const reloading = host.execute("list_canvases", {});
+  const reloadRejection = assert.rejects(reloading, {
+    code: "HOST_UNAVAILABLE",
+  });
+  await host.setReady(false);
+  await reloadRejection;
+  assert.equal(host.pending.size, 0);
+});
+
+test("development tools execute in the main host instead of the renderer", async (t) => {
+  const calls = [];
+  const { host, children, events } = await fixture(t, {
+    handleCommand: async (command, args) => {
+      calls.push({ command, args });
+      return { plugins: [] };
+    },
+  });
+  await host.setEnabled("mcp", true);
+  await host.setReady(true);
+  children[0].emit("message", {
+    type: "request",
+    requestId: "list-plugins",
+    command: "list_plugins",
+    arguments: {},
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, [{ command: "list_plugins", args: {} }]);
+  assert.deepEqual(children[0].sent.at(-1).result, { plugins: [] });
+  assert.equal(
+    events.some((event) => event.channel === "plugin-request"),
+    false,
+  );
+  await assert.rejects(host.execute("install_plugin", {}), {
+    code: "INVALID_ARGUMENTS",
+  });
+});
+
+test("a cancelled management request never begins its queued mutation", async (t) => {
+  const calls = [];
+  const { host, children } = await fixture(t, {
+    handleCommand: (...args) => calls.push(args),
+  });
+  await host.setEnabled("mcp", true);
+  await host.setReady(true);
+  children[0].emit("message", {
+    type: "request",
+    requestId: "cancel-install",
+    command: "install_plugin",
+    arguments: {},
+  });
+  await host.setReady(false);
+  assert.deepEqual(calls, []);
+});
+
 test("enable waits for workspace, reload kills child and clears requests, next workspace restarts", async (t) => {
   const { host, children, events } = await fixture(t);
   await host.setEnabled("mcp", true);

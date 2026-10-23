@@ -1,3 +1,5 @@
+import { Script } from "node:vm";
+
 import { createElement } from "react";
 
 import {
@@ -26,6 +28,8 @@ import {
 
 import type { TableRoot } from "@excalidraw/element/table";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+
+import { EXAMPLE_PLUGIN } from "../../../main/plugin-development.cjs";
 
 import {
   CANVAS_CAPABILITIES,
@@ -82,6 +86,49 @@ const diagram = () =>
   );
 
 describe("controlled canvas operations", () => {
+  it("runs the published plugin example through actual canvas operation validation", async () => {
+    let handler!: (args: Record<string, unknown>) => Promise<unknown>;
+    let result: ReturnType<typeof prepareCanvasOperations> | undefined;
+    const call = async (command: string, args: Record<string, unknown>) => {
+      if (command === "list_canvases") {
+        return {
+          activeDocumentId: "canvas",
+          canvases: [
+            { documentId: "canvas", kind: "canvas", initialized: true },
+          ],
+        };
+      }
+      if (command === "read_canvas") {
+        return { revision: 1 };
+      }
+      if (command === "apply_operations") {
+        result = prepareCanvasOperations([], args.operations, state());
+        return { revision: 2 };
+      }
+      throw new Error(`Unexpected example command: ${command}`);
+    };
+    await new Script(
+      `(async () => {${EXAMPLE_PLUGIN.source}\n})()`,
+    ).runInNewContext({
+      guzi: {
+        call,
+        registerCommand: (_id: string, callback: typeof handler) => {
+          handler = callback;
+        },
+      },
+    });
+    await handler({ text: "可运行的插件示例" });
+    expect(
+      result?.elements.some((element) => element.type === "stickynote"),
+    ).toBe(true);
+    expect(
+      result?.elements.some(
+        (element) =>
+          element.type === "text" && element.text === "可运行的插件示例",
+      ),
+    ).toBe(true);
+  });
+
   it("uses the editor's hand-drawn defaults for shapes, text, labels and inline endpoints", () => {
     const result = prepareCanvasOperations(
       [],

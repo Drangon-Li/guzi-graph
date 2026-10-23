@@ -83,7 +83,62 @@ const sceneTarget = {
   slideId: canvasID.optional(),
   subsceneId: canvasID.optional(),
 };
+const pluginID = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
+const pluginCommandID = z.string().regex(/^[a-z][a-z0-9.-]{0,63}$/);
+const pluginPackage = z
+  .object({
+    manifest: z
+      .object({
+        id: pluginID,
+        name: z.string().trim().min(1).max(100),
+        description: z.string().max(2000),
+        version: z.string().min(1).max(100),
+        apiVersion: z.literal(1),
+        permissions: z
+          .array(
+            z.enum([
+              "canvas:read",
+              "canvas:write",
+              "presentation:read",
+              "presentation:write",
+              "storage",
+            ]),
+          )
+          .max(5),
+        commands: z
+          .array(
+            z
+              .object({
+                id: pluginCommandID,
+                title: z.string().trim().min(1).max(100),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(20),
+      })
+      .strict(),
+    source: z
+      .string()
+      .min(1)
+      .max(256 * 1024),
+  })
+  .strict();
 const toolSchemas = {
+  get_plugin_development_guide: z.object({}).strict(),
+  get_plugin_api_schema: z.object({}).strict(),
+  list_plugins: z.object({}).strict(),
+  get_plugin: z.object({ id: pluginID }).strict(),
+  validate_plugin: z.object({ plugin: pluginPackage }).strict(),
+  install_plugin: z.object({ plugin: pluginPackage }).strict(),
+  update_plugin: z.object({ plugin: pluginPackage }).strict(),
+  run_plugin_command: z
+    .object({
+      id: pluginID,
+      commandId: pluginCommandID,
+      args: z.record(z.string(), z.unknown()).optional(),
+    })
+    .strict(),
   get_capabilities: z.object({}).strict(),
   list_canvases: z.object({}).strict(),
   create_canvas: z
@@ -296,6 +351,22 @@ const toolSchemas = {
 };
 
 const descriptions = {
+  get_plugin_development_guide:
+    "Read the Guzi JavaScript plugin development guide, manifest format, isolated SDK, permissions, working example and install/update workflow. Start here to develop a personal plugin. Installation never enables code; the user enables it in Market.",
+  get_plugin_api_schema:
+    "Read versioned plugin package and SDK schemas, allowed commands and their full argument schemas. Plugins run locally in an isolated Worker without Node, filesystem, DOM or network access.",
+  list_plugins:
+    "List installed user plugins, manifests, enabled flags and runtime status. The built-in MCP service is managed in Settings and is excluded.",
+  get_plugin:
+    "Read an installed user plugin package {id}, including manifest and JavaScript source, before developing an update. Does not read arbitrary files or execute code.",
+  validate_plugin:
+    "Validate {plugin:{manifest,source}} including API version, permissions, IDs, size and JavaScript syntax, without running or installing its code.",
+  install_plugin:
+    "Install a new local JavaScript plugin package {plugin:{manifest,source}} without executing it. Existing IDs are rejected. The plugin is disabled until the user enables it in Market.",
+  update_plugin:
+    "Replace an existing local plugin package {plugin:{manifest,source}} atomically after validation. Stops its runtime and leaves it disabled for the user to review and enable in Market. Plugin storage is preserved.",
+  run_plugin_command:
+    "Run a declared command {id,commandId,args?:object} of an already-enabled user plugin through its isolated runtime. Disabled plugins cannot be started by this tool. The command can modify documents only within its declared permissions.",
   get_capabilities:
     "Discover supported document kinds, tools, element types, operation schemas, defaults and limits before editing. Takes {}. All tools operate only on this local workspace; no arbitrary filesystem access or network fetch is granted.",
   list_canvases:
@@ -410,6 +481,11 @@ function createCanvasHandler(execute) {
           "export_canvas",
           "read_presentation",
           "export_presentation",
+          "get_plugin_development_guide",
+          "get_plugin_api_schema",
+          "list_plugins",
+          "get_plugin",
+          "validate_plugin",
         ].includes(command);
         server.registerTool(
           command,
@@ -422,6 +498,8 @@ function createCanvasHandler(execute) {
                 "apply_operations",
                 "update_presentation",
                 "control_canvas",
+                "update_plugin",
+                "run_plugin_command",
               ].includes(command),
               openWorldHint: false,
             },

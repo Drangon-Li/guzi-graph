@@ -4,6 +4,8 @@ const path = require("node:path");
 const net = require("node:net");
 const { spawn } = require("node:child_process");
 const { _electron } = require("playwright");
+const { enableMcpInSettings } = require("./mcp-settings-ui.cjs");
+const { COMMANDS } = require("../src/main/plugins.cjs");
 
 const desktopDirectory = path.resolve(__dirname, "..");
 const repository = path.resolve(desktopDirectory, "../..");
@@ -148,23 +150,14 @@ async function main() {
   });
   page = await application.firstWindow();
   page.setDefaultTimeout(30000);
-  await page.getByRole("button", { name: "插件市场", exact: true }).click();
   const port = await freePort();
-  await page.getByRole("spinbutton", { name: "本地端口" }).fill(String(port));
-  await page.getByRole("button", { name: "应用端口", exact: true }).click();
-  await page.getByRole("switch", { name: "启用插件" }).click();
-  await page.getByText("运行中", { exact: true }).waitFor();
-  const plugin = await page.evaluate(
-    async () => (await window.desktop.getPlugins())[0],
-  );
+  const plugin = await enableMcpInSettings(page, port, {
+    screenshotPath: path.join(artifacts, "mcp-settings.png"),
+  });
   assert.equal(plugin.status, "running", plugin.error || plugin.status);
   token = plugin.token;
   endpoint = plugin.endpoint;
   assert.equal(endpoint, `http://127.0.0.1:${port}/mcp`);
-  await page.screenshot({
-    path: path.join(artifacts, "market.png"),
-    fullPage: true,
-  });
   assert.equal(
     (
       await fetch(endpoint, {
@@ -201,24 +194,7 @@ async function main() {
   const tools = await client.listTools();
   assert.deepEqual(
     tools.tools.map((tool) => tool.name).sort(),
-    [
-      "get_capabilities",
-      "list_canvases",
-      "create_canvas",
-      "open_canvas",
-      "close_document",
-      "control_canvas",
-      "read_canvas",
-      "apply_operations",
-      "export_canvas",
-      "save_canvas",
-      "create_presentation",
-      "read_presentation",
-      "update_presentation",
-      "control_presentation",
-      "export_presentation",
-      "save_presentation",
-    ].sort(),
+    [...COMMANDS].sort(),
   );
   assert.match(client.getInstructions(), /hand-drawn/i);
   const call = async (name, args = {}) => {

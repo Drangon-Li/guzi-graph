@@ -1569,6 +1569,14 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       return {
         version: 2,
         maxRequestBytes: 2 * 1024 * 1024,
+        plugins: {
+          apiVersion: 1,
+          guide: "get_plugin_development_guide",
+          schema: "get_plugin_api_schema",
+          activation:
+            "Enable installed plugins in Market. MCP is configured in Settings.",
+          runtime: "Isolated JavaScript Worker with declared permissions",
+        },
         canvas: {
           ...CANVAS_CAPABILITIES,
           controls: ["undo", "redo", "select", "fit", "zoom"],
@@ -1611,6 +1619,7 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       const projects = await desktop.listProjects();
       assertActive();
       return {
+        activeDocumentId: activeRef.current,
         canvases: documentsRef.current.map(canvasDescriptor),
         files: projects.files.map((file) => ({
           path: file.path,
