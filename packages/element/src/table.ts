@@ -1,4 +1,5 @@
 import {
+  colorToHex,
   FONT_FAMILY,
   getFontString,
   getLineHeight,
@@ -328,7 +329,12 @@ const tableChildren = (
     };
     return [
       newElementWith(background, {
-        boundElements: [{ type: "text", id: label.id }],
+        boundElements: [
+          ...(old("background")?.boundElements?.filter(
+            (binding) => binding.type !== "text",
+          ) ?? []),
+          { type: "text", id: label.id },
+        ],
       }),
       label,
     ];
@@ -532,7 +538,22 @@ export const styleTableCells = (
 ): TableData => ({
   ...data,
   cells: data.cells.map((cell) =>
-    inRange(cell, range) ? { ...cell, ...style } : cell,
+    inRange(cell, range)
+      ? {
+          ...cell,
+          ...style,
+          ...(style.textColor !== undefined &&
+            cell.richText && {
+              richText: {
+                ...cell.richText,
+                paragraphs: cell.richText.paragraphs.map((paragraph) => ({
+                  ...paragraph,
+                  runs: paragraph.runs.map(({ color, ...run }) => run),
+                })),
+              },
+            }),
+        }
+      : cell,
   ),
 });
 
@@ -655,11 +676,16 @@ export const tableDataFromTSV = (
   };
 };
 
+const parseHTMLPixelSize = (value: string) =>
+  parseFloat(value) * (/pt\s*$/i.test(value) ? 4 / 3 : 1);
+
 const readHTMLRichText = (
   cell: HTMLElement,
   readStyle: (element: HTMLElement) => CSSStyleDeclaration,
+  textColor: string,
 ): RichTextDocument => {
   const runs: RichTextRun[] = [];
+  const defaultColor = colorToHex(textColor);
   const visit = (node: Node, marks: Omit<RichTextRun, "text">) => {
     if (node.nodeType === 3) {
       runs.push({ ...marks, text: node.textContent ?? "" });
@@ -674,6 +700,7 @@ const readHTMLRichText = (
       return;
     }
     const style = readStyle(element);
+    const color = colorToHex(style.color);
     const next = {
       ...marks,
       ...((element.tagName === "B" ||
@@ -686,6 +713,13 @@ const readHTMLRichText = (
         background: style.backgroundColor,
       }),
     };
+    if (color) {
+      if (color === defaultColor) {
+        delete next.color;
+      } else {
+        next.color = color;
+      }
+    }
     element.childNodes.forEach((child) => visit(child, next));
     if (/^(P|DIV)$/.test(element.tagName) && element.nextSibling) {
       runs.push({ text: "\n" });
@@ -698,7 +732,20 @@ const readHTMLRichText = (
       if (index) {
         paragraphs.push({ runs: [] });
       }
-      paragraphs[paragraphs.length - 1].runs.push({ ...run, text });
+      const paragraphRuns = paragraphs[paragraphs.length - 1].runs;
+      const previous = paragraphRuns[paragraphRuns.length - 1];
+      if (
+        previous &&
+        previous.bold === run.bold &&
+        previous.italic === run.italic &&
+        previous.underline === run.underline &&
+        previous.background === run.background &&
+        previous.color === run.color
+      ) {
+        previous.text += text;
+      } else {
+        paragraphRuns.push({ ...run, text });
+      }
     });
   }
   return { version: 1, paragraphs };
@@ -784,9 +831,14 @@ export const tableDataFromHTML = (
         column++;
       }
       const style = readStyle(td);
-      const richText = readHTMLRichText(td, readStyle);
+      const cellDefaults = emptyCell(rowIndex, column, defaults);
+      const richText = readHTMLRichText(
+        td,
+        readStyle,
+        style.color || cellDefaults.textColor,
+      );
       const cell = {
-        ...emptyCell(rowIndex, column, defaults),
+        ...cellDefaults,
         rowSpan: Math.max(
           1,
           Math.min(td.rowSpan || 1, rowElements.length - rowIndex),
@@ -799,8 +851,8 @@ export const tableDataFromHTML = (
         }),
         ...(style.color && { textColor: style.color }),
         ...(style.borderColor && { strokeColor: style.borderColor }),
-        ...(parseFloat(style.borderWidth) >= 0 && {
-          strokeWidth: parseFloat(style.borderWidth),
+        ...(parseHTMLPixelSize(style.borderWidth) >= 0 && {
+          strokeWidth: parseHTMLPixelSize(style.borderWidth),
         }),
         ...(/^(solid|dashed|dotted)$/.test(style.borderStyle) && {
           strokeStyle: style.borderStyle as TableCell["strokeStyle"],
@@ -812,14 +864,16 @@ export const tableDataFromHTML = (
             ? FONT_FAMILY.Virgil
             : FONT_FAMILY.Helvetica,
         }),
-        ...(parseFloat(style.fontSize) && {
-          fontSize: parseFloat(style.fontSize),
+        ...(parseHTMLPixelSize(style.fontSize) && {
+          fontSize: parseHTMLPixelSize(style.fontSize),
         }),
         ...(/^(left|center|right|justify)$/.test(style.textAlign) && {
           textAlign: style.textAlign as TableCell["textAlign"],
         }),
       };
-      const width = parseFloat(style.width || td.getAttribute("width") || "");
+      const width = parseHTMLPixelSize(
+        style.width || td.getAttribute("width") || "",
+      );
       if (width > 0 && cell.columnSpan === 1) {
         columnWidths[column] = width;
       }
@@ -834,7 +888,7 @@ export const tableDataFromHTML = (
   const data: TableData = {
     version: 1,
     rows: rowElements.map((row) =>
-      Math.max(36, parseFloat(readStyle(row).height) || 48),
+      Math.max(36, parseHTMLPixelSize(readStyle(row).height) || 48),
     ),
     columns: Array.from(
       { length: columnCount },

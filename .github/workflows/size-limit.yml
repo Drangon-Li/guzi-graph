@@ -2,7 +2,7 @@ name: "Bundle Size check @excalidraw/excalidraw"
 on:
   pull_request:
     branches:
-      - master
+      - main
 jobs:
   size:
     runs-on: ubuntu-latest
@@ -20,9 +20,8 @@ jobs:
         working-directory: packages/excalidraw
         env:
           CI: true
-      - uses: andresz1/size-limit-action@e7493a72a44b113341c0cf6186ab49c17c4b65c1 # v1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          build_script: build:esm
-          skip_step: install
-          directory: packages/excalidraw
+      - name: Check production package size
+        working-directory: packages/excalidraw
+        run: |
+          yarn build:esm
+          yarn size-limit

@@ -1,6 +1,11 @@
 import { rectangleFixture } from "@excalidraw/excalidraw/tests/fixtures/elementFixture";
 import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
 import { restoreAppState } from "@excalidraw/excalidraw/data/restore";
+import {
+  createTableData,
+  createTableElements,
+  isTableRoot,
+} from "@excalidraw/element/table";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { BinaryFiles, SocketId } from "@excalidraw/excalidraw/types";
@@ -20,7 +25,7 @@ const file = (id: string): BinaryFiles[string] => ({
   created: 1,
 });
 
-const image = (id: string): ExcalidrawElement =>
+const image = (id: string, isDeleted = false): ExcalidrawElement =>
   ({
     ...rectangleFixture,
     id,
@@ -29,7 +34,41 @@ const image = (id: string): ExcalidrawElement =>
     status: "saved",
     scale: [1, 1],
     crop: null,
+    isDeleted,
   } as ExcalidrawElement);
+
+const liveTable = (text: string): ExcalidrawElement[] =>
+  createTableElements(createTableData(1, 1), 0, 0).elements.map((element) =>
+    element.type === "text"
+      ? {
+          ...element,
+          text,
+          originalText: text,
+          richText: {
+            version: 1,
+            paragraphs: [{ runs: [{ text, bold: true }] }],
+          },
+        }
+      : element,
+  );
+
+const serializeByCopy = (deck: ReturnType<typeof createPresentation>) =>
+  JSON.stringify(
+    {
+      type: deck.type,
+      version: deck.version,
+      width: deck.width,
+      height: deck.height,
+      slides: deck.slides.map((slide) => ({
+        id: slide.id,
+        title: slide.title,
+        ...(slide.bounds ? { bounds: slide.bounds } : {}),
+        scene: copyPresentationScene(slide.scene),
+      })),
+    },
+    null,
+    2,
+  );
 
 describe("presentation model", () => {
   it("copies live scenes through the persistent state boundary", () => {
@@ -75,6 +114,158 @@ describe("presentation model", () => {
       window,
     );
     expect(restored?.slides[0].scene.elements).toEqual([]);
+  });
+
+  it("matches copy-based serialization byte for byte while persisting live tables and reachable subcanvases", () => {
+    const pin = (id: string, sceneId: string, isDeleted = false) =>
+      ({
+        ...rectangleFixture,
+        id,
+        type: "stickynote",
+        customData: { subcanvas: { sceneId } },
+        isDeleted,
+      } as ExcalidrawElement);
+    const peerId = "peer" as SocketId;
+    const scene = {
+      elements: [
+        image("image"),
+        image("deleted-image", true),
+        pin("pin", "child"),
+        pin("deleted-pin", "unreachable", true),
+        ...liveTable("Latest root cell"),
+      ],
+      appState: {
+        ...getDefaultAppState(),
+        viewBackgroundColor: "#ddeeff",
+        selectedElementIds: { image: true as const },
+        hoveredElementIds: { image: true as const },
+        collaborators: new Map([[peerId, { username: "Peer" }]]),
+        subscenes: {
+          child: {
+            version: 1 as const,
+            title: "子画布",
+            elements: [
+              image("child-image"),
+              pin("nested-pin", "grandchild"),
+              ...liveTable("Latest child cell"),
+            ],
+            appState: { fontRegistry: { 123456: "Example Font" } },
+          },
+          grandchild: {
+            version: 1 as const,
+            title: "孙画布",
+            elements: [
+              image("grandchild-image"),
+              image("nested-deleted-image", true),
+            ],
+            appState: {},
+          },
+          unreachable: {
+            version: 1 as const,
+            title: "已删除入口的画布",
+            elements: [image("unreachable-image")],
+            appState: {},
+          },
+        },
+      },
+      files: Object.fromEntries(
+        [
+          "image",
+          "deleted-image",
+          "child-image",
+          "grandchild-image",
+          "nested-deleted-image",
+          "unreachable-image",
+          "unused-image",
+        ].map((id) => [id, file(id)]),
+      ),
+    };
+    const deck = createPresentation("first", "表格与子画布", scene);
+    deck.slides[0].bounds = { x: -900, y: -500, width: 1600, height: 900 };
+    deck.slides.push(
+      { id: "blank", title: "空白页", scene: {} },
+      {
+        id: "image-only",
+        title: "图片页",
+        scene: { elements: [image("image")], files: scene.files },
+      },
+    );
+    const before = JSON.stringify(deck);
+    const content = serializePresentation(deck);
+    expect(content).toBe(serializeByCopy(deck));
+    expect(JSON.stringify(deck)).toBe(before);
+    expect(scene.appState.collaborators.get(peerId)?.username).toBe("Peer");
+    expect(scene.appState.selectedElementIds).toEqual({ image: true });
+    const saved = JSON.parse(content).slides[0].scene;
+    expect(saved.appState).not.toHaveProperty("collaborators");
+    expect(saved.appState).not.toHaveProperty("selectedElementIds");
+    expect(saved.appState).not.toHaveProperty("hoveredElementIds");
+    expect(saved.appState.viewBackgroundColor).toBe("#ddeeff");
+    expect(Object.keys(saved.appState.subscenes)).toEqual([
+      "child",
+      "grandchild",
+    ]);
+    expect(Object.keys(saved.files)).toEqual([
+      "image",
+      "child-image",
+      "grandchild-image",
+    ]);
+    expect(saved.appState.subscenes.child.appState.fontRegistry).toEqual({
+      123456: "Example Font",
+    });
+    for (const [elements, expected] of [
+      [saved.elements, "Latest root cell"],
+      [saved.appState.subscenes.child.elements, "Latest child cell"],
+    ] as const) {
+      const root = (elements as ExcalidrawElement[]).find(isTableRoot)!;
+      expect(root.customData.table.cells[0]).toMatchObject({
+        text: expected,
+        richText: {
+          paragraphs: [{ runs: [{ text: expected, bold: true }] }],
+        },
+      });
+    }
+    expect(
+      scene.elements.find(isTableRoot)!.customData.table.cells[0].text,
+    ).toBe("");
+
+    const copy = copyPresentationScene(scene);
+    scene.appState.subscenes.grandchild.title = "Changed title";
+    scene.files.image.dataURL = file("changed").dataURL;
+    expect(copy.appState?.subscenes?.grandchild.title).toBe("孙画布");
+    expect(copy.files?.image.dataURL).toBe(file("image").dataURL);
+  });
+
+  it("serializes current scene and table edits on every call", () => {
+    const scene = {
+      elements: liveTable("First value"),
+      appState: { viewBackgroundColor: "#ddeeff" },
+      files: {},
+    };
+    const deck = createPresentation("first", "第一页", scene);
+    const first = serializePresentation(deck);
+    scene.elements = scene.elements.map((element) =>
+      element.type === "text"
+        ? {
+            ...element,
+            text: "Second value",
+            originalText: "Second value",
+            richText: undefined,
+          }
+        : element,
+    );
+    scene.appState.viewBackgroundColor = "#aabbcc";
+    deck.slides[0].title = "Updated title";
+    const second = serializePresentation(deck);
+    expect(second).not.toBe(first);
+    expect(second).toBe(serializeByCopy(deck));
+    const saved = JSON.parse(second).slides[0];
+    expect(saved.title).toBe("Updated title");
+    expect(saved.scene.appState.viewBackgroundColor).toBe("#aabbcc");
+    expect(
+      (saved.scene.elements as ExcalidrawElement[]).find(isTableRoot)!
+        .customData.table.cells[0].text,
+    ).toBe("Second value");
   });
 
   it("round trips all pages, nested images and fonts while cleaning runtime state", async () => {

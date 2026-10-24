@@ -882,7 +882,14 @@ class DesktopStorage {
       stage("readback");
       const document = await this.readFile(target);
       stage("recent-files");
-      await this.recordRecentFile(target);
+      try {
+        await this.recordRecentFile(target);
+      } catch (error) {
+        console.warn(
+          "[guzi-storage] saved document history update failed",
+          error,
+        );
+      }
       return document;
     }, "save-file");
   }
@@ -1183,7 +1190,21 @@ class DesktopStorage {
     return this.serialize(async () => {
       let canonicalPath = draft.path;
       if (draft.path !== null) {
-        canonicalPath = await this.allowedPath(draft.path, { writing: true });
+        const originalPath = this.documentPath(draft.path);
+        try {
+          canonicalPath = await this.allowedPath(originalPath, {
+            writing: true,
+          });
+        } catch (error) {
+          if (
+            error.code !== "ENOENT" ||
+            !this.authorized.has(originalPath) ||
+            this.hiddenPaths.has(originalPath)
+          ) {
+            throw error;
+          }
+          canonicalPath = null;
+        }
         if (this.hiddenPaths.has(canonicalPath)) {
           return;
         }

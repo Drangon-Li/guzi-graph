@@ -2,6 +2,7 @@ import { FONT_FAMILY } from "@excalidraw/common";
 
 import { newElementWith } from "../src/mutateElement";
 import { duplicateElements } from "../src/duplicate";
+import { layoutRichText, normalizeRichText } from "../src/richText";
 import {
   canMergeTableCells,
   createTableData,
@@ -14,6 +15,7 @@ import {
   mergeTableCells,
   readTableData,
   splitTableCells,
+  styleTableCells,
   syncTableData,
   tableDataFromHTML,
   tableDataFromTSV,
@@ -300,4 +302,100 @@ it("preserves explicit HTML styles while using canvas defaults for unstyled cell
     strokeStyle: "dotted",
   });
   expect(tableDataFromTSV("A\tB", defaults)?.cells[1]).toMatchObject(defaults);
+});
+
+it("preserves cell arrow bindings when regenerating table elements", () => {
+  const table = createTableElements(createTableData(1, 1), 0, 0);
+  const background = table.elements.find(
+    (element) => element.customData?.tableCell?.role === "background",
+  )!;
+  const arrowBinding = { id: "bound-arrow", type: "arrow" as const };
+  const edited = table.elements.map((element) =>
+    element.id === background.id
+      ? newElementWith(element, {
+          boundElements: [...(element.boundElements ?? []), arrowBinding],
+        })
+      : element,
+  );
+  const regenerated = updateTableElements(edited, table.root, (data) => data);
+  expect(
+    regenerated.find((element) => element.id === background.id)?.boundElements,
+  ).toEqual([arrowBinding, ...background.boundElements!]);
+});
+
+it("converts Office HTML point dimensions into CSS pixels", () => {
+  const data = tableDataFromHTML(
+    '<table><tr style="height:45pt"><td style="font-size:18pt;width:72pt;border:1.5pt solid red">Office</td><td style="font-size:16px;width:120px">Pixels</td></tr></table>',
+    document,
+  )!;
+  expect(data.cells[0].fontSize).toBe(24);
+  expect(data.cells[0].strokeWidth).toBe(2);
+  expect(data.rows).toEqual([60]);
+  expect(data.columns).toEqual([96, 120]);
+  expect(data.cells[1].fontSize).toBe(16);
+});
+
+it("overrides inline colors only when changing a selected cell's text color", () => {
+  const data = createTableData(1, 2);
+  data.cells = data.cells.map((cell) => ({
+    ...cell,
+    text: "Red",
+    richText: {
+      version: 1,
+      paragraphs: [{ runs: [{ text: "Red", color: "#ff0000", bold: true }] }],
+    },
+  }));
+  const selection = { row: 0, column: 0, endRow: 0, endColumn: 0 };
+  const filled = styleTableCells(data, selection, {
+    backgroundColor: "#ffff00",
+  });
+  expect(filled.cells[0].richText).toEqual(data.cells[0].richText);
+  const recolored = styleTableCells(filled, selection, {
+    textColor: "#0000ff",
+  });
+  expect(recolored.cells[0].richText?.paragraphs[0].runs).toEqual([
+    { text: "Red", bold: true },
+  ]);
+  expect(recolored.cells[1]).toBe(data.cells[1]);
+  const table = createTableElements(recolored, 0, 0);
+  const label = table.elements.find(
+    (element) => element.type === "text",
+  ) as ExcalidrawTextElement;
+  expect(
+    layoutRichText(label).lines[0].runs.map(
+      (run) => run.color ?? label.strokeColor,
+    ),
+  ).toEqual(["#0000ff"]);
+});
+
+it("imports effective HTML inline colors and coalesces identically styled runs", () => {
+  const data = tableDataFromHTML(
+    '<table style="color:green"><tr><td>Base<span style="color:red">Red</span><span style="color:#ff0000"> again<i> italic</i></span><span style="color:blue">Blue</span><span style="color:green">Base again</span></td></tr></table>',
+    document,
+  )!;
+  const richText = data.cells[0].richText!;
+  expect(data.cells[0].textColor).toBe("green");
+  expect(richText.paragraphs[0].runs).toEqual([
+    { text: "Base" },
+    { text: "Red again", color: "#ff0000" },
+    { text: " italic", color: "#ff0000", italic: true },
+    { text: "Blue", color: "#0000ff" },
+    { text: "Base again" },
+  ]);
+  expect(normalizeRichText(richText)).toEqual(richText);
+});
+
+it("keeps unstyled HTML text on cell defaults and inherits nested inline colors", () => {
+  const data = tableDataFromHTML(
+    '<table><tr><td>Plain<span> inherited</span><span style="color:#123456"> same</span></td><td><span style="color:red">Red<span style="color:inherit"> inherited</span></span> tail</td></tr></table>',
+    document,
+    { textColor: "#123456" },
+  )!;
+  expect(data.cells[0].richText?.paragraphs[0].runs).toEqual([
+    { text: "Plain inherited same" },
+  ]);
+  expect(data.cells[1].richText?.paragraphs[0].runs).toEqual([
+    { text: "Red inherited", color: "#ff0000" },
+    { text: " tail" },
+  ]);
 });

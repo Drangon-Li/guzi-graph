@@ -41,12 +41,12 @@ export type JSONExportData = {
  * Strips out files which are only referenced by deleted elements
  */
 
-export const serializeAsJSON = (
+export const serializeForJSON = (
   elements: readonly ExcalidrawElement[],
   appState: Partial<AppState>,
   files: BinaryFiles,
   type: "local" | "database",
-): string => {
+): ExportedDataState => {
   elements = syncTableData(elements);
   const subscenes = Object.fromEntries(
     Object.entries(collectSubcanvasScenes(elements, appState.subscenes)).map(
@@ -73,8 +73,16 @@ export const serializeAsJSON = (
           undefined,
   };
 
-  return JSON.stringify(data, null, 2);
+  return data;
 };
+
+export const serializeAsJSON = (
+  elements: readonly ExcalidrawElement[],
+  appState: Partial<AppState>,
+  files: BinaryFiles,
+  type: "local" | "database",
+): string =>
+  JSON.stringify(serializeForJSON(elements, appState, files, type), null, 2);
 
 export const saveAsJSON = async ({
   data,

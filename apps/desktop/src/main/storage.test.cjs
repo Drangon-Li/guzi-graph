@@ -161,6 +161,28 @@ test("a failed disk sync leaves the original intact and the next save can procee
   assert.equal(storage.getDiagnostics().pendingCount, 0);
 });
 
+test("a committed save returns its new baseline even when recent history cannot be persisted", async (t) => {
+  const { storage, create } = await fixture(t);
+  const document = await create("history-failure.excalidraw", "original");
+  const failure = Object.assign(new Error("History write failed"), {
+    code: "EIO",
+  });
+  const history = t.mock.method(storage, "persistRecentFiles", async () => {
+    throw failure;
+  });
+  const warning = t.mock.method(console, "warn", () => {});
+  const saved = await storage.saveFile(request(document, "committed"));
+  assert.equal(saved.content, "committed");
+  assert.equal(saved.modifiedAt, (await fs.stat(document.path)).mtimeMs);
+  assert.equal(await fs.readFile(document.path, "utf8"), "committed");
+  assert.equal(warning.mock.callCount(), 1);
+  assert.ok(warning.mock.calls[0].arguments.includes(failure));
+  history.mock.restore();
+  const following = await storage.saveFile(request(saved, "following"));
+  assert.equal(following.content, "following");
+  assert.equal(warning.mock.callCount(), 1);
+});
+
 test("defaults require explicit project directory selection", async (t) => {
   const { base } = await fixture(t);
   const storage = await new DesktopStorage(
@@ -535,6 +557,75 @@ test("drafts are UUID scoped, reloadable and cannot delete arbitrary files", asy
   assert.throws(() => storage.writeDraft({ ...draft, id: "../../escape" }));
   await storage.deleteDraft(draft.id);
   assert.deepEqual(await storage.listDrafts(), []);
+});
+
+test("an opened document whose parent disappears still saves a detached recovery draft", async (t) => {
+  const { base, root, storage } = await fixture(t);
+  const parent = path.join(root, "original");
+  await fs.mkdir(parent);
+  const target = path.join(parent, "drawing.excalidraw");
+  await fs.writeFile(target, "original");
+  await storage.readFile(target);
+  await fs.rename(parent, path.join(root, "moved"));
+  const draft = {
+    id: randomUUID(),
+    path: target,
+    title: "drawing",
+    content: "unsaved edits",
+    modifiedAt: Date.now(),
+  };
+  await storage.writeDraft(draft);
+  assert.deepEqual(await storage.listDrafts(), [{ ...draft, path: null }]);
+  const reopened = await new DesktopStorage(
+    path.join(base, "userData"),
+  ).initialize();
+  assert.deepEqual(await reopened.listDrafts(), [{ ...draft, path: null }]);
+  await assert.rejects(fs.stat(parent), { code: "ENOENT" });
+});
+
+test("detached recovery does not bypass authorization, removal or other filesystem failures", async (t) => {
+  for (const mode of ["unopened", "renamed", "hidden", "permission"]) {
+    await t.test(mode, async (t) => {
+      const { root, storage } = await fixture(t);
+      const parent = path.join(root, "original");
+      await fs.mkdir(parent);
+      const target = path.join(parent, "drawing.excalidraw");
+      await fs.writeFile(target, "original");
+      if (mode !== "unopened") {
+        await storage.readFile(target);
+      }
+      if (mode === "renamed") {
+        await storage.renameFile(target, "renamed");
+      }
+      if (mode === "hidden") {
+        await storage.removeFile(target, "remove");
+      }
+      if (mode === "permission") {
+        const realpath = fs.realpath;
+        t.mock.method(fs, "realpath", async (candidate, ...args) => {
+          if (candidate === parent) {
+            throw Object.assign(new Error("Permission denied"), {
+              code: "EACCES",
+            });
+          }
+          return realpath(candidate, ...args);
+        });
+      } else {
+        await fs.rename(parent, path.join(root, "moved"));
+      }
+      await assert.rejects(
+        storage.writeDraft({
+          id: randomUUID(),
+          path: target,
+          title: "drawing",
+          content: "unsaved edits",
+          modifiedAt: Date.now(),
+        }),
+        { code: mode === "permission" ? "EACCES" : "ENOENT" },
+      );
+      assert.deepEqual(await storage.listDrafts(), []);
+    });
+  }
 });
 
 test("save refuses another opened document before overwriting it", async (t) => {
