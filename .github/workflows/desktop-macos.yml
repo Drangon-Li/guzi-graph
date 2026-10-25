@@ -22,6 +22,8 @@ jobs:
     timeout-minutes: 35
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # Sparkle also validates PR fixtures; ad-hoc signing needs no certificate.
+      CSC_FOR_PULL_REQUEST: "true"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

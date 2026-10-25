@@ -1,4 +1,4 @@
-const path = require("node:path");
+const path = require("node:path").posix;
 const { spawn } = require("node:child_process");
 
 const MAC_UPDATE_FEED =

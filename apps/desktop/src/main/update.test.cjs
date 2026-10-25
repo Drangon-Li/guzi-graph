@@ -214,10 +214,10 @@ test("failed cancellation blocks ordinary exit instead of implicitly installing"
   await assert.rejects(h.controller.cancelForQuit(), /acknowledge/);
 });
 
-function macHarness() {
+function macHarness(createAdapter = createMacUpdateAdapter) {
   const children = [];
   const states = [];
-  const adapter = createMacUpdateAdapter({
+  const adapter = createAdapter({
     execPath: "/Applications/Guzi.app/Contents/MacOS/Guzi",
     resourcesPath: "/Applications/Guzi.app/Contents/Resources",
     emit: (state) => states.push(state),
@@ -480,4 +480,32 @@ test("Windows late native quit after cancelled installation is explicitly reject
   await rejected;
   await tick();
   assert.equal(quitEvents.listenerCount("before-quit-for-update"), 0);
+});
+
+test("macOS helper paths stay POSIX when the host defaults to Windows paths", async () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const vm = require("node:vm");
+  const loaded = { exports: {} };
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, "update-mac.cjs"), "utf8"),
+    {
+      module: loaded,
+      require: (name) => (name === "node:path" ? path.win32 : require(name)),
+      Buffer,
+      setTimeout,
+      clearTimeout,
+    },
+  );
+  const h = macHarness(loaded.exports.createMacUpdateAdapter);
+  const checking = h.adapter.check();
+  const child = h.children[0];
+  assert.equal(
+    child.file,
+    "/Applications/Guzi.app/Contents/Resources/updater/Guzi Updater.app/Contents/MacOS/guzi-updater",
+  );
+  assert.equal(child.args[3], "/Applications/Guzi.app");
+  child.event({ event: "up-to-date" });
+  child.event({ event: "done", status: "up-to-date" });
+  await checking;
 });
