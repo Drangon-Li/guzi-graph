@@ -73,6 +73,7 @@ test("partial command output survives failure cleanup and owned pipes can be rel
     assert.equal(child.stdout.destroyed, true);
     assert.equal(child.stderr.destroyed, true);
   } finally {
+    child.ref();
     const exited = once(child, "exit");
     child.kill();
     await exited;
