@@ -12,6 +12,55 @@ const { setTimeout: delay } = require("node:timers/promises");
 const desktopDirectory = path.resolve(__dirname, "..");
 const repositoryDirectory = path.resolve(desktopDirectory, "../..");
 
+function observeChild(child, entry) {
+  let stdout = "";
+  let stderr = "";
+  const update = () => Object.assign(entry, { stdout, stderr });
+  child.stdout?.on("data", (data) => {
+    stdout = (stdout + data).slice(-1024 * 1024);
+    update();
+  });
+  child.stderr?.on("data", (data) => {
+    stderr = (stderr + data).slice(-1024 * 1024);
+    update();
+  });
+  const completed = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      Object.assign(entry, { exitCode: code, signal, stdout, stderr });
+      resolve({ code, signal, stdout, stderr });
+    });
+  });
+  completed.catch(() => {});
+  return {
+    completed,
+    release() {
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      child.unref();
+    },
+  };
+}
+
+function commandOutput(result, command) {
+  assert.equal(
+    result.code,
+    0,
+    `${command} exited ${result.code}:\n${result.stdout}\n${result.stderr}`,
+  );
+  return result.stdout;
+}
+
+async function cleanupStages(stages, onError) {
+  for (const [name, action] of stages) {
+    try {
+      await action();
+    } catch (error) {
+      onError(name, error);
+    }
+  }
+}
+
 function options(argv) {
   const result = {
     appDirectory: path.join(desktopDirectory, "release/win-unpacked"),
@@ -59,7 +108,7 @@ async function execute(configuration) {
       "Dirty-document cancellation is covered by main/renderer tests, not this installed-app scenario.",
     ],
   };
-  const ownedChildren = new Set();
+  const ownedChildren = new Map();
   const abort = new AbortController();
   const onSignal = (signal) =>
     abort.abort(new Error(`Interrupted by ${signal}`));
@@ -133,21 +182,11 @@ async function execute(configuration) {
       startedAt: new Date().toISOString(),
     };
     report.processes.push(entry);
-    ownedChildren.add(child);
-    let output = "";
-    for (const stream of [child.stdout, child.stderr]) {
-      stream?.on("data", (data) => {
-        output = (output + data).slice(-1024 * 1024);
-      });
-    }
-    const completed = new Promise((resolve, reject) => {
-      child.once("error", reject);
-      child.once("close", (code, signal) => {
-        ownedChildren.delete(child);
-        Object.assign(entry, { exitCode: code, signal, output });
-        resolve({ code, signal, output });
-      });
-    });
+    const observed = observeChild(child, entry);
+    ownedChildren.set(child, observed);
+    const completed = observed.completed.finally(() =>
+      ownedChildren.delete(child),
+    );
     // A long-lived fixture can fail while the test is waiting for its bootstrap log.
     completed.catch(() => {});
     return { child, completed };
@@ -165,12 +204,7 @@ async function execute(configuration) {
       command,
       ignoreAbort,
     );
-    assert.equal(
-      result.code,
-      0,
-      `${command} exited ${result.code}:\n${result.output}`,
-    );
-    return result.output;
+    return commandOutput(result, command);
   };
   const powershell = (script, env = {}, ignoreAbort = false) =>
     run(
@@ -179,9 +213,11 @@ async function execute(configuration) {
         "-NoLogo",
         "-NoProfile",
         "-NonInteractive",
+        "-OutputFormat",
+        "Text",
         "-EncodedCommand",
         Buffer.from(
-          `$ErrorActionPreference = 'Stop'\n${script}`,
+          `$ErrorActionPreference = 'Stop'\n$ProgressPreference = 'SilentlyContinue'\n[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n${script}`,
           "utf16le",
         ).toString("base64"),
       ],
@@ -305,37 +341,47 @@ async function execute(configuration) {
     return event;
   };
   const closeNormally = async (pid) => {
+    const window = (await readEvents()).findLast(
+      (event) =>
+        event.type === "renderer-loaded" &&
+        event.pid === pid &&
+        event.url === "app://local/index.html",
+    );
+    assert.match(
+      window?.nativeWindowHandle || "",
+      /^\d+$/,
+      "Fixture must report its actual native window handle",
+    );
     await powershell(
       `
 Add-Type -TypeDefinition @'
 using System;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 public static class GuziE2EClose {
-  public delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
-  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
-  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
-  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll", SetLastError = true)] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+  public static void Close(IntPtr window, uint expectedPid) {
+    uint actualPid;
+    if (GetWindowThreadProcessId(window, out actualPid) == 0 || actualPid != expectedPid) {
+      throw new InvalidOperationException("Fixture HWND/PID mismatch");
+    }
+    if (!PostMessage(window, 0x0010, IntPtr.Zero, IntPtr.Zero)) {
+      throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
+  }
 }
 '@
 $targetPid = [int]$env:GUZI_E2E_PID
 $target = Get-CimInstance Win32_Process -Filter "ProcessId = $targetPid"
 if (-not $target -or $target.ExecutablePath -ine $env:GUZI_E2E_EXECUTABLE) { throw 'Fixture PID/path mismatch' }
-$script:closedWindow = $false
-$callback = [GuziE2EClose+EnumWindowsProc] {
-  param($window, $parameter)
-  [uint32]$windowPid = 0
-  [void][GuziE2EClose]::GetWindowThreadProcessId($window, [ref]$windowPid)
-  if ($windowPid -eq $targetPid -and [GuziE2EClose]::IsWindowVisible($window)) {
-    [void][GuziE2EClose]::PostMessage($window, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
-    $script:closedWindow = $true
-  }
-  return $true
-}
-[void][GuziE2EClose]::EnumWindows($callback, [IntPtr]::Zero)
-if (-not $script:closedWindow) { throw 'No visible fixture window to close' }
+[GuziE2EClose]::Close([IntPtr]([long]::Parse($env:GUZI_E2E_HWND)), [uint32]$targetPid)
 `,
-      { GUZI_E2E_PID: String(pid), GUZI_E2E_EXECUTABLE: executablePath },
+      {
+        GUZI_E2E_PID: String(pid),
+        GUZI_E2E_EXECUTABLE: executablePath,
+        GUZI_E2E_HWND: window.nativeWindowHandle,
+      },
     );
     await waitFor(
       async () =>
@@ -355,8 +401,8 @@ if (-not $script:closedWindow) { throw 'No visible fixture window to close' }
   };
 
   try {
-    isolated = await fs.mkdtemp(
-      path.join(os.tmpdir(), "guzi-nsis-update-e2e-"),
+    isolated = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), "guzi-nsis-update-e2e-")),
     );
     const id = randomUUID().replaceAll("-", "");
     report.fixtureId = id;
@@ -536,7 +582,7 @@ if (-not $script:closedWindow) { throw 'No visible fixture window to close' }
       path.join(extracted, "update-e2e-bootstrap.cjs"),
       `
 const fs = require("node:fs");
-const { app, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain } = require("electron");
 const fixture = ${JSON.stringify(fixture)};
 process.env.EXCALIDRAW_DESKTOP_USER_DATA = fixture.profile;
 process.env.EXCALIDRAW_DESKTOP_DEV_URL = "";
@@ -549,7 +595,14 @@ const record = (type, extra = {}) => fs.appendFileSync(fixture.log, JSON.stringi
   userData: app.getPath("userData"), isPackaged: app.isPackaged, at: new Date().toISOString(), ...extra,
 }) + "\\n");
 app.on("web-contents-created", (_event, contents) => {
-  contents.on("did-finish-load", () => record("renderer-loaded", { url: contents.getURL() }));
+  contents.on("did-finish-load", () => {
+    const window = BrowserWindow.fromWebContents(contents);
+    const handle = window?.getNativeWindowHandle();
+    record("renderer-loaded", {
+      url: contents.getURL(),
+      nativeWindowHandle: handle ? (handle.length === 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE())).toString() : null,
+    });
+  });
 });
 app.on("quit", () => record("quit"));
 ipcMain.on("desktop:confirm-close", () => record("confirm-close"));
@@ -858,13 +911,30 @@ record("bootstrap");
       .catch(() => {});
   } finally {
     await disconnect();
-    try {
-      // Stop only processes whose executable lives in this run's fixture/cache roots.
-      if (isolated) {
-        const roots = [isolated, cacheDirectory].filter(Boolean);
-        const cleanup = await powershell(
-          `
-$roots = @($env:GUZI_E2E_ROOTS | ConvertFrom-Json)
+    const cleanupFailure = (stage, error) => {
+      report.passed = false;
+      report.cleanupErrors ||= [];
+      report.cleanupErrors.push({ stage, error: error.stack || String(error) });
+      report.cleanupError = report.cleanupErrors
+        .map((item) => `${item.stage}: ${item.error}`)
+        .join("\n");
+      console.error(report.cleanupError);
+    };
+    const roots = await Promise.all(
+      [isolated, cacheDirectory]
+        .filter(Boolean)
+        .map((root) => fs.realpath(root).catch(() => root)),
+    );
+    await cleanupStages(
+      [
+        [
+          "fixture-processes",
+          async () => {
+            // Restrict discovery to canonical paths in this fixture's temporary/cache roots.
+            if (isolated) {
+              const cleanup = await powershell(
+                `
+$roots = ConvertFrom-Json -InputObject $env:GUZI_E2E_ROOTS
 function Get-OwnedFixtureProcesses {
   @(Get-CimInstance Win32_Process | Where-Object {
     $candidate = $_.ExecutablePath
@@ -886,46 +956,68 @@ do {
 @{ stopped = @($owned | Select-Object ProcessId, ExecutablePath); remaining = @($remaining | Select-Object ProcessId, ExecutablePath) } | ConvertTo-Json -Depth 4 -Compress
 if ($remaining.Count -ne 0) { throw 'Fixture processes remain after cleanup' }
 `,
-          { GUZI_E2E_ROOTS: JSON.stringify(roots) },
-          true,
-        );
-        report.cleanup = JSON.parse(cleanup);
-        for (const child of ownedChildren) {
-          if (
-            child.exitCode === null &&
-            child.signalCode === null &&
-            child.spawnfile === process.execPath
-          ) {
-            await new Promise((resolve, reject) =>
-              execFile(
-                "taskkill.exe",
-                ["/PID", String(child.pid), "/T", "/F"],
-                { timeout: 10000, windowsHide: true },
-                (error) => (error ? reject(error) : resolve()),
-              ),
+                { GUZI_E2E_ROOTS: JSON.stringify(roots) },
+                true,
+              );
+              report.cleanup = JSON.parse(cleanup);
+            }
+          },
+        ],
+        [
+          "tracked-processes",
+          async () => {
+            await cleanupStages(
+              Array.from(ownedChildren.keys(), (child) => [
+                String(child.pid),
+                async () => {
+                  if (child.exitCode === null && child.signalCode === null) {
+                    await new Promise((resolve, reject) =>
+                      execFile(
+                        "taskkill.exe",
+                        ["/PID", String(child.pid), "/T", "/F"],
+                        { timeout: 10000, windowsHide: true },
+                        (error) => (error ? reject(error) : resolve()),
+                      ),
+                    );
+                  }
+                },
+              ]),
+              cleanupFailure,
             );
-          }
-        }
-        if (installDirectory) {
-          const names = await fs.readdir(installDirectory).catch((error) => {
-            if (error.code === "ENOENT") return [];
-            throw error;
-          });
-          const uninstaller = names.find((name) =>
-            /^Uninstall .*\.exe$/i.test(name),
-          );
-          if (uninstaller) {
-            await run(
-              path.join(installDirectory, uninstaller),
-              ["/S", "/currentuser", `_?=${installDirectory}`],
-              { windowsVerbatimArguments: true },
-              60000,
-              true,
-            );
-          }
-          const verified = await powershell(
-            `
-$roots = @($env:GUZI_E2E_ROOTS | ConvertFrom-Json)
+          },
+        ],
+        [
+          "uninstall",
+          async () => {
+            if (installDirectory) {
+              const names = await fs
+                .readdir(installDirectory)
+                .catch((error) => {
+                  if (error.code === "ENOENT") return [];
+                  throw error;
+                });
+              const uninstaller = names.find((name) =>
+                /^Uninstall .*\.exe$/i.test(name),
+              );
+              if (uninstaller) {
+                await run(
+                  path.join(installDirectory, uninstaller),
+                  ["/S", "/currentuser", `_?=${installDirectory}`],
+                  { windowsVerbatimArguments: true },
+                  60000,
+                  true,
+                );
+              }
+            }
+          },
+        ],
+        [
+          "verify-cleanup",
+          async () => {
+            if (installDirectory) {
+              const verified = await powershell(
+                `
+$roots = ConvertFrom-Json -InputObject $env:GUZI_E2E_ROOTS
 $remaining = @(Get-CimInstance Win32_Process | Where-Object {
   $candidate = $_.ExecutablePath
   $owned = $false
@@ -948,20 +1040,21 @@ if ($env:GUZI_E2E_GUID) {
 @{ remainingProcesses = $remaining; remainingRegistryKeys = $registry } | ConvertTo-Json -Depth 4 -Compress
 if ($remaining.Count -or $registry.Count) { throw 'Fixture process or registry registration remains after uninstall' }
 `,
-            {
-              GUZI_E2E_ROOTS: JSON.stringify(roots),
-              GUZI_E2E_GUID: report.fixtureNsisGuid || "",
-            },
-            true,
-          );
-          Object.assign(report.cleanup, JSON.parse(verified));
-        }
-      }
-    } catch (error) {
-      report.passed = false;
-      report.cleanupError = error.stack || String(error);
-      console.error(report.cleanupError);
-    }
+                {
+                  GUZI_E2E_ROOTS: JSON.stringify(roots),
+                  GUZI_E2E_GUID: report.fixtureNsisGuid || "",
+                },
+                true,
+              );
+              report.cleanup ||= {};
+              Object.assign(report.cleanup, JSON.parse(verified));
+            }
+          },
+        ],
+      ],
+      cleanupFailure,
+    );
+    for (const observed of ownedChildren.values()) observed.release();
     if (server) {
       server.closeAllConnections();
       await bounded(
@@ -1035,8 +1128,10 @@ if (require.main === module) {
     execute(configuration).catch((error) => {
       console.error(error.stack || String(error));
       process.exitCode = 1;
+      // Cleanup and the diagnostic report finish before this bounds any leaked external handle.
+      setTimeout(() => process.exit(1), 1000).unref();
     });
   }
 }
 
-module.exports = { options };
+module.exports = { options, observeChild, commandOutput, cleanupStages };
