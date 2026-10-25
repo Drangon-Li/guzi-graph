@@ -196,22 +196,37 @@ class UserPluginStore {
   async initialize() {
     if (this.initialized) return this;
     let handle;
+    let configurationFound = false;
     try {
       await fs.mkdir(path.dirname(this.configPath), { recursive: true });
+      const before = await fs.lstat(this.configPath);
+      configurationFound = true;
+      if (!before.isFile()) {
+        throw new Error("插件存储文件无效。");
+      }
       handle = await fs.open(
         this.configPath,
         constants.O_RDONLY | constants.O_NOFOLLOW,
       );
       const stat = await handle.stat();
-      if (!stat.isFile() || stat.size > MAX_STORE_BYTES)
+      // O_NOFOLLOW is unavailable on Windows; check the path without following it.
+      const current = await fs.lstat(this.configPath);
+      if (
+        !current.isFile() ||
+        stat.dev !== current.dev ||
+        stat.ino !== current.ino ||
+        !stat.isFile() ||
+        stat.size > MAX_STORE_BYTES
+      ) {
         throw new Error("插件存储文件无效或过大。");
+      }
       const content = await handle.readFile("utf8");
       if (Buffer.byteLength(content) > MAX_STORE_BYTES)
         throw new Error("插件存储文件过大。");
       this.state = validateState(JSON.parse(content));
       await handle.chmod(0o600);
     } catch (error) {
-      if (error.code === "ENOENT") {
+      if (error.code === "ENOENT" && !configurationFound) {
         try {
           await this.persist(this.state);
         } catch {

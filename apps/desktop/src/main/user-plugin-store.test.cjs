@@ -298,6 +298,63 @@ test("configuration symlink is not read or overwritten", async (t) => {
   assert.equal(await fs.readFile(outside, "utf8"), content);
 });
 
+test("dangling configuration symlink is preserved and blocks mutations", async (t) => {
+  const { userData, configPath } = await fixture(t);
+  const outside = path.join(userData, "missing.json");
+  await fs.unlink(configPath);
+  await fs.symlink(outside, configPath, "file");
+  const store = await new UserPluginStore({ userData }).initialize();
+  assert.match(store.configurationError, /损坏或无法读取/);
+  assert.deepEqual(store.list(), []);
+  await assert.rejects(store.install(pkg()), /损坏或无法读取/);
+  assert.equal((await fs.lstat(configPath)).isSymbolicLink(), true);
+  await assert.rejects(fs.stat(outside), { code: "ENOENT" });
+});
+
+test("configuration replaced by a symlink while opening is rejected without O_NOFOLLOW", async (t) => {
+  const { userData, configPath } = await fixture(t);
+  const outside = path.join(userData, "outside.json");
+  const content = JSON.stringify({
+    version: 1,
+    plugins: [{ ...pkg(), enabled: true, storage: {} }],
+  });
+  await fs.writeFile(outside, content);
+  const open = fs.open;
+  t.mock.method(fs, "open", async (filePath, flags, mode) => {
+    if (filePath === configPath) {
+      await fs.unlink(configPath);
+      await fs.symlink(outside, configPath, "file");
+      return open(filePath, "r");
+    }
+    return open(filePath, flags, mode);
+  });
+  const store = await new UserPluginStore({ userData }).initialize();
+  assert.match(store.configurationError, /损坏或无法读取/);
+  assert.deepEqual(store.list(), []);
+  await assert.rejects(store.install(pkg()), /损坏或无法读取/);
+  assert.equal((await fs.lstat(configPath)).isSymbolicLink(), true);
+  assert.equal(await fs.readFile(outside, "utf8"), content);
+});
+
+test("configuration replaced by a dangling symlink while opening is not recreated", async (t) => {
+  const { userData, configPath } = await fixture(t);
+  const outside = path.join(userData, "missing.json");
+  const open = fs.open;
+  t.mock.method(fs, "open", async (filePath, flags, mode) => {
+    if (filePath === configPath) {
+      await fs.unlink(configPath);
+      await fs.symlink(outside, configPath, "file");
+      return open(filePath, "r");
+    }
+    return open(filePath, flags, mode);
+  });
+  const store = await new UserPluginStore({ userData }).initialize();
+  assert.match(store.configurationError, /损坏或无法读取/);
+  await assert.rejects(store.install(pkg()), /损坏或无法读取/);
+  assert.equal((await fs.lstat(configPath)).isSymbolicLink(), true);
+  await assert.rejects(fs.stat(outside), { code: "ENOENT" });
+});
+
 test("atomic write failure preserves old disk state and removes temporary files", async (t) => {
   const { store, userData, configPath } = await fixture(t);
   await store.install(pkg());
