@@ -371,6 +371,8 @@ import { Renderer } from "../scene/Renderer";
 import {
   type SetViewportOptions,
   getViewportForZoomWithScrollConstraints,
+  scrollBoundsIntoView,
+  constrainScrollState,
 } from "../viewport";
 import { ElementCanvasButtons } from "../components/ElementCanvasButtons";
 import { LaserTrails } from "../laserTrails";
@@ -4724,6 +4726,7 @@ class App extends React.Component<AppProps, AppState> {
     retainSeed?: boolean;
     fit?: SetViewportOptions["fit"];
     preserveFrameChildrenOrder?: boolean;
+    avoidClipboardOverlap?: boolean;
   }) => {
     const elements = restoreElements(opts.elements, null, {
       deleteInvisibleElements: true,
@@ -4751,6 +4754,7 @@ class App extends React.Component<AppProps, AppState> {
         retainSeed: opts.retainSeed,
         preserveFrameChildrenOrder: opts.preserveFrameChildrenOrder,
         preservePosition: opts.position === "original",
+        avoidClipboardOverlap: opts.avoidClipboardOverlap,
       },
     );
 
@@ -4795,24 +4799,38 @@ class App extends React.Component<AppProps, AppState> {
 
     this.store.scheduleCapture();
     this.setState(
-      (prevState) => ({
-        // keep sidebar (presumably the library) open if it's docked and
-        // can fit.
-        //
-        // Note, we should close the sidebar only if we're dropping items
-        // from library, not when pasting from clipboard. Alas.
-        openSidebar:
-          prevState.openSidebar &&
-          this.editorInterface.canFitSidebar &&
-          this.editorStore.get(isSidebarDockedAtom)
-            ? prevState.openSidebar
-            : null,
-        ...getSelectionStateForElements(
-          nextElementsToSelect,
-          this.scene.getNonDeletedElements(),
-          prevState,
-        ),
-      }),
+      (prevState) => {
+        const scroll = duplication.clipboardOffset
+          ? scrollBoundsIntoView({
+              bounds: getCommonBounds(duplicatedElements),
+              appState: prevState,
+              offsets: this.viewport.getOffsets(),
+            })
+          : null;
+        const viewport = scroll
+          ? constrainScrollState({ ...prevState, ...scroll })
+          : prevState;
+        return {
+          // keep sidebar (presumably the library) open if it's docked and
+          // can fit.
+          //
+          // Note, we should close the sidebar only if we're dropping items
+          // from library, not when pasting from clipboard. Alas.
+          openSidebar:
+            prevState.openSidebar &&
+            this.editorInterface.canFitSidebar &&
+            this.editorStore.get(isSidebarDockedAtom)
+              ? prevState.openSidebar
+              : null,
+          ...getSelectionStateForElements(
+            nextElementsToSelect,
+            this.scene.getNonDeletedElements(),
+            prevState,
+          ),
+          scrollX: viewport.scrollX,
+          scrollY: viewport.scrollY,
+        };
+      },
       () => {
         if (opts.files) {
           this.addNewImagesToImageCache();

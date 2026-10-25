@@ -1,6 +1,6 @@
 {
   "name": "excalidraw-local-desktop",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "private": true,
   "description": "A local desktop workspace for Excalidraw drawings",
   "author": "Local",

@@ -66,10 +66,25 @@ describe("presentation editor lifecycle", () => {
   let root: HTMLDivElement;
   let workspace: Workspace;
   let canvasDocument: CanvasDocument;
+  let resizeTransition: () => void;
 
   beforeEach(() => {
     root = document.createElement("div");
     document.body.append(root);
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(private callback: ResizeObserverCallback) {}
+        observe(node: Element) {
+          if (node.classList.contains("desktop-presentation-canvas")) {
+            resizeTransition = () =>
+              this.callback([], this as unknown as ResizeObserver);
+          }
+        }
+        unobserve() {}
+        disconnect() {}
+      },
+    );
     root.ownerDocument.defaultView!.desktop = {
       getSettings: vi.fn().mockResolvedValue({
         rootDirectory: "/drawings",
@@ -94,9 +109,16 @@ describe("presentation editor lifecycle", () => {
     } as unknown as DesktopAPI;
   });
 
-  afterEach(() => root.remove());
+  afterEach(() => {
+    root.remove();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
-  const mount = async (deck = createPresentation("first", "First")) => {
+  const mount = async (
+    deck = createPresentation("first", "First"),
+    onInitialize?: (api: ExcalidrawImperativeAPI) => void,
+  ) => {
     const Harness = () => {
       workspace = useWorkspace(root);
       useEffect(() => {
@@ -121,7 +143,10 @@ describe("presentation editor lifecycle", () => {
           onExcalidrawAPI={(api) => {
             current.api = api;
           }}
-          onInitialize={(api) => workspace.initialize(current, api)}
+          onInitialize={(api) => {
+            workspace.initialize(current, api);
+            onInitialize?.(api);
+          }}
           onChange={(elements, appState, files) =>
             workspace.capture(current, { elements, appState, files })
           }
@@ -161,6 +186,107 @@ describe("presentation editor lifecycle", () => {
 
   const ids = (api: ExcalidrawImperativeAPI) =>
     api.getSceneElements().map((element) => element.id);
+
+  it("fits new pages before initialization and restores the saved camera on return", async () => {
+    const deck = createPresentation("first", "First");
+    deck.slides.push({ id: "second", title: "Second", scene: {} });
+    const initializedCameras: unknown[] = [];
+    const camera = (api: ExcalidrawImperativeAPI) => {
+      const { scrollX, scrollY, zoom } = api.getAppState();
+      return { scrollX, scrollY, zoom };
+    };
+    const view = await mount(deck, (api) =>
+      initializedCameras.push(camera(api)),
+    );
+    const first = await readyApi();
+    expect(initializedCameras[0]).toEqual(camera(first));
+    act(() =>
+      first.updateScene({
+        appState: {
+          scrollX: 123,
+          scrollY: 456,
+          zoom: { value: getNormalizedZoom(0.75) },
+        },
+      }),
+    );
+    fireEvent.click(view.getByRole("button", { name: "Select Second" }));
+    const second = await readyApi(first);
+    expect(initializedCameras[1]).toEqual(camera(second));
+    fireEvent.click(view.getByRole("button", { name: "Select First" }));
+    const returned = await readyApi(second);
+    expect(camera(returned)).toEqual({
+      scrollX: 123,
+      scrollY: 456,
+      zoom: { value: 0.75 },
+    });
+  });
+
+  it("retains the old canvas through rapid switches and resize until the target frame is ready", async () => {
+    const deck = createPresentation("first", "First");
+    deck.slides.push({ id: "second", title: "Second", scene: {} });
+    deck.slides.push({ id: "third", title: "Third", scene: {} });
+    const view = await mount(deck);
+    const first = await readyApi();
+    const overlay = view.container.querySelector<HTMLDivElement>(
+      ".desktop-presentation-slide-transition",
+    )!;
+    const original = view.container.querySelector<HTMLCanvasElement>(
+      ".desktop-root-canvas canvas.static",
+    )!;
+    original.width = 1000;
+    original.height = 700;
+    await waitFor(() => expect(overlay.hidden).toBe(true));
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    const ownerWindow = root.ownerDocument.defaultView!;
+    vi.spyOn(ownerWindow, "requestAnimationFrame").mockImplementation(
+      (callback) => {
+        frames.set(++nextFrame, callback);
+        return nextFrame;
+      },
+    );
+    vi.spyOn(ownerWindow, "cancelAnimationFrame").mockImplementation((id) => {
+      frames.delete(id);
+    });
+    const drawFrame = () => {
+      const pending = [...frames.values()];
+      frames.clear();
+      act(() => pending.forEach((callback) => callback(0)));
+    };
+    fireEvent.click(view.getByRole("button", { name: "Select Second" }));
+    const second = await readyApi(first);
+    expect(overlay.hidden).toBe(false);
+    const copy = overlay.querySelector("canvas")!;
+    expect(copy).not.toBe(original);
+    expect(copy.width).toBe(original.width);
+    expect(copy.height).toBe(original.height);
+    drawFrame();
+    expect(overlay.hidden).toBe(false);
+    const staleFrames = [...frames.values()];
+    fireEvent.click(view.getByRole("button", { name: "Select Third" }));
+    await readyApi(second);
+    act(() => staleFrames.forEach((callback) => callback(0)));
+    expect(overlay.querySelector("canvas")).toBe(copy);
+    expect(overlay.hidden).toBe(false);
+    drawFrame();
+    act(() => resizeTransition());
+    drawFrame();
+    expect(overlay.hidden).toBe(false);
+    drawFrame();
+    expect(overlay.hidden).toBe(true);
+    expect(overlay.childElementCount).toBe(0);
+
+    const currentCanvas = view.container.querySelector<HTMLCanvasElement>(
+      ".desktop-root-canvas canvas.static",
+    )!;
+    currentCanvas.width = 1000;
+    currentCanvas.height = 700;
+    fireEvent.click(view.getByRole("button", { name: "Select First" }));
+    await readyApi();
+    expect(overlay.hidden).toBe(false);
+    view.unmount();
+    expect(frames.size).toBe(0);
+  });
 
   it("undoes page edits and slide creation in document order across page switches", async () => {
     const view = await mount();

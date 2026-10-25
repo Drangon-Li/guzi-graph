@@ -56,3 +56,39 @@ it("keeps editing keys inside the panel and preserves Tab navigation", () => {
   expect(onCanvasKeyDown).not.toHaveBeenCalled();
   expect(onChange).not.toHaveBeenCalled();
 });
+
+it("applies palette colors and their shades to the chosen preset", async () => {
+  const onChange = vi.fn(async () => {});
+  render(
+    <StylePresetPanel
+      root={document.body}
+      presets={DEFAULT_STYLE_PRESETS}
+      language="en"
+      onChange={onChange}
+    />,
+  );
+  const trigger = screen.getByRole("button", {
+    name: "Color 实线箭头 — Common colors",
+  });
+  fireEvent.click(trigger);
+  expect(
+    screen.queryByRole("button", { name: "Transparent transparent" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Blue #1971c2" }));
+  await waitFor(() =>
+    expect(onChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ id: "solid-arrow", strokeColor: "#1971c2" }),
+      DEFAULT_STYLE_PRESETS[1],
+    ]),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Blue shade 2 #a5d8ff" }));
+  await waitFor(() =>
+    expect(onChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ id: "solid-arrow", strokeColor: "#a5d8ff" }),
+      DEFAULT_STYLE_PRESETS[1],
+    ]),
+  );
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(trigger).toHaveFocus());
+});

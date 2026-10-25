@@ -33,6 +33,7 @@ import type {
 } from "@excalidraw/element/types";
 
 import { getSelectionStateForElements } from "./App.selection";
+import { getClipboardPasteOffset } from "./App.clipboardOverlap";
 
 import type { PointerDownState } from "../types";
 
@@ -274,6 +275,7 @@ export class AppDuplicate {
       retainSeed?: boolean;
       preserveFrameChildrenOrder?: boolean;
       preservePosition?: boolean;
+      avoidClipboardOverlap?: boolean;
     },
   ) => {
     const [minX, minY, maxX, maxY] = getCommonBounds(elements);
@@ -290,16 +292,30 @@ export class AppDuplicate {
       this.app.getEffectiveGridSize(),
     );
 
+    let placedElements = opts?.preservePosition
+      ? elements
+      : elements.map((element) => {
+          return newElementWith(element, {
+            x: element.x + gridX - minX,
+            y: element.y + gridY - minY,
+          });
+        });
+    const clipboardOffset = opts?.avoidClipboardOverlap
+      ? getClipboardPasteOffset(
+          elements,
+          placedElements,
+          this.app.scene.getNonDeletedElements(),
+          24 / this.app.state.zoom.value,
+        )
+      : 0;
+    if (clipboardOffset) {
+      placedElements = placedElements.map((element) =>
+        newElementWith(element, { x: element.x + clipboardOffset }),
+      );
+    }
     const duplication = duplicateElements({
       type: "everything",
-      elements: opts?.preservePosition
-        ? elements
-        : elements.map((element) => {
-            return newElementWith(element, {
-              x: element.x + gridX - minX,
-              y: element.y + gridY - minY,
-            });
-          }),
+      elements: placedElements,
       randomizeSeed: !opts?.retainSeed,
       preserveFrameChildrenOrder: opts?.preserveFrameChildrenOrder,
     });
@@ -315,7 +331,10 @@ export class AppDuplicate {
 
     // resolved ahead of `onDuplicate` so that the host sees the duplicates
     // the way they end up in the scene
-    const topLayerFrame = this.app.getTopLayerFrameAtSceneCoords({ x, y });
+    const topLayerFrame = this.app.getTopLayerFrameAtSceneCoords({
+      x: x + clipboardOffset,
+      y,
+    });
 
     if (topLayerFrame) {
       const eligibleElements = filterElementsEligibleAsFrameChildren(
@@ -345,7 +364,7 @@ export class AppDuplicate {
       syncMovedIndices(nextElements, arrayToMap(duplicatedElements));
     }
 
-    return { nextElements, duplicatedElements };
+    return { nextElements, duplicatedElements, clipboardOffset };
   };
 
   /**

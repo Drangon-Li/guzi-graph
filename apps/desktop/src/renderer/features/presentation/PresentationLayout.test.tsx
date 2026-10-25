@@ -982,6 +982,122 @@ it("pastes copied canvas elements in place after selecting another thumbnail", a
   }
 });
 
+it("switches slides with horizontal arrows, keeps focus, and stops at either end", () => {
+  const props = makeProps();
+  const outerKeyDown = vi.fn();
+  const Harness = () => {
+    const [activeSlideId, setActiveSlideId] = useState(props.activeSlideId);
+    return (
+      <div onKeyDown={outerKeyDown}>
+        <PresentationLayout
+          {...props}
+          activeSlideId={activeSlideId}
+          onSelect={(id) => {
+            props.onSelect(id);
+            setActiveSlideId(id);
+          }}
+        />
+      </div>
+    );
+  };
+  render(<Harness />);
+  const first = screen.getByRole("button", {
+    name: "Select slide 1: Introduction",
+  });
+  const second = screen.getByRole("button", {
+    name: "Select slide 2: Details",
+  });
+  const third = screen.getByRole("button", { name: "Select slide 3: Summary" });
+  fireEvent.click(second);
+  props.onSelect.mockClear();
+  expect(fireEvent.keyDown(second, { key: "ArrowRight" })).toBe(false);
+  expect(third).toHaveAttribute("aria-current", "page");
+  expect(third).toHaveFocus();
+  expect(fireEvent.keyDown(third, { key: "ArrowRight", repeat: true })).toBe(
+    false,
+  );
+  expect(third).toHaveFocus();
+  fireEvent.keyDown(third, { key: "ArrowLeft" });
+  expect(second).toHaveFocus();
+  fireEvent.keyDown(second, { key: "ArrowLeft", repeat: true });
+  expect(first).toHaveAttribute("aria-current", "page");
+  expect(first).toHaveFocus();
+  expect(fireEvent.keyDown(first, { key: "ArrowLeft" })).toBe(false);
+  expect(first).toHaveFocus();
+  expect(props.onSelect.mock.calls).toEqual([["third"], ["second"], ["first"]]);
+  expect(outerKeyDown).not.toHaveBeenCalled();
+});
+
+it("navigates from a focused title even when the destination is already selected", () => {
+  const props = makeProps();
+  render(<PresentationLayout {...props} />);
+  const firstTitle = screen.getByRole("button", { name: "Introduction" });
+  act(() => firstTitle.focus());
+  fireEvent.keyDown(firstTitle, { key: "ArrowRight" });
+  expect(props.onSelect).toHaveBeenCalledWith("second");
+  expect(
+    screen.getByRole("button", { name: "Select slide 2: Details" }),
+  ).toHaveFocus();
+});
+
+it("keeps an unpinned strip open when arrow navigation starts after a mouse click", () => {
+  localStorage.setItem(PINNED_STORAGE_KEY, "false");
+  const matches = Element.prototype.matches;
+  vi.spyOn(Element.prototype, "matches").mockImplementation(function (
+    this: Element,
+    selector,
+  ) {
+    return selector === ":focus-visible" ? false : matches.call(this, selector);
+  });
+  render(<PresentationLayout {...makeProps()} />);
+  const strip = screen.getByRole("complementary", { name: "Slides" });
+  fireEvent.pointerEnter(strip);
+  const second = screen.getByRole("button", {
+    name: "Select slide 2: Details",
+  });
+  fireEvent.click(second);
+  fireEvent.keyDown(second, { key: "ArrowRight" });
+  fireEvent.pointerLeave(strip);
+  expect(screen.getByRole("button", { name: "Slide strip" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+});
+
+it("leaves modified arrows, composing input, and title or canvas editing alone", () => {
+  const props = makeProps();
+  render(
+    <PresentationLayout {...props}>
+      <textarea aria-label="Canvas text" defaultValue="Text" />
+    </PresentationLayout>,
+  );
+  const second = screen.getByRole("button", {
+    name: "Select slide 2: Details",
+  });
+  act(() => second.focus());
+  for (const modifier of [
+    { altKey: true },
+    { ctrlKey: true },
+    { metaKey: true },
+    { shiftKey: true },
+    { isComposing: true },
+  ]) {
+    expect(fireEvent.keyDown(second, { key: "ArrowRight", ...modifier })).toBe(
+      true,
+    );
+  }
+  fireEvent.doubleClick(screen.getByRole("button", { name: "Details" }));
+  const title = screen.getByRole("textbox", { name: "Slide title" });
+  expect(fireEvent.keyDown(title, { key: "ArrowLeft" })).toBe(true);
+  expect(title).toHaveFocus();
+  fireEvent.keyDown(title, { key: "Escape" });
+  const canvasText = screen.getByRole("textbox", { name: "Canvas text" });
+  act(() => canvasText.focus());
+  expect(fireEvent.keyDown(canvasText, { key: "ArrowRight" })).toBe(true);
+  expect(canvasText).toHaveFocus();
+  expect(props.onSelect).not.toHaveBeenCalled();
+});
+
 it("moves thumbnail focus to the selected page and supports deletion without deleting the last page", () => {
   const props = makeProps();
   const { rerender } = render(<PresentationLayout {...props} />);
@@ -1102,6 +1218,8 @@ it("does not handle page operations while inactive or blocked", () => {
     fireClipboard(second, "copy", clipboardData);
     fireClipboard(second, "paste", clipboardData);
     fireEvent.keyDown(second, { key: "Delete" });
+    fireEvent.keyDown(second, { key: "ArrowLeft" });
+    fireEvent.keyDown(second, { key: "ArrowRight" });
     fireEvent.keyDown(second, { key: "z", [KEYS.CTRL_OR_CMD]: true });
     fireEvent.click(second);
     fireEvent.click(screen.getByRole("button", { name: "Add slide" }));

@@ -1278,6 +1278,64 @@ describe("rich text application integration", () => {
     expect(current(text.id).originalText).toBe("中文输入");
   });
 
+  it("ignores queued IME selection callbacks after switching to another editor", async () => {
+    const createText = (value: string) => {
+      const base = API.createElement({ type: "text", text: value });
+      return newElementWith(base, {
+        richText: richTextFromPlainText(value),
+      });
+    };
+    const first = createText("旧编辑器");
+    const second = createText("新编辑器");
+    API.setElements([first, second]);
+    API.setAppState({ editingTextElement: first });
+    act(() =>
+      h.app.text.handleTextWysiwyg(first, {
+        isExistingElement: true,
+        initialSelection: { start: 0, end: 2 },
+      }),
+    );
+    await waitFor(() =>
+      expect(getRichTextSelectionState(document)?.elementId).toBe(first.id),
+    );
+    const oldEditor = getRichEditor();
+    const frames: FrameRequestCallback[] = [];
+    const requestFrame = vi
+      .spyOn(h.app.ownerWindow, "requestAnimationFrame")
+      .mockImplementation((callback) => frames.push(callback));
+    try {
+      fireEvent.compositionStart(oldEditor, { data: "" });
+      fireEvent.compositionEnd(oldEditor, { data: "" });
+      const oldFrames = frames.splice(0);
+      expect(oldFrames.length).toBeGreaterThanOrEqual(2);
+      fireEvent.keyDown(oldEditor, { key: "Escape" });
+      expect(oldEditor.isConnected).toBe(false);
+      API.setAppState({ editingTextElement: second });
+      act(() =>
+        h.app.text.handleTextWysiwyg(second, {
+          isExistingElement: true,
+          initialSelection: { start: 1, end: 3 },
+        }),
+      );
+      await waitFor(() =>
+        expect(getRichTextSelectionState(document)).toMatchObject({
+          elementId: second.id,
+          selectionKey: "1:3",
+        }),
+      );
+      act(() => oldFrames.forEach((callback) => callback(0)));
+      expect(getRichTextSelectionState(document)).toMatchObject({
+        elementId: second.id,
+        selectionKey: "1:3",
+      });
+    } finally {
+      requestFrame.mockRestore();
+      if (getRichEditor()) {
+        fireEvent.keyDown(getRichEditor(), { key: "Escape" });
+      }
+    }
+  });
+
   it.each([false, true])(
     "commits rich edits and invokes desktop save once from one Cmd+S event (saveAs=%s)",
     async (saveAs) => {

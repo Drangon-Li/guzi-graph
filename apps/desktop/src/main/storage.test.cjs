@@ -179,8 +179,11 @@ test("hard-link permission and busy errors preserve source and destination witho
 });
 
 test("unsupported hard-link moves preserve timestamps and never replace another file", async (t) => {
-  const { root, storage, create } = await fixture(t, { platform: "win32" });
+  const { storage, create } = await fixture(t, { platform: "win32" });
   const original = await create("original.excalidraw", "original");
+  // Whole seconds avoid random sub-microsecond rounding in utimes conversions.
+  await fs.utimes(original.path, 1_600_000_000, 1_600_000_002);
+  original.modifiedAt = (await fs.stat(original.path)).mtimeMs;
   const existing = await create("existing.excalidraw", "existing");
   t.mock.method(fs, "link", async () => {
     throw Object.assign(new Error("unsupported"), { code: "ENOTSUP" });
@@ -901,6 +904,9 @@ test("opened documents remain authorized after changing project root", async (t)
 test("cross-volume move preserves file timestamps and original save baseline", async (t) => {
   const { root, storage, create } = await fixture(t);
   const original = await create("a.excalidraw", "drawing");
+  // Whole seconds avoid random sub-microsecond rounding in utimes conversions.
+  await fs.utimes(original.path, 1_600_000_000, 1_600_000_002);
+  original.modifiedAt = (await fs.stat(original.path)).mtimeMs;
   await storage.createFolder("moved");
   const sourceStat = await fs.stat(original.path);
   t.mock.method(fs, "link", async () => {
@@ -916,6 +922,42 @@ test("cross-volume move preserves file timestamps and original save baseline", a
     path: moved.path,
   });
   assert.equal(saved.content, "saved after move");
+});
+
+test("cross-volume copy timestamp alias accepts only the original save baseline", async (t) => {
+  const { root, storage, create } = await fixture(t);
+  const original = await create("a.excalidraw", "drawing");
+  await fs.utimes(original.path, 1_600_000_000, 1_600_000_002);
+  original.modifiedAt = (await fs.stat(original.path)).mtimeMs;
+  await storage.createFolder("moved");
+  const destination = path.join(root, "moved", "a.excalidraw");
+  t.mock.method(fs, "link", async () => {
+    throw Object.assign(new Error("cross-device"), { code: "EXDEV" });
+  });
+  const utimes = fs.utimes;
+  t.mock.method(fs, "utimes", (candidate, atime, mtime) =>
+    // Force a tiny copy-time conversion difference on every host filesystem.
+    utimes(
+      candidate,
+      atime,
+      candidate === destination ? 1_600_000_002.000002 : mtime,
+    ),
+  );
+  const moved = await storage.moveFile(original.path, "moved");
+  assert.notEqual(moved.modifiedAt, original.modifiedAt);
+  await assert.rejects(
+    storage.saveFile({
+      ...request(original, "wrong baseline"),
+      path: moved.path,
+      expectedModifiedAt: original.modifiedAt + 0.00025,
+    }),
+    { code: "EXTERNAL_MODIFICATION" },
+  );
+  const saved = await storage.saveFile({
+    ...request(original, "saved after timestamp rounding"),
+    path: moved.path,
+  });
+  assert.equal(saved.content, "saved after timestamp rounding");
 });
 
 test("cross-volume move retains external modification conflict against old baseline", async (t) => {

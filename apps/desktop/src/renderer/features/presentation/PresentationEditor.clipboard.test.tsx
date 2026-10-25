@@ -58,6 +58,14 @@ describe("presentation thumbnail clipboard and history", () => {
   let setInteraction: (active: boolean) => void;
 
   beforeEach(() => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
     root = document.createElement("div");
     document.body.append(root);
     root.ownerDocument.defaultView!.desktop = {
@@ -87,7 +95,10 @@ describe("presentation thumbnail clipboard and history", () => {
     } as unknown as DesktopAPI;
   });
 
-  afterEach(() => root.remove());
+  afterEach(() => {
+    root.remove();
+    vi.unstubAllGlobals();
+  });
 
   const mount = async (onApi?: (api: ExcalidrawImperativeAPI) => void) => {
     const deck = createPresentation("first", "First");
@@ -158,6 +169,163 @@ describe("presentation thumbnail clipboard and history", () => {
       [KEYS.CTRL_OR_CMD]: true,
       shiftKey: redo,
     });
+
+  const copySource = async (canvas: HTMLElement) => {
+    act(() =>
+      canvasDocument.api!.updateScene({
+        appState: { selectedElementIds: { source: true } },
+      }),
+    );
+    canvas.focus();
+    const clipboardData = new DataTransfer();
+    fireEvent(
+      canvas,
+      Object.assign(new Event("copy", { bubbles: true, cancelable: true }), {
+        clipboardData,
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        JSON.parse(clipboardData.getData(MIME_TYPES.text)).elements,
+      ).toEqual([expect.objectContaining({ id: "source" })]),
+    );
+    return clipboardData.getData(MIME_TYPES.text);
+  };
+
+  const expectSeparatedCopies = (count: number) => {
+    const api = canvasDocument.api!;
+    const elements = api.getSceneElements();
+    expect(elements).toHaveLength(count);
+    const ordered = [...elements].sort((left, right) => left.x - right.x);
+    for (let index = 1; index < ordered.length; index++) {
+      const gap =
+        ordered[index].x - ordered[index - 1].x - ordered[index - 1].width;
+      expect(gap * api.getAppState().zoom.value).toBeGreaterThanOrEqual(8);
+    }
+    const selected = elements.filter(
+      (element) => api.getAppState().selectedElementIds[element.id],
+    );
+    expect(selected).toHaveLength(1);
+    expect(selected[0].id).toBe(elements[elements.length - 1].id);
+    expect(selected[0].id).not.toBe("source");
+  };
+
+  it("places repeated element pastes beside the originals and restores them through history", async () => {
+    const view = await mount();
+    const canvas = view.container.querySelector<HTMLElement>(".excalidraw")!;
+    const source = { ...canvasDocument.api!.getSceneElements()[0] };
+    const content = await copySource(canvas);
+    const first = view.getByRole("button", { name: "Select slide 1: First" });
+    for (const count of [2, 3]) {
+      first.focus();
+      fireEvent.keyDown(first, { key: "v", [KEYS.CTRL_OR_CMD]: true });
+      fireEvent(
+        first,
+        createPasteEvent({ types: { [MIME_TYPES.text]: content } }),
+      );
+      await waitFor(() => expectSeparatedCopies(count));
+      expect(canvasDocument.api!.getSceneElements()[0]).toEqual(source);
+    }
+    const pasted = [...canvasDocument.api!.getSceneElements()];
+    const expectElementCount = (count: number) =>
+      waitFor(() =>
+        expect(canvasDocument.api!.getSceneElements()).toHaveLength(count),
+      );
+    for (const count of [2, 1]) {
+      first.focus();
+      historyKey(first);
+      await expectElementCount(count);
+      expect(canvasDocument.api!.getSceneElements()[0]).toMatchObject(source);
+    }
+    for (const count of [2, 3]) {
+      first.focus();
+      historyKey(first, true);
+      await expectElementCount(count);
+      expect(canvasDocument.api!.getSceneElements()).toEqual(
+        pasted.slice(0, count).map((element) =>
+          expect.objectContaining({
+            id: element.id,
+            x: element.x,
+            y: element.y,
+            width: element.width,
+            height: element.height,
+            type: element.type,
+          }),
+        ),
+      );
+    }
+  });
+
+  it("preserves the first paste on an empty slide and separates later copies across page history", async () => {
+    const view = await mount();
+    const content = await copySource(
+      view.container.querySelector<HTMLElement>(".excalidraw")!,
+    );
+    const source = { ...canvasDocument.api!.getSceneElements()[0] };
+    const first = view.getByRole("button", { name: "Select slide 1: First" });
+    const second = view.getByRole("button", { name: "Select slide 2: Second" });
+    second.focus();
+    fireEvent.click(second);
+    expect(canvasDocument.api).toBeNull();
+    fireEvent(
+      second,
+      createPasteEvent({ types: { [MIME_TYPES.text]: content } }),
+    );
+    await waitFor(() =>
+      expect(canvasDocument.api?.getSceneElements()).toHaveLength(1),
+    );
+    const firstPaste = canvasDocument.api!.getSceneElements()[0];
+    expect(firstPaste).toMatchObject({
+      x: source.x,
+      y: source.y,
+      width: source.width,
+      height: source.height,
+      type: source.type,
+    });
+    await waitFor(() =>
+      expect(canvasDocument.api!.getAppState().selectedElementIds).toEqual({
+        [firstPaste.id]: true,
+      }),
+    );
+    second.focus();
+    fireEvent(
+      second,
+      createPasteEvent({ types: { [MIME_TYPES.text]: content } }),
+    );
+    await waitFor(() => expectSeparatedCopies(2));
+    const secondPaste = canvasDocument.api!.getSceneElements()[1];
+    first.focus();
+    fireEvent.click(first);
+    await waitFor(() => {
+      expect(canvasDocument.activeSlideId).toBe("first");
+      expect(canvasDocument.api?.getAppState().isLoading).toBe(false);
+      expect(canvasDocument.api?.getSceneElements()).toEqual([
+        expect.objectContaining(source),
+      ]);
+    });
+    historyKey(first);
+    await waitFor(() => {
+      expect(canvasDocument.activeSlideId).toBe("second");
+      expect(canvasDocument.api?.getSceneElements()).toHaveLength(1);
+    });
+    expect(canvasDocument.api!.getSceneElements()[0]).toMatchObject({
+      id: firstPaste.id,
+      x: source.x,
+      y: source.y,
+    });
+    historyKey(second, true);
+    await waitFor(() =>
+      expect(canvasDocument.api?.getSceneElements()).toHaveLength(2),
+    );
+    expect(canvasDocument.api!.getSceneElements()[1]).toMatchObject({
+      id: secondPaste.id,
+      x: secondPaste.x,
+      y: secondPaste.y,
+    });
+    expect(canvasDocument.presentation!.slides[0].scene.elements).toEqual([
+      expect.objectContaining(source),
+    ]);
+  });
 
   it.each([
     { page: "first", entry: "thumbnail" },

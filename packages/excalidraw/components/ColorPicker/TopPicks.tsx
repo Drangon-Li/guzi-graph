@@ -110,9 +110,11 @@ export const TopPicks = ({
                   ? `translateX(${reorderOffset}px)`
                   : undefined,
               }}
-              key={color}
+              key={`${color}-${index}`}
               type="button"
               title={color}
+              aria-label={color}
+              aria-pressed={color === activeColor}
               onClick={() => onChange(color)}
               onPointerDown={
                 dnd

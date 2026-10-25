@@ -11,6 +11,8 @@ import {
   isReservedStyleShortcut,
 } from "../../shared/config/stylePresets";
 
+import { PreferenceColorPicker } from "./PreferenceColorPicker";
+
 import "./StylePresetPanel.scss";
 
 import type { DesktopLanguage } from "../../shared/i18n/i18n";
@@ -188,24 +190,17 @@ export const StylePresetPanel = ({
                 }
               />
             </div>
-            <label>
-              {en ? "Color" : "颜色"}
-              <span className="desktop-style-presets__color">
-                <span
-                  className="desktop-style-presets__swatch"
-                  style={{ backgroundColor: preset.strokeColor }}
-                />
-                <span>{preset.strokeColor.toUpperCase()}</span>
-                <input
-                  aria-label={`${en ? "Color" : "颜色"} ${preset.name}`}
-                  type="color"
-                  value={preset.strokeColor}
-                  onChange={(event) =>
-                    change(preset.id, { strokeColor: event.target.value })
-                  }
-                />
-              </span>
-            </label>
+            <div className="desktop-style-presets__field">
+              <span>{en ? "Color" : "颜色"}</span>
+              <PreferenceColorPicker
+                root={root}
+                language={language}
+                showValue
+                label={`${en ? "Color" : "颜色"} ${preset.name}`}
+                value={preset.strokeColor}
+                onChange={(strokeColor) => change(preset.id, { strokeColor })}
+              />
+            </div>
           </div>
         </section>
       ))}

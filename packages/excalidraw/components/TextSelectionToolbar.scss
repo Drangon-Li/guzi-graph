@@ -1,0 +1,33 @@
+.excalidraw .text-selection-toolbar {
+  animation: none;
+
+  &__format {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: var(--border-radius-md);
+    background: transparent;
+    color: var(--color-on-surface);
+    font: 16px serif;
+    cursor: pointer;
+
+    &:hover,
+    &[aria-pressed="true"] {
+      background: var(--button-hover-bg);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-primary);
+    }
+
+    &--bold {
+      font-weight: bold;
+    }
+    &--italic {
+      font-style: italic;
+    }
+    &--underline {
+      text-decoration: underline;
+    }
+  }
+}
