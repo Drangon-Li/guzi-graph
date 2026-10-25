@@ -7,7 +7,26 @@ const {
   observeChild,
   commandOutput,
   cleanupStages,
+  devToolsEndpoint,
 } = require("./update-windows-e2e.cjs");
+
+test("DevToolsActivePort identifies the actual endpoint of each restarted browser", () => {
+  const first = devToolsEndpoint(
+    "53461\n/devtools/browser/1202e4ff-0e91-43c6-8290-a07bc2b6e732",
+  );
+  const restarted = devToolsEndpoint(
+    "53469\r\n/devtools/browser/301e31ad-cc9f-44c6-85a0-e32cac6709e4\r\n",
+  );
+  assert.equal(
+    first,
+    "ws://127.0.0.1:53461/devtools/browser/1202e4ff-0e91-43c6-8290-a07bc2b6e732",
+  );
+  assert.notEqual(restarted, first);
+  assert.throws(() => devToolsEndpoint("0\n/devtools/browser/stale"));
+  assert.throws(() =>
+    devToolsEndpoint("53469\nws://other-host/devtools/browser/stale"),
+  );
+});
 
 test("PowerShell progress on stderr cannot corrupt stdout JSON", async () => {
   const child = spawn(

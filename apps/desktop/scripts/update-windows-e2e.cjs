@@ -4,7 +4,6 @@ const { createHash, randomUUID } = require("node:crypto");
 const fs = require("node:fs/promises");
 const { createReadStream } = require("node:fs");
 const http = require("node:http");
-const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const { setTimeout: delay } = require("node:timers/promises");
@@ -61,6 +60,14 @@ async function cleanupStages(stages, onError) {
   }
 }
 
+function devToolsEndpoint(contents) {
+  const [port, browserPath] = contents.trim().split(/\r?\n/);
+  assert.match(port, /^\d+$/);
+  assert.ok(Number(port) > 0 && Number(port) < 65536);
+  assert.match(browserPath, /^\/devtools\/browser\/[a-zA-Z0-9-]+$/);
+  return `ws://127.0.0.1:${Number(port)}${browserPath}`;
+}
+
 function options(argv) {
   const result = {
     appDirectory: path.join(desktopDirectory, "release/win-unpacked"),
@@ -104,6 +111,7 @@ async function execute(configuration) {
     updates: [],
     requests: [],
     processes: [],
+    devToolsConnections: [],
     limitations: [
       "Dirty-document cancellation is covered by main/renderer tests, not this installed-app scenario.",
     ],
@@ -225,15 +233,6 @@ async function execute(configuration) {
       30000,
       ignoreAbort,
     );
-  const freePort = () =>
-    new Promise((resolve, reject) => {
-      const socket = net.createServer();
-      socket.once("error", reject);
-      socket.listen(0, "127.0.0.1", () => {
-        const port = socket.address().port;
-        socket.close((error) => (error ? reject(error) : resolve(port)));
-      });
-    });
   const readEvents = async () => {
     const contents = await fs.readFile(bootstrapLog, "utf8").catch((error) => {
       if (error.code === "ENOENT") return "";
@@ -265,24 +264,46 @@ async function execute(configuration) {
     report.updates.push({ scenario, states });
     return states;
   };
-  const connect = async () => {
-    await waitFor(async () => {
+  const connect = async (launch) => {
+    const connection = {
+      pid: launch.pid,
+      version: launch.version,
+      attempts: 0,
+    };
+    report.devToolsConnections.push(connection);
+    const endpoint = await waitFor(async () => {
+      connection.attempts++;
       try {
-        const response = await fetch(
-          `http://127.0.0.1:${report.debugPort}/json/version`,
-          {
-            signal: AbortSignal.timeout(1500),
-          },
+        const endpoint = devToolsEndpoint(
+          await fs.readFile(launch.devToolsActivePortFile, "utf8"),
         );
-        return response.ok;
-      } catch {
+        assert.ok(
+          !report.devToolsConnections.some(
+            (previous) =>
+              previous.pid !== launch.pid && previous.endpoint === endpoint,
+          ),
+          "DevToolsActivePort still belongs to an earlier fixture process",
+        );
+        const address = new URL(endpoint);
+        const response = await fetch(`http://${address.host}/json/version`, {
+          signal: AbortSignal.timeout(1500),
+        });
+        assert.equal(
+          response.ok,
+          true,
+          `DevTools HTTP status ${response.status}`,
+        );
+        assert.equal((await response.json()).webSocketDebuggerUrl, endpoint);
+        return endpoint;
+      } catch (error) {
+        connection.lastError = `${error.message}${
+          error.cause?.code ? ` (${error.cause.code})` : ""
+        }`;
         return false;
       }
-    }, "fixture DevTools endpoint");
-    browser = await chromium.connectOverCDP(
-      `http://127.0.0.1:${report.debugPort}`,
-      { timeout: 30000 },
-    );
+    }, `fixture DevTools endpoint for PID ${launch.pid}`);
+    connection.endpoint = endpoint;
+    browser = await chromium.connectOverCDP(endpoint, { timeout: 30000 });
     page = await waitFor(
       () =>
         browser
@@ -336,7 +357,7 @@ async function execute(configuration) {
     assert.equal(event.url, "app://local/index.html");
     assert.equal(event.pid, launched.child.pid);
     report.launches.push(event);
-    await connect();
+    await connect(event);
     assert.equal((await bridge("getUpdateState")).currentVersion, version);
     return event;
   };
@@ -407,7 +428,6 @@ if (-not $target -or $target.ExecutablePath -ine $env:GUZI_E2E_EXECUTABLE) { thr
     const id = randomUUID().replaceAll("-", "");
     report.fixtureId = id;
     report.profile = path.join(isolated, "profile");
-    report.debugPort = await freePort();
     const cacheName = `guzi-update-e2e-${id}-updater`;
     cacheDirectory = path.join(
       process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData/Local"),
@@ -572,7 +592,6 @@ if (-not $target -or $target.ExecutablePath -ine $env:GUZI_E2E_EXECUTABLE) { thr
     const fixture = {
       profile: report.profile,
       log: bootstrapLog,
-      debugPort: report.debugPort,
       productName,
       appId,
     };
@@ -589,10 +608,15 @@ process.env.EXCALIDRAW_DESKTOP_DEV_URL = "";
 app.setName(fixture.productName);
 app.setAppUserModelId(fixture.appId);
 app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
-app.commandLine.appendSwitch("remote-debugging-port", String(fixture.debugPort));
+app.commandLine.appendSwitch("remote-debugging-port", "0");
 const record = (type, extra = {}) => fs.appendFileSync(fixture.log, JSON.stringify({
   type, pid: process.pid, version: app.getVersion(), execPath: process.execPath,
   userData: app.getPath("userData"), isPackaged: app.isPackaged, at: new Date().toISOString(), ...extra,
+  argv: process.argv,
+  remoteDebuggingPort: app.commandLine.getSwitchValue("remote-debugging-port"),
+  remoteDebuggingPipe: app.commandLine.hasSwitch("remote-debugging-pipe"),
+  sessionData: app.getPath("sessionData"),
+  devToolsActivePortFile: require("node:path").join(app.getPath("sessionData"), "DevToolsActivePort"),
 }) + "\\n");
 app.on("web-contents-created", (_event, contents) => {
   contents.on("did-finish-load", () => {
@@ -608,6 +632,8 @@ app.on("quit", () => record("quit"));
 ipcMain.on("desktop:confirm-close", () => record("confirm-close"));
 ipcMain.on("desktop:cancel-close", () => record("cancel-close"));
 require(${JSON.stringify(`./${originalMain}`)});
+// Electron starts its HTTP handler after main returns; discard the previous process's endpoint first.
+fs.rmSync(require("node:path").join(app.getPath("sessionData"), "DevToolsActivePort"), { force: true });
 const updater = require("electron-updater").autoUpdater;
 updater.on("error", (error) => record("updater-error", { message: error.message, code: error.code }));
 require("electron").autoUpdater.on("before-quit-for-update", () => record("before-quit-for-update"));
@@ -859,7 +885,7 @@ record("bootstrap");
       ),
     );
     report.launches.push(replacement);
-    await connect();
+    await connect(replacement);
     assert.equal(
       (await bridge("getUpdateState")).currentVersion,
       report.newVersion,
@@ -1134,4 +1160,10 @@ if (require.main === module) {
   }
 }
 
-module.exports = { options, observeChild, commandOutput, cleanupStages };
+module.exports = {
+  options,
+  observeChild,
+  commandOutput,
+  cleanupStages,
+  devToolsEndpoint,
+};
