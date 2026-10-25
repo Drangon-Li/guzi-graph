@@ -106,7 +106,7 @@ function signMac(directory, version) {
       <title>Excalidraw-Guzi ${version}</title>
       <sparkle:version>${version}</sparkle:version>
       <sparkle:shortVersionString>${version}</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+      <sparkle:minimumSystemVersion>${metadata.build.mac.minimumSystemVersion}</sparkle:minimumSystemVersion>
       <enclosure url="${url}" length="${
     fs.statSync(file).size
   }" type="application/octet-stream" sparkle:edSignature="${signature}" />

@@ -36,7 +36,7 @@ try {
     const notes = path.join(temporary, "release-notes.txt");
     fs.writeFileSync(
       notes,
-      `桌面版 ${tag}\n\n更新内容请见本次 Release 的提交记录。\n\n应用内更新：桌面设置 → 通用 → 版本与更新。macOS 和 Windows 均支持检查、下载、确认保存后安装并重启。\n\nv0.7.4 及更早版本需要先手动安装一次 v0.8.0 或更新版本，此后可以在软件内升级。macOS 当前仍为 ad-hoc 签名，未进行 Developer ID 签名和公证；首次安装可能需要在系统设置中允许打开。应用内 Mac 更新包使用独立 Ed25519 签名验证。\n\nmacOS：Apple Silicon、macOS 12 或更高版本。Windows：x64 NSIS 安装版支持应用内更新；便携版 ZIP 需手动更新。\n`,
+      `桌面版 ${tag}\n\n更新内容请见本次 Release 的提交记录。\n\n应用内更新：桌面设置 → 通用 → 版本与更新。macOS 和 Windows 均支持检查、下载、确认保存后安装并重启。\n\nv0.7.4 及更早版本需要先手动安装一次 v0.8.0 或更新版本，此后可以在软件内升级。macOS 当前仍为 ad-hoc 签名，未进行 Developer ID 签名和公证；首次安装可能需要在系统设置中允许打开。应用内 Mac 更新包使用独立 Ed25519 签名验证。\n\nmacOS：Apple Silicon、macOS 13 或更高版本。Windows：x64 NSIS 安装版支持应用内更新；便携版 ZIP 需手动更新。\n`,
     );
     gh([
       "release",

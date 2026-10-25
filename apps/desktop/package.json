@@ -83,7 +83,7 @@
       "gatekeeperAssess": false,
       "icon": "resources/icon.icns",
       "artifactName": "Excalidraw-Guzi-${version}-${arch}.${ext}",
-      "minimumSystemVersion": "12.0",
+      "minimumSystemVersion": "13.0",
       "extendInfo": {
         "SUPublicEDKey": "TtcL0UT0i9++qIe4Ns+h18iCdOuCZpYhApiuXitvJRg="
       },
