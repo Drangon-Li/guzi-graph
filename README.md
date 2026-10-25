@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 
 ## 安装
 
-v0.7.1 面向 **macOS Apple Silicon（arm64）**，安装包名为 `Excalidraw-Guzi-0.7.1-arm64.dmg`。暂未提供 Intel Mac、Windows 或 Linux 安装包。
+v0.7.2 面向 **macOS Apple Silicon（arm64）**，安装包名为 `Excalidraw-Guzi-0.7.2-arm64.dmg`。暂未提供 Intel Mac、Windows 或 Linux 安装包。
 
 1. 在 [Releases](https://github.com/Drangon-Li/guzi-graph/releases) 下载对应版本的 DMG。
 2. 打开 DMG，将 **Excalidraw-Guzi.app** 拖入「应用程序」。

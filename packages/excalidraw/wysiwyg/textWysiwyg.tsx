@@ -878,6 +878,19 @@ export const textWysiwyg = ({
   editable.onkeydown = (event) => {
     if (
       !event.isComposing &&
+      event.keyCode !== 229 &&
+      event[KEYS.CTRL_OR_CMD] &&
+      !event.shiftKey &&
+      !event.altKey &&
+      event.key.toLowerCase() === KEYS.A
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      editable.select();
+      return;
+    }
+    if (
+      !event.isComposing &&
       event[KEYS.CTRL_OR_CMD] &&
       ["b", "i", "u"].includes(event.key.toLowerCase())
     ) {
