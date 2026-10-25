@@ -6,7 +6,7 @@ const test = require("node:test");
 const {
   prepareUpdater,
   verifyArchive,
-} = require("../../scripts/prepare-updater.cjs");
+} = require("./prepare-updater.cjs");
 
 test(
   "rejects an altered Sparkle release before creating output",
