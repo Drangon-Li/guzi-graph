@@ -32,3 +32,6 @@ meta*.json
 apps/desktop/release/
 apps/desktop/resources/icon.iconset/
 /output/
+
+# Downloaded and compiled updater tools
+/apps/desktop/vendor/

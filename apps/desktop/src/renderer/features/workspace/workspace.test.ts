@@ -192,6 +192,11 @@ describe("desktop document workspace", () => {
     plugin = () => {};
     cancelPlugin = () => {};
     desktop = {
+      getUpdateState: vi.fn(),
+      checkForUpdates: vi.fn(),
+      downloadUpdate: vi.fn(),
+      installUpdate: vi.fn(),
+      onUpdateState: vi.fn(() => () => {}),
       platform: "darwin",
       getUserPlugins: vi.fn().mockResolvedValue([]),
       installUserPlugin: vi.fn().mockResolvedValue([]),

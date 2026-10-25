@@ -117,7 +117,30 @@ export type DesktopCommand =
   | "close-tab"
   | "close-window";
 
+export interface DesktopUpdateState {
+  status:
+    | "idle"
+    | "checking"
+    | "up-to-date"
+    | "available"
+    | "downloading"
+    | "downloaded"
+    | "installing"
+    | "error"
+    | "unavailable";
+  currentVersion: string;
+  availableVersion?: string;
+  progress?: number;
+  error?: string;
+  reason?: string;
+}
+
 export interface DesktopAPI {
+  getUpdateState(): Promise<DesktopUpdateState>;
+  checkForUpdates(): Promise<DesktopUpdateState>;
+  downloadUpdate(): Promise<DesktopUpdateState>;
+  installUpdate(): Promise<void>;
+  onUpdateState(callback: (state: DesktopUpdateState) => void): () => void;
   readonly platform: string;
   getUserPlugins(): Promise<UserPluginState[]>;
   installUserPlugin(

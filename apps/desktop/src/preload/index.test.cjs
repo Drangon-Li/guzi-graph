@@ -32,3 +32,50 @@ test("preload exposes the current platform without adding a platform IPC", async
     assert.deepEqual(calls, [["desktop:get-settings"]]);
   }
 });
+
+test("update bridge actions accept no renderer arguments and unsubscribe update listeners", async () => {
+  const source = await fs.readFile(path.join(__dirname, "index.cjs"), "utf8");
+  let desktop;
+  const calls = [];
+  const listeners = new Map();
+  vm.runInNewContext(source, {
+    process: { platform: "darwin" },
+    require: () => ({
+      contextBridge: {
+        exposeInMainWorld: (_key, value) => {
+          desktop = value;
+        },
+      },
+      ipcRenderer: {
+        invoke: (...args) => calls.push(args),
+        on: (channel, listener) => listeners.set(channel, listener),
+        removeListener: (channel, listener) => {
+          assert.equal(listeners.get(channel), listener);
+          listeners.delete(channel);
+        },
+      },
+    }),
+  });
+  for (const [method, channel] of [
+    ["getUpdateState", "get-update-state"],
+    ["checkForUpdates", "check-for-updates"],
+    ["downloadUpdate", "download-update"],
+    ["installUpdate", "install-update"],
+  ]) {
+    desktop[method]({
+      feed: "https://attacker.invalid",
+      path: "/tmp/not-an-update",
+    });
+    assert.deepEqual(calls.at(-1), [`desktop:${channel}`]);
+  }
+  let received;
+  const unsubscribe = desktop.onUpdateState((state) => {
+    received = state;
+  });
+  const state = { status: "downloading", progress: 45 };
+  listeners.get("desktop:update-state")({ sender: "not exposed" }, state);
+  assert.equal(received, state);
+  unsubscribe();
+  assert.equal(listeners.size, 0);
+  assert.throws(() => desktop.onUpdateState(null), /回调/);
+});

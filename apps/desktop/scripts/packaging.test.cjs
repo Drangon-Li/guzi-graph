@@ -27,7 +27,30 @@ test("isolated channels use target Electron downloads and distinct Windows names
     assert.notEqual(channel.appId, build.appId);
     assert.notEqual(channel.win.artifactName, build.win.artifactName);
     assert.deepEqual(channel.fileAssociations, []);
+    assert.equal(channel.publish, null);
+    assert.deepEqual(channel.mac.extendInfo, {});
+    assert.deepEqual(channel.mac.extraResources, []);
   }
+});
+
+test("stable builds contain a production update key and explicit GitHub publisher", () => {
+  assert.equal(
+    Buffer.from(build.mac.extendInfo.SUPublicEDKey, "base64").length,
+    32,
+  );
+  assert.deepEqual(build.publish, [
+    {
+      provider: "github",
+      owner: "Drangon-Li",
+      repo: "guzi-graph",
+      releaseType: "release",
+    },
+  ]);
+  assert.ok(
+    build.mac.extraResources.some(
+      ({ to }) => to === "updater/Guzi Updater.app",
+    ),
+  );
 });
 
 test("Windows icon contains the unchanged PNG representations from the macOS icon", () => {

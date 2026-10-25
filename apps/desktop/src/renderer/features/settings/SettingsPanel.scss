@@ -131,6 +131,25 @@
       line-height: 1.6;
     }
   }
+  .desktop-update-panel {
+    .desktop-settings-item {
+      flex-wrap: wrap;
+    }
+    [role="alert"] {
+      overflow-wrap: anywhere;
+    }
+    .desktop-update-progress {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
+      font-size: 12px;
+      progress {
+        flex: 1;
+        min-width: 0;
+      }
+    }
+  }
   .desktop-mcp-settings {
     padding-bottom: 0;
 

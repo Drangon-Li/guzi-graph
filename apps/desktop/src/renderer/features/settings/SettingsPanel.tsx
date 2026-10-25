@@ -25,6 +25,7 @@ import { translate } from "../../shared/i18n/i18n";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { PreferencePanel } from "./PreferencePanel";
 import { StylePresetPanel } from "./StylePresetPanel";
+import { UpdatePanel } from "./UpdatePanel";
 
 import "./SettingsPanel.scss";
 
@@ -190,40 +191,43 @@ export const SettingsPanel = ({
           <p>{descriptions[category]}</p>
         </div>
         {category === "general" && (
-          <section className="desktop-settings-card">
-            <h4>{t("外观")}</h4>
-            <DesktopSegmentedControl
-              label={t("外观")}
-              value={settings.theme}
-              options={[
-                { value: "light", label: t("浅色"), icon: SunIcon },
-                { value: "dark", label: t("深色"), icon: MoonIcon },
-                {
-                  value: "system",
-                  label: t("跟随系统"),
-                  icon: DeviceDesktopIcon,
-                },
-              ]}
-              onValueChange={(theme) =>
-                void onChange({ theme: theme as DesktopSettings["theme"] })
-              }
-            />
-            <SettingsRow label={t("语言")}>
+          <>
+            <section className="desktop-settings-card">
+              <h4>{t("外观")}</h4>
               <DesktopSegmentedControl
-                label={t("语言")}
-                value={settings.language}
+                label={t("外观")}
+                value={settings.theme}
                 options={[
-                  { value: "zh-CN", label: "中文" },
-                  { value: "en", label: "English" },
+                  { value: "light", label: t("浅色"), icon: SunIcon },
+                  { value: "dark", label: t("深色"), icon: MoonIcon },
+                  {
+                    value: "system",
+                    label: t("跟随系统"),
+                    icon: DeviceDesktopIcon,
+                  },
                 ]}
-                onValueChange={(language) =>
-                  void onChange({
-                    language: language as DesktopSettings["language"],
-                  })
+                onValueChange={(theme) =>
+                  void onChange({ theme: theme as DesktopSettings["theme"] })
                 }
               />
-            </SettingsRow>
-          </section>
+              <SettingsRow label={t("语言")}>
+                <DesktopSegmentedControl
+                  label={t("语言")}
+                  value={settings.language}
+                  options={[
+                    { value: "zh-CN", label: "中文" },
+                    { value: "en", label: "English" },
+                  ]}
+                  onValueChange={(language) =>
+                    void onChange({
+                      language: language as DesktopSettings["language"],
+                    })
+                  }
+                />
+              </SettingsRow>
+            </section>
+            <UpdatePanel root={root} language={settings.language} />
+          </>
         )}
         {category === "tools" && (
           <>

@@ -99,5 +99,10 @@
   "虚线箭头": "Dashed arrow",
   "自动化仅支持保存当前普通画布。": "Automation only supports saving the current ordinary canvas.",
   "自动化仅支持保存当前文档。": "Automation only supports saving the current document.",
-  "自动保存前请先在设置中选择项目目录。": "Choose a workspace directory in Settings before saving a new canvas automatically."
+  "自动保存前请先在设置中选择项目目录。": "Choose a workspace directory in Settings before saving a new canvas automatically.",
+  "当前构建不支持应用内更新。": "This build does not support in-app updates.",
+  "当前平台不支持应用内更新。": "This platform does not support in-app updates.",
+  "检查更新失败，请稍后重试。": "Could not check for updates. Please try again later.",
+  "下载更新失败，请稍后重试。": "Could not download the update. Please try again later.",
+  "安装更新失败，请重新下载后重试。": "Could not install the update. Download it again and retry."
 }

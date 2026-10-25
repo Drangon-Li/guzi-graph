@@ -16,6 +16,8 @@ async function harness(
     legacySettings,
     buildChannel,
     platform = "darwin",
+    isPackaged = false,
+    updateAdapter,
   } = {},
 ) {
   const base = await fs.realpath(
@@ -26,7 +28,8 @@ async function harness(
   await fs.writeFile(path.join(base, "dist", "index.html"), "<html></html>");
   const app = new EventEmitter();
   app.name = "Excalidraw-Guzi";
-  app.isPackaged = false;
+  app.isPackaged = isPackaged;
+  app.getVersion = () => "0.7.4";
   app.requestSingleInstanceLock = () => true;
   app.isReady = () => true;
   app.whenReady = () => Promise.resolve();
@@ -198,6 +201,14 @@ async function harness(
           ? electron
           : name === "../../package.json"
           ? { buildChannel }
+          : name === "./update.cjs"
+          ? {
+              createUpdateController: (options) =>
+                require("./update.cjs").createUpdateController({
+                  ...options,
+                  createAdapter: updateAdapter,
+                }),
+            }
           : name === "./pdf.cjs"
           ? {
               validatePdfRequest: require("./pdf.cjs").validatePdfRequest,
@@ -223,6 +234,9 @@ async function harness(
         },
         argv: ["electron", ...argv],
         platform,
+        arch: "arm64",
+        resourcesPath: "/Applications/Guzi.app/Contents/Resources",
+        execPath: "/Applications/Guzi.app/Contents/MacOS/Guzi",
       },
       Response,
       URL,
@@ -520,6 +534,7 @@ test("window close and Cmd+Q wait for renderer confirmation, cancellation resets
   ipcMain.emit("desktop:confirm-close", { ...event, sender: {} });
   assert.equal(app.quitCompleted, 0);
   ipcMain.emit("desktop:confirm-close", event);
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(app.quitCompleted, 1);
 });
 
@@ -1199,4 +1214,234 @@ test("PDF IPC translates invalid PDF request errors to the selected language", a
     }),
     /Invalid PDF export data/,
   );
+});
+
+const flushUpdates = () => new Promise((resolve) => setImmediate(resolve));
+async function updateHarness(t) {
+  const calls = { installs: 0, cancels: 0 };
+  let emit;
+  const adapter = {
+    async check() {
+      emit({ status: "available", availableVersion: "0.8.0" });
+    },
+    async download() {
+      emit({ status: "downloaded", availableVersion: "0.8.0", progress: 100 });
+    },
+    async install() {
+      calls.installs++;
+    },
+    async cancel() {
+      calls.cancels++;
+    },
+  };
+  const h = await harness(t, {
+    isPackaged: true,
+    updateAdapter: (options) => {
+      emit = options.emit;
+      return adapter;
+    },
+  });
+  await h.invoke("take-pending-files");
+  await h.invoke("check-for-updates");
+  await h.invoke("download-update");
+  return { ...h, updateCalls: calls, adapter };
+}
+
+test("update IPC rejects foreign senders and renderer cannot provide paths or feed URLs", async (t) => {
+  const h = await updateHarness(t);
+  for (const endpoint of [
+    "get-update-state",
+    "check-for-updates",
+    "download-update",
+    "install-update",
+  ]) {
+    await assert.rejects(
+      h.handlers.get(`desktop:${endpoint}`)({ ...h.event, sender: {} }),
+      /拒绝/,
+    );
+    await assert.rejects(
+      h.handlers.get(`desktop:${endpoint}`)({
+        ...h.event,
+        senderFrame: { url: "app://local/index.html" },
+      }),
+      /拒绝/,
+    );
+  }
+  assert.equal(h.updateCalls.installs, 0);
+  const state = await h.invoke("get-update-state", {
+    feed: "https://attacker.invalid",
+  });
+  assert.equal(state.availableVersion, "0.8.0");
+});
+
+test("main update install waits for saved-session confirmation and installs once despite repeated clicks", async (t) => {
+  const h = await updateHarness(t);
+  await Promise.all([h.invoke("install-update"), h.invoke("install-update")]);
+  assert.equal(h.calls.commands.at(-1).value, "close-window");
+  assert.equal(h.updateCalls.installs, 0);
+  assert.equal(h.app.quitCompleted, 0);
+  h.ipcMain.emit("desktop:confirm-close", { ...h.event, sender: {} });
+  await flushUpdates();
+  assert.equal(h.updateCalls.installs, 0);
+  h.ipcMain.emit("desktop:confirm-close", h.event);
+  h.ipcMain.emit("desktop:confirm-close", h.event);
+  await flushUpdates();
+  assert.equal(h.updateCalls.installs, 1);
+  assert.equal(h.app.quitCompleted, 1);
+});
+
+test("cancelling save revokes update installation and later normal quit only cancels the helper", async (t) => {
+  const h = await updateHarness(t);
+  await h.invoke("install-update");
+  h.ipcMain.emit("desktop:cancel-close", h.event);
+  assert.equal((await h.invoke("get-update-state")).status, "available");
+  h.app.quit();
+  h.ipcMain.emit("desktop:confirm-close", h.event);
+  await flushUpdates();
+  assert.equal(h.updateCalls.installs, 0);
+  assert.equal(h.updateCalls.cancels, 1);
+  assert.equal(h.app.quitCompleted, 1);
+});
+
+test("normal quit waits for native cancellation; failed cancellation keeps the application alive", async (t) => {
+  const h = await updateHarness(t);
+  let release;
+  h.adapter.cancel = () =>
+    new Promise((resolve) => {
+      release = resolve;
+    });
+  h.app.quit();
+  h.ipcMain.emit("desktop:confirm-close", h.event);
+  await flushUpdates();
+  assert.equal(h.app.quitCompleted, 0);
+  release();
+  await flushUpdates();
+  assert.equal(h.app.quitCompleted, 1);
+  assert.equal(h.updateCalls.installs, 0);
+
+  const failed = await updateHarness(t);
+  failed.adapter.cancel = async () => {
+    throw new Error("cancel failed");
+  };
+  failed.app.quit();
+  failed.ipcMain.emit("desktop:confirm-close", failed.event);
+  await flushUpdates();
+  assert.equal(failed.app.quitCompleted, 0);
+  assert.equal((await failed.invoke("get-update-state")).status, "error");
+});
+
+test("failed installation keeps the window alive and subsequent quit never installs implicitly", async (t) => {
+  const h = await updateHarness(t);
+  h.adapter.install = async () => {
+    h.updateCalls.installs++;
+    throw new Error("installer failed");
+  };
+  await h.invoke("install-update");
+  h.ipcMain.emit("desktop:confirm-close", h.event);
+  await flushUpdates();
+  assert.equal(h.app.quitCompleted, 0);
+  assert.equal((await h.invoke("get-update-state")).status, "error");
+  h.app.quit();
+  h.ipcMain.emit("desktop:confirm-close", h.event);
+  await flushUpdates();
+  assert.equal(h.updateCalls.installs, 1);
+  assert.equal(h.app.quitCompleted, 1);
+});
+
+test("cancel-close invalidates an asynchronous install acknowledgement before it can quit", async (t) => {
+  const h = await updateHarness(t);
+  let acknowledge;
+  h.adapter.install = () =>
+    new Promise((resolve) => {
+      acknowledge = resolve;
+    });
+  await h.invoke("install-update");
+  h.ipcMain.emit("desktop:confirm-close", h.event);
+  await flushUpdates();
+  h.ipcMain.emit("desktop:cancel-close", h.event);
+  acknowledge();
+  await flushUpdates();
+  assert.equal(h.app.quitCompleted, 0);
+  assert.equal((await h.invoke("get-update-state")).status, "available");
+});
+
+test("closing the macOS window leaves later Cmd+Q functional", async (t) => {
+  const h = await updateHarness(t);
+  h.window.close();
+  h.ipcMain.emit("desktop:confirm-close", h.event);
+  await flushUpdates();
+  assert.equal(h.app.quitCompleted, 0);
+  assert.equal(
+    h.calls.commands
+      .filter(({ channel }) => channel === "desktop:update-state")
+      .at(-1).value.status,
+    "available",
+  );
+  h.app.quit();
+  await flushUpdates();
+  assert.equal(h.app.quitCompleted, 1);
+});
+
+test("reopening the macOS window clears close finalization and permits another saved quit", async (t) => {
+  const h = await updateHarness(t);
+  h.window.close();
+  h.ipcMain.emit("desktop:confirm-close", h.event);
+  await flushUpdates();
+  h.app.emit("activate");
+  const reopened = h.calls.window;
+  assert.notEqual(reopened, h.window);
+  const event = {
+    sender: reopened.webContents,
+    senderFrame: reopened.webContents.mainFrame,
+  };
+  await h.handlers.get("desktop:take-pending-files")(event);
+  h.app.quit();
+  h.ipcMain.emit("desktop:confirm-close", event);
+  await flushUpdates();
+  assert.equal(h.app.quitCompleted, 1);
+});
+
+test("failed asynchronous NSIS spawn blocks only the updater's stale quit, preserving later normal quit", async (t) => {
+  const updater = new EventEmitter();
+  const quitEvents = new EventEmitter();
+  let application;
+  updater.checkForUpdates = async () => {
+    updater.emit("update-available", { version: "0.8.0" });
+    return { cancellationToken: { cancel() {} } };
+  };
+  updater.downloadUpdate = async () => {
+    updater.emit("update-downloaded", { version: "0.8.0" });
+    return ["installer.exe"];
+  };
+  updater.quitAndInstall = () => {
+    queueMicrotask(() => updater.emit("error", new Error("NSIS spawn failed")));
+    setImmediate(() => {
+      quitEvents.emit("before-quit-for-update");
+      application.quit();
+    });
+  };
+  const h = await harness(t, {
+    platform: "win32",
+    isPackaged: true,
+    updateAdapter: (options) =>
+      require("./update-windows.cjs").createWindowsUpdateAdapter({
+        ...options,
+        updater,
+        quitEvents,
+      }),
+  });
+  application = h.app;
+  await h.invoke("take-pending-files");
+  await h.invoke("check-for-updates");
+  await h.invoke("download-update");
+  await h.invoke("install-update");
+  h.ipcMain.emit("desktop:confirm-close", h.event);
+  await flushUpdates();
+  await flushUpdates();
+  assert.equal(h.app.quitCompleted, 0);
+  assert.equal((await h.invoke("get-update-state")).status, "error");
+  h.app.quit();
+  h.ipcMain.emit("desktop:confirm-close", h.event);
+  await flushUpdates();
+  assert.equal(h.app.quitCompleted, 1);
 });

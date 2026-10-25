@@ -10,6 +10,14 @@ import { SettingsPanel } from "./SettingsPanel";
 
 import type { DesktopAPI, DesktopSettings } from "../../../shared/desktop-api";
 
+beforeEach(() => {
+  document.defaultView!.desktop = {
+    getUpdateState: vi
+      .fn()
+      .mockResolvedValue({ status: "idle", currentVersion: "0.7.4" }),
+    onUpdateState: vi.fn(() => () => {}),
+  } as unknown as DesktopAPI;
+});
 afterEach(cleanup);
 
 const settings: DesktopSettings = {
@@ -27,7 +35,7 @@ const settings: DesktopSettings = {
   skipTrashConfirmation: false,
 };
 
-it("navigates categories with the keyboard and saves individual tool and file settings", () => {
+it("navigates categories with the keyboard and saves individual tool and file settings", async () => {
   const onChange = vi.fn(async () => settings);
   const onChangeDirectory = vi.fn(async () => {});
   render(
@@ -38,6 +46,7 @@ it("navigates categories with the keyboard and saves individual tool and file se
       onChangeDirectory={onChangeDirectory}
     />,
   );
+  await screen.findByText("当前版本：0.7.4");
   const general = screen.getByRole("tab", { name: "通用" });
   fireEvent.keyDown(general, { key: "ArrowDown" });
   const tools = screen.getByRole("tab", { name: "画布与工具" });
@@ -98,6 +107,7 @@ it("edits drawing defaults within settings and keeps save failures visible", asy
 it("opens the built-in MCP settings category", async () => {
   const getPlugins = vi.fn().mockResolvedValue([]);
   document.defaultView!.desktop = {
+    ...document.defaultView!.desktop,
     getPlugins,
     onPluginState: () => () => {},
   } as unknown as DesktopAPI;
@@ -115,4 +125,29 @@ it("opens the built-in MCP settings category", async () => {
   ).toBeInTheDocument();
   await screen.findByText("内置 MCP 暂不可用。");
   expect(getPlugins).toHaveBeenCalledTimes(1);
+});
+
+it("places version and updates in General after appearance and language", async () => {
+  render(
+    <SettingsPanel
+      root={document.body}
+      settings={settings}
+      onChange={async () => settings}
+      onChangeDirectory={async () => {}}
+    />,
+  );
+  await screen.findByText("当前版本：0.7.4");
+  expect(
+    screen.getByRole("heading", { name: "版本与更新" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("tab", { name: "版本与更新" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen
+      .getByRole("heading", { name: "外观" })
+      .compareDocumentPosition(
+        screen.getByRole("heading", { name: "版本与更新" }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });

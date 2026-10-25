@@ -1,0 +1,58 @@
+name: Desktop release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    uses: ./.github/workflows/desktop-macos.yml
+  windows:
+    uses: ./.github/workflows/desktop-windows.yml
+  publish:
+    needs: [macos, windows]
+    runs-on: macos-15
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - name: Require a versioned commit already merged into main
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          node -e 'const p=require("./apps/desktop/package.json"); if (!/^\d+\.\d+\.\d+$/.test(p.version) || process.env.GITHUB_REF_NAME !== "v"+p.version) process.exit(1)'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.x
+      - name: Install release tools
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          yarn install --frozen-lockfile
+          node apps/desktop/scripts/prepare-updater.cjs
+      - uses: actions/download-artifact@v4
+        with:
+          name: Excalidraw-Guzi-macos-arm64
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: Excalidraw-Guzi-windows-x64
+          path: release-assets
+      - name: Sign Mac update and verify every release asset
+        env:
+          SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
+        run: node apps/desktop/scripts/release-assets.cjs sign release-assets
+      - name: Upload, verify downloaded assets, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node apps/desktop/scripts/publish-release.cjs release-assets

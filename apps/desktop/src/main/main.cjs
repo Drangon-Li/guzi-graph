@@ -21,6 +21,7 @@ const {
 const { buildChannel } = require("../../package.json");
 
 const { translate } = require("./i18n/i18n.cjs");
+const { createUpdateController } = require("./update.cjs");
 const { renderPdf, validatePdfRequest } = require("./pdf.cjs");
 const { PluginHost } = require("./plugins.cjs");
 const { UserPluginStore } = require("./user-plugin-store.cjs");
@@ -78,6 +79,9 @@ let closePending = false;
 let closeApproved = false;
 let quitRequested = false;
 let quitApproved = false;
+let closeAttempt = 0;
+let closeFinalizing = false;
+let updates;
 let filesConsumerReady = false;
 const pendingPaths = new Set();
 const appURL = "app://local/index.html";
@@ -134,8 +138,7 @@ function requestClose(quit = false) {
   quitRequested ||= quit;
   if (!window) {
     if (quitRequested) {
-      quitApproved = true;
-      app.quit();
+      void approveClose();
     }
     return;
   }
@@ -145,6 +148,56 @@ function requestClose(quit = false) {
   closePending = true;
   if (filesConsumerReady) {
     emitCommand("close-window");
+  }
+}
+
+function resetClose() {
+  closeAttempt++;
+  closePending = false;
+  closeApproved = false;
+  quitRequested = false;
+  quitApproved = false;
+  closeFinalizing = false;
+}
+
+async function approveClose() {
+  if (closeFinalizing) return;
+  closeFinalizing = true;
+  const attempt = closeAttempt;
+  if (updates?.isInstallPending()) {
+    // Windows quitAndInstall can call app.quit itself after starting the installer.
+    closeApproved = true;
+    quitApproved = true;
+    const installed = await updates.confirmInstall();
+    if (attempt !== closeAttempt) return;
+    if (!installed) {
+      resetClose();
+      return;
+    }
+    app.quit();
+    return;
+  }
+  try {
+    await updates?.cancelForQuit();
+  } catch {
+    if (attempt === closeAttempt) {
+      resetClose();
+      await dialog.showMessageBox(
+        ...nativeDialogOptions({
+          type: "error",
+          message: t("安装更新失败，请重新下载后重试。"),
+        }),
+      );
+    }
+    return;
+  }
+  if (attempt !== closeAttempt) return;
+  closeApproved = true;
+  if (quitRequested) {
+    quitApproved = true;
+    app.quit();
+  } else {
+    window?.close();
   }
 }
 
@@ -353,6 +406,10 @@ function installIPC() {
         throw error;
       }
     });
+  handle("get-update-state", () => updates.getState());
+  handle("check-for-updates", () => updates.checkForUpdates());
+  handle("download-update", () => updates.downloadUpdate());
+  handle("install-update", () => updates.installUpdate());
   handle("get-plugins", () => plugins.list());
   handle("get-user-plugins", () => {
     if (userPlugins.store.configurationError)
@@ -585,13 +642,7 @@ function installIPC() {
     if (!closePending) {
       return;
     }
-    closeApproved = true;
-    if (quitRequested) {
-      quitApproved = true;
-      app.quit();
-    } else {
-      window.close();
-    }
+    void approveClose();
   });
   ipcMain.on("desktop:cancel-close", (event) => {
     try {
@@ -599,8 +650,8 @@ function installIPC() {
     } catch {
       return;
     }
-    closePending = false;
-    quitRequested = false;
+    updates.cancelInstall();
+    resetClose();
   });
 }
 
@@ -696,9 +747,7 @@ function updateWindowControls() {
 }
 
 function createWindow() {
-  closePending = false;
-  closeApproved = false;
-  quitRequested = false;
+  resetClose();
   filesConsumerReady = false;
   window = new BrowserWindow({
     width: 1440,
@@ -771,6 +820,7 @@ function createWindow() {
     void setHostsReady(false);
     window = null;
     closePending = false;
+    closeFinalizing = false;
     filesConsumerReady = false;
   });
   window.once("ready-to-show", () => window?.show());
@@ -891,7 +941,11 @@ if (!hasLock) {
     }
   });
   app.on("before-quit", (event) => {
-    if (!quitApproved && window) {
+    if (updates?.consumeBlockedQuit()) {
+      event.preventDefault();
+      return;
+    }
+    if (!quitApproved) {
       event.preventDefault();
       requestClose(true);
     } else {
@@ -940,6 +994,21 @@ if (!hasLock) {
       if (!developmentURL) {
         await installLocalProtocol();
       }
+      updates = createUpdateController({
+        app,
+        buildChannel,
+        platform: process.platform,
+        arch: process.arch,
+        resourcesPath: process.resourcesPath,
+        execPath: process.execPath,
+        translate: t,
+        requestClose: () => requestClose(true),
+        emit: (state) => {
+          if (window && !window.isDestroyed()) {
+            window.webContents.send("desktop:update-state", state);
+          }
+        },
+      });
       installIPC();
       installMenu();
       await receiveFiles(process.argv);
