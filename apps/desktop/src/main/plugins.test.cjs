@@ -336,17 +336,34 @@ test(
 
 test("a child that does not exit prevents another fork after bounded shutdown", async (t) => {
   const { host, children } = await fixture(t, { stopTimeout: 15 });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   await host.setReady(true);
   await host.setEnabled("mcp", true);
   const child = children[0];
+  let confirmKill;
+  const killed = new Promise((resolve) => {
+    confirmKill = resolve;
+  });
   child.kill = () => {
     child.killed = true;
+    confirmKill();
   };
   const configure = host.configure("mcp", { port: 44000 });
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  let configured = false;
+  void configure.then(() => {
+    configured = true;
+  });
+  await killed;
+  assert.equal(child.killed, true);
+  t.mock.timers.tick(14);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(configured, false);
+  assert.equal(children.length, 1);
+  t.mock.timers.tick(1);
   await configure;
   assert.equal(children.length, 1);
   assert.equal(host.list()[0].status, "error");
+  assert.match(host.list()[0].error, /插件进程尚未退出/);
   child.emit("exit", 0);
 });
 
