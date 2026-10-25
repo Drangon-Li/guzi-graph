@@ -2,8 +2,9 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const fs = require("node:fs/promises");
+const os = require("node:os");
 const path = require("node:path");
-const { pathToFileURL } = require("node:url");
+const { fileURLToPath, pathToFileURL } = require("node:url");
 
 const { renderPdf, validatePdfRequest } = require("./pdf.cjs");
 
@@ -83,7 +84,12 @@ function fixture(failure, { hang, event, delays = {} } = {}) {
       });
       calls.contents = this.webContents;
     }
-    async loadFile(file) {
+    async loadURL(url) {
+      calls.url = url;
+      calls.request({ url }, ({ cancel }) => {
+        assert.equal(cancel, false);
+      });
+      const file = fileURLToPath(url);
       calls.file = file;
       calls.html = await fs.readFile(file, "utf8");
       await runStage("load");
@@ -359,11 +365,31 @@ test("large SVG exports load a temporary HTML file instead of a navigation data 
   )}--></svg>`;
   await renderPdf(PrintWindow, { ...request, svg });
   assert.equal(typeof calls.file, "string");
+  assert.equal(calls.url, pathToFileURL(calls.file).href);
   assert.ok(calls.html.length > 4 * 1024 * 1024);
   assert.equal(path.basename(calls.file), "drawing.html");
   assert.match(path.basename(path.dirname(calls.file)), /^excalidraw-pdf-.+$/);
   assert.equal(calls.destroyed, 1);
   await assert.rejects(fs.stat(path.dirname(calls.file)), { code: "ENOENT" });
+});
+
+test("PDF loads the exact allowlisted file URL when the temporary path contains ~", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pdf~"));
+  const originalTmpdir = os.tmpdir;
+  os.tmpdir = () => directory;
+  t.after(async () => {
+    os.tmpdir = originalTmpdir;
+    await fs.rm(directory, { recursive: true, force: true });
+  });
+  const { PrintWindow, calls } = fixture();
+  assert.equal(
+    (await renderPdf(PrintWindow, request)).toString(),
+    "%PDF-fixture",
+  );
+  assert.equal(calls.url, pathToFileURL(calls.file).href);
+  assert.match(calls.url, /pdf%7E/);
+  assert.equal(calls.destroyed, 1);
+  assertReleased(calls);
 });
 
 test("PDF subcanvas pages use separate named page sizes and decode every SVG before printing", async () => {
