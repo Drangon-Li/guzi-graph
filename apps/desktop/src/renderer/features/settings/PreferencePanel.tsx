@@ -371,8 +371,8 @@ export const PreferencePanel = ({
             </span>
             <p className="desktop-preference-panel__hint">
               {en
-                ? "Allow font access to choose from fonts installed on this Mac."
-                : "授权读取后，可选择此 Mac 上安装的字体。"}
+                ? "Allow font access to choose from fonts installed on this computer."
+                : "授权读取后，可选择本机上安装的字体。"}
             </p>
             <Button
               className="desktop-preference-panel__button"
@@ -384,7 +384,7 @@ export const PreferencePanel = ({
                   ? "Reading…"
                   : "读取中…"
                 : en
-                ? "Read fonts installed on this Mac"
+                ? "Read fonts installed on this computer"
                 : "读取本机已安装字体"}
             </Button>
             {!!families.length && (

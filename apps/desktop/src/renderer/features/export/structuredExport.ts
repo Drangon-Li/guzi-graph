@@ -1101,7 +1101,11 @@ export const exportCanvasPdf = async (
   api: ExcalidrawImperativeAPI,
   title: string,
   desktop: DesktopAPI,
-  options: { includeSubcanvases?: boolean; snapshot?: SceneSnapshot } = {},
+  options: {
+    includeSubcanvases?: boolean;
+    snapshot?: SceneSnapshot;
+    ownerDocument?: Document;
+  } = {},
 ): Promise<boolean> => {
   api.commitEditing();
   const elements = (
@@ -1128,6 +1132,7 @@ export const exportCanvasPdf = async (
       padding: 24,
       embedScene: false,
       reuseImages: true,
+      environment: { document: options.ownerDocument },
     },
   });
   const width = Number(svg.getAttribute("width"));
@@ -1160,6 +1165,7 @@ export const exportCanvasPdf = async (
           padding: 24,
           embedScene: false,
           reuseImages: true,
+          environment: { document: options.ownerDocument },
         },
       });
       const pageWidth = Number(child.getAttribute("width"));

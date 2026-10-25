@@ -11,3 +11,4 @@ dist/
 dev-dist
 coverage
 ../../apps/desktop/release/
+../../output/

@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 
 import { Button } from "@excalidraw/excalidraw";
 import { TextField } from "@excalidraw/excalidraw/components/TextField";
+import { getShortcutKey } from "@excalidraw/excalidraw/shortcut";
 import {
   ArrowIcon,
   CloseIcon,
@@ -17,6 +18,7 @@ import {
 } from "@excalidraw/excalidraw/components/icons";
 
 import { fileTitle } from "../../shared/model/document";
+import { isPathInDirectory, parentDirectory } from "../../shared/model/path";
 import { translate } from "../../shared/i18n/i18n";
 import { DesktopSelect } from "../../shared/ui/DesktopControls";
 
@@ -29,10 +31,7 @@ import type { ProjectFile, RecentFile } from "../../../shared/desktop-api";
 import type { Workspace } from "../workspace/workspace";
 
 const isInDefaultDirectory = (file: ProjectFile, directory: string | null) =>
-  !!directory && file.path.startsWith(`${directory.replace(/\/$/, "")}/`);
-
-const parentDirectory = (path: string) =>
-  path.slice(0, path.lastIndexOf("/")) || "/";
+  isPathInDirectory(file.path, directory);
 
 type FileMenu = {
   file: ProjectFile;
@@ -236,9 +235,7 @@ export const Projects = ({
             {settingsIcon}
             <span>{t("设置")}</span>
           </Button>
-          <span className="desktop-local-label">
-            {t("文件保存在这台 Mac 上")}
-          </span>
+          <span className="desktop-local-label">{t("文件保存在本机上")}</span>
         </div>
       </aside>
       <main className="desktop-project-content">
@@ -273,7 +270,7 @@ export const Projects = ({
             <Button onSelect={workspace.openFiles}>
               {LoadIcon}
               <span>{t("打开文件")}</span>
-              <kbd>⌘O</kbd>
+              <kbd>{getShortcutKey("CtrlOrCmd+O")}</kbd>
             </Button>
             <Button
               className="desktop-primary"
@@ -515,7 +512,7 @@ export const Projects = ({
               onSelect: () => onEdit({ kind: "move", file: menu.file }),
             },
             {
-              label: t("在 Finder 中显示"),
+              label: t("在文件夹中显示"),
               icon: ExternalLinkIcon,
               separatorBefore: true,
               onSelect: () => {
@@ -532,7 +529,11 @@ export const Projects = ({
               onSelect: () => onRemove(menu.file, "remove"),
             },
             {
-              label: t("彻底删除"),
+              label: t(
+                root.ownerDocument.defaultView!.desktop?.platform === "win32"
+                  ? "移到回收站"
+                  : "彻底删除",
+              ),
               icon: TrashIcon,
               danger: true,
               onSelect: () => onRemove(menu.file, "trash"),

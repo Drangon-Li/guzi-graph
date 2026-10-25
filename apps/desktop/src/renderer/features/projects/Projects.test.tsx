@@ -128,7 +128,7 @@ describe("desktop project menus", () => {
     expect(view.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it("shares open, rename, move and Finder actions between right-click and trigger", () => {
+  it("shares open, rename, move and reveal actions between right-click and trigger", () => {
     const view = mount();
     fireEvent.contextMenu(view.card());
     const contextLabels = within(view.getByRole("menu"))
@@ -158,7 +158,7 @@ describe("desktop project menus", () => {
     expect(
       view.getByRole("menuitem", { name: "移入默认文件夹分类" }),
     ).toBeEnabled();
-    fireEvent.click(view.getByRole("menuitem", { name: "在 Finder 中显示" }));
+    fireEvent.click(view.getByRole("menuitem", { name: "在文件夹中显示" }));
     expect(view.revealFile).toHaveBeenCalledWith(files[1].path);
   });
 
@@ -177,7 +177,7 @@ describe("desktop project menus", () => {
     expect(view.getByRole("menuitem", { name: "重命名" })).toHaveFocus();
     fireEvent.keyDown(menu, { key: "ArrowDown" });
     expect(
-      view.getByRole("menuitem", { name: "在 Finder 中显示" }),
+      view.getByRole("menuitem", { name: "在文件夹中显示" }),
     ).toHaveFocus();
     fireEvent.keyDown(menu, { key: "ArrowDown" });
     expect(view.getByRole("menuitem", { name: "删除" })).toHaveFocus();

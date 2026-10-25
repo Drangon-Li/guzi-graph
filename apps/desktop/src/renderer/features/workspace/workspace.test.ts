@@ -192,6 +192,7 @@ describe("desktop document workspace", () => {
     plugin = () => {};
     cancelPlugin = () => {};
     desktop = {
+      platform: "darwin",
       getUserPlugins: vi.fn().mockResolvedValue([]),
       installUserPlugin: vi.fn().mockResolvedValue([]),
       setUserPluginEnabled: vi.fn().mockResolvedValue([]),
@@ -261,6 +262,30 @@ describe("desktop document workspace", () => {
     await waitFor(() => expect(hook.result.current.loading).toBe(false));
     return hook;
   };
+
+  it("shares a pending file dialog between native-menu commands and renderer shortcuts", async () => {
+    const hook = await mount();
+    let finish!: (files: DiskDocument[]) => void;
+    vi.mocked(desktop.openFiles).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    let opening!: Promise<void>;
+    act(() => {
+      command("open");
+      opening = hook.result.current.openFiles();
+      command("open");
+    });
+    expect(desktop.openFiles).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish([]);
+      await opening;
+    });
+    await act(async () => hook.result.current.openFiles());
+    expect(desktop.openFiles).toHaveBeenCalledTimes(2);
+  });
 
   const addDocument = (hook: Awaited<ReturnType<typeof mount>>) => {
     let document!: CanvasDocument;

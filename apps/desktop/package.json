@@ -2,7 +2,7 @@
   "name": "excalidraw-local-desktop",
   "version": "0.7.2",
   "private": true,
-  "description": "A local macOS workspace for Excalidraw drawings",
+  "description": "A local desktop workspace for Excalidraw drawings",
   "author": "Local",
   "license": "MIT",
   "main": "src/main/main.cjs",
@@ -11,15 +11,25 @@
     "build": "vite build",
     "start": "electron .",
     "typecheck": "tsc --project tsconfig.json",
-    "test": "node --test src/main/*.test.cjs src/main/i18n/*.test.cjs && npm run test:renderer",
-    "package": "npm run build && electron-builder --mac dmg --arm64",
-    "package:dev-ppt": "VITE_DESKTOP_BUILD_CHANNEL=dev-ppt npm run build && electron-builder --config electron-builder.dev-ppt.cjs --mac dmg --arm64",
-    "package:test": "VITE_DESKTOP_BUILD_CHANNEL=test npm run build && electron-builder --config electron-builder.testing.cjs --mac dmg --arm64",
-    "package:dir": "npm run build && electron-builder --mac dir --arm64",
+    "test": "npm run test:main && npm run test:renderer && npm run test:packaging",
+    "package": "npm run build && electron-builder --mac dmg --arm64 --publish never",
+    "package:dev-ppt": "npm run build:dev-ppt && electron-builder --config electron-builder.dev-ppt.cjs --mac dmg --arm64 --publish never",
+    "package:test": "npm run build:test && electron-builder --config electron-builder.testing.cjs --mac dmg --arm64 --publish never",
+    "package:dir": "npm run build && electron-builder --mac dir --arm64 --publish never",
     "test:renderer": "cd ../.. && vitest --config tooling/config/test/vitest.config.mts run apps/desktop/src/renderer --reporter=dot",
     "test:mcp:e2e": "node scripts/mcp-e2e.cjs",
     "test:mcp:plugins": "node scripts/mcp-plugins-e2e.cjs",
-    "test:mcp:clients": "node scripts/mcp-e2e.cjs --clients"
+    "test:mcp:clients": "node scripts/mcp-e2e.cjs --clients",
+    "build:dev-ppt": "node scripts/build-channel.cjs dev-ppt",
+    "build:test": "node scripts/build-channel.cjs test",
+    "test:main": "node scripts/test-main.cjs",
+    "test:packaging": "node --test scripts/packaging.test.cjs",
+    "package:win": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "package:win:dir": "npm run build && electron-builder --win --x64 --dir --publish never",
+    "package:win:test": "npm run build:test && electron-builder --config electron-builder.testing.cjs --win nsis --x64 --publish never",
+    "package:win:test:dir": "npm run build:test && electron-builder --config electron-builder.testing.cjs --win --x64 --dir --publish never",
+    "package:win:dev-ppt": "npm run build:dev-ppt && electron-builder --config electron-builder.dev-ppt.cjs --win nsis --x64 --publish never",
+    "test:smoke": "node scripts/desktop-smoke.cjs"
   },
   "dependencies": {
     "@modelcontextprotocol/node": "2.1.1",
@@ -87,7 +97,27 @@
         "role": "Editor",
         "mimeType": "application/vnd.guzi.presentation+json"
       }
-    ]
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.ico",
+      "artifactName": "Excalidraw-Guzi-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false
+    }
   },
   "productName": "Excalidraw-Guzi"
 }

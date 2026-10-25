@@ -360,7 +360,8 @@ test("large SVG exports load a temporary HTML file instead of a navigation data 
   await renderPdf(PrintWindow, { ...request, svg });
   assert.equal(typeof calls.file, "string");
   assert.ok(calls.html.length > 4 * 1024 * 1024);
-  assert.match(calls.file, /excalidraw-pdf-[^/]+[/]drawing.html$/);
+  assert.equal(path.basename(calls.file), "drawing.html");
+  assert.match(path.basename(path.dirname(calls.file)), /^excalidraw-pdf-.+$/);
   assert.equal(calls.destroyed, 1);
   await assert.rejects(fs.stat(path.dirname(calls.file)), { code: "ENOENT" });
 });

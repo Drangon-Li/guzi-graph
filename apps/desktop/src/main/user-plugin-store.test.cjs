@@ -52,7 +52,11 @@ test("install and update persist a private package, disabled by default, with cl
   original.manifest.name = "mutated";
   assert.equal(store.list()[0].manifest.name, "My plugin");
   assert.equal(store.list()[0].enabled, false);
-  assert.equal((await fs.stat(configPath)).mode & 0o777, 0o600);
+  const configStat = await fs.stat(configPath);
+  assert.equal(configStat.isFile(), true);
+  if (process.platform !== "win32") {
+    assert.equal(configStat.mode & 0o777, 0o600);
+  }
   assert.deepEqual(await fs.readdir(userData), ["user-plugins.json"]);
   await store.setEnabled("my-plugin", true);
   const list = store.list();

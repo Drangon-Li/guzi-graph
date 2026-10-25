@@ -39,10 +39,11 @@ test("built-in MCP is disabled by default and persists its private token separat
   assert.equal(host.list()[0].enabled, false);
   assert.equal(host.list()[0].port, 43123);
   assert.match(host.list()[0].token, /^[a-f0-9]{64}$/);
-  assert.equal(
-    (await fs.stat(path.join(userData, "plugins.json"))).mode & 0o777,
-    0o600,
-  );
+  const configStat = await fs.stat(path.join(userData, "plugins.json"));
+  assert.equal(configStat.isFile(), true);
+  if (process.platform !== "win32") {
+    assert.equal(configStat.mode & 0o777, 0o600);
+  }
   assert.equal(
     (await new PluginHost(configuration).initialize()).list()[0].token,
     host.list()[0].token,

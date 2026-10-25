@@ -9,6 +9,7 @@ import {
   palette,
 } from "@excalidraw/excalidraw/components/icons";
 import { Button } from "@excalidraw/excalidraw";
+import { getShortcutKey } from "@excalidraw/excalidraw/shortcut";
 
 import type { PreferenceSection } from "@excalidraw/excalidraw/types";
 import type { FontFamilyValues } from "@excalidraw/element/types";
@@ -91,12 +92,20 @@ export const SettingsPanel = ({
     {
       id: "shortcuts",
       label: en ? "Shortcuts" : "快捷键",
-      icon: <span className="desktop-settings-command">⌘</span>,
+      icon: (
+        <span className="desktop-settings-command">
+          {getShortcutKey("CtrlOrCmd")}
+        </span>
+      ),
     },
     {
       id: "mcp",
       label: t("内置 MCP"),
-      icon: <span className="desktop-settings-command">⌘</span>,
+      icon: (
+        <span className="desktop-settings-command">
+          {getShortcutKey("CtrlOrCmd")}
+        </span>
+      ),
     },
     {
       id: "files",
