@@ -11,6 +11,11 @@ const listen = (name, callback) => {
 
 contextBridge.exposeInMainWorld("desktop", {
   platform: process.platform,
+  getUpdateState: () => invoke("get-update-state"),
+  checkForUpdates: () => invoke("check-for-updates"),
+  downloadUpdate: () => invoke("download-update"),
+  installUpdate: () => invoke("install-update"),
+  onUpdateState: (callback) => listen("update-state", callback),
   getUserPlugins: () => invoke("get-user-plugins"),
   installUserPlugin: (plugin, overwrite) =>
     invoke("install-user-plugin", plugin, overwrite),

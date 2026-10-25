@@ -1,0 +1,64 @@
+name: macOS desktop
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "packages/**"
+      - "tooling/**"
+      - "package.json"
+      - "yarn.lock"
+      - ".github/workflows/desktop-macos.yml"
+      - ".github/workflows/desktop-release.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.x
+      - name: Install locked dependencies
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          yarn install --frozen-lockfile
+      - name: Desktop typecheck and unit tests
+        run: |
+          yarn desktop:typecheck
+          yarn desktop:test
+      - name: Build native updater and macOS package
+        run: yarn desktop:package
+      - name: Packaged launch, save and reopen smoke
+        timeout-minutes: 5
+        run: yarn desktop:test:smoke --executable "apps/desktop/release/mac-arm64/Excalidraw-Guzi.app/Contents/MacOS/Excalidraw-Guzi"
+      - name: Verify real signed cross-version update and cancellation
+        timeout-minutes: 10
+        run: node apps/desktop/scripts/update-mac-e2e.cjs --app "apps/desktop/release/mac-arm64/Excalidraw-Guzi.app" --artifacts output/update-e2e/macos
+      - name: Verify signature and archive the final app for Sparkle
+        run: node apps/desktop/scripts/release-assets.cjs mac-archive
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Excalidraw-Guzi-macos-arm64
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*-arm64.zip
+          if-no-files-found: error
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-update-diagnostics
+          path: |
+            output/update-e2e/macos/
+            output/playwright/desktop-smoke/
+          if-no-files-found: ignore

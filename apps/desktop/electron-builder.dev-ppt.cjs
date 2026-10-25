@@ -2,6 +2,7 @@ const { build } = require("./package.json");
 
 module.exports = {
   ...build,
+  publish: null,
   appId: "local.excalidraw.desktop.dev-ppt",
   productName: "Excalidraw-Guzi Dev PPT",
   directories: {
@@ -14,6 +15,8 @@ module.exports = {
   },
   mac: {
     ...build.mac,
+    extraResources: [],
+    extendInfo: {},
     // electron-builder expands these placeholders when packaging.
     // eslint-disable-next-line no-template-curly-in-string
     artifactName: "Excalidraw-Guzi-dev-ppt-${version}-${arch}.${ext}",

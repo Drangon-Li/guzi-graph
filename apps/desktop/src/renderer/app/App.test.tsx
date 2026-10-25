@@ -48,7 +48,11 @@ describe("desktop inline tab rename interaction", () => {
     document.body.append(root);
     root.ownerDocument.defaultView!.desktop = {
       platform: "darwin",
-    } as DesktopAPI;
+      getUpdateState: vi
+        .fn()
+        .mockResolvedValue({ status: "idle", currentVersion: "0.7.4" }),
+      onUpdateState: vi.fn(() => () => {}),
+    } as unknown as DesktopAPI;
     canvas = {
       id: "canvas-id",
       title: "原名称",
@@ -405,7 +409,10 @@ describe("desktop inline tab rename interaction", () => {
   ])(
     "uses the $platform platform for project shortcuts and labels",
     ({ platform, modifier, shortcut }) => {
-      root.ownerDocument.defaultView!.desktop = { platform } as DesktopAPI;
+      root.ownerDocument.defaultView!.desktop = {
+        ...root.ownerDocument.defaultView!.desktop,
+        platform,
+      } as DesktopAPI;
       showProject();
       const view = render(<App root={root} />);
       expect(view.container.querySelector(".desktop-shell")).toHaveAttribute(
@@ -457,6 +464,7 @@ describe("desktop inline tab rename interaction", () => {
 
   it("keeps Windows project opening blocked by modals, closing and the editor", () => {
     root.ownerDocument.defaultView!.desktop = {
+      ...root.ownerDocument.defaultView!.desktop,
       platform: "win32",
     } as DesktopAPI;
     showProject();
@@ -481,8 +489,9 @@ describe("desktop inline tab rename interaction", () => {
   });
   it.each(["ctrlKey", "metaKey"] as const)(
     "opens projects with %s+O only when the page can handle the shortcut",
-    (modifier) => {
+    async (modifier) => {
       root.ownerDocument.defaultView!.desktop = {
+        ...root.ownerDocument.defaultView!.desktop,
         platform: modifier === "metaKey" ? "darwin" : "win32",
       } as DesktopAPI;
       showProject();
@@ -518,6 +527,7 @@ describe("desktop inline tab rename interaction", () => {
       fireEvent.click(view.getByRole("button", { name: "设置" }));
       fireEvent.keyDown(root, key);
       fireEvent.keyDown(view.getByRole("dialog"), key);
+      await view.findByText("当前版本：0.7.4");
       expect(workspace.openFiles).not.toHaveBeenCalled();
     },
   );
@@ -525,7 +535,10 @@ describe("desktop inline tab rename interaction", () => {
   it.each(["darwin", "win32"])(
     "uses the %s titlebar layout and deletion wording",
     (platform) => {
-      root.ownerDocument.defaultView!.desktop = { platform } as DesktopAPI;
+      root.ownerDocument.defaultView!.desktop = {
+        ...root.ownerDocument.defaultView!.desktop,
+        platform,
+      } as DesktopAPI;
       showProject();
       const view = render(<App root={root} />);
       expect(
