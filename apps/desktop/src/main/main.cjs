@@ -30,6 +30,7 @@ const {
   DesktopStorage,
   atomicWrite,
   fileName,
+  invalidWindowsFileName,
   EXPORT_EXTENSIONS,
   DOCUMENT_EXTENSIONS,
 } = require("./storage.cjs");
@@ -213,7 +214,12 @@ async function saveDocument(request) {
           code: "ROOT_REQUIRED",
         });
       }
-      const name = fileName(request.name, extension);
+      const name = fileName(
+        request.name,
+        extension,
+        undefined,
+        process.platform,
+      );
       target = path.join(
         root,
         `${path.basename(name, `.${extension}`)}-${randomUUID()}.${extension}`,
@@ -226,7 +232,7 @@ async function saveDocument(request) {
     return storage.saveFile(request);
   }
   if (request.saveAs || !target) {
-    const name = fileName(request.name, extension);
+    const name = fileName(request.name, extension, undefined, process.platform);
     const root = storage.getSettings().rootDirectory;
     const result = await dialog.showSaveDialog(
       ...nativeDialogOptions({
@@ -294,7 +300,8 @@ function safeSegment(value) {
     /[\\/\x00-\x1f<>:"|?*]/.test(value) ||
     value === "." ||
     value === ".." ||
-    value.endsWith(".")
+    value.endsWith(".") ||
+    (process.platform === "win32" && invalidWindowsFileName(value))
   ) {
     throw new Error(t("导出附件路径无效。"));
   }
@@ -321,7 +328,7 @@ async function chooseExport(name, extension) {
   const result = await dialog.showSaveDialog(
     ...nativeDialogOptions({
       title: t("导出画布"),
-      defaultPath: fileName(name, extension),
+      defaultPath: fileName(name, extension, undefined, process.platform),
       filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
       properties: ["createDirectory", "showOverwriteConfirmation"],
     }),
@@ -700,11 +707,13 @@ function createWindow() {
     minHeight: 620,
     show: false,
     title: "Excalidraw",
-    titleBarStyle: "hidden",
     ...(process.platform === "darwin"
-      ? { trafficLightPosition: { x: 14, y: 16 } }
+      ? {
+          titleBarStyle: "hidden",
+          trafficLightPosition: { x: 14, y: 16 },
+        }
       : process.platform === "win32"
-      ? { titleBarOverlay: windowControlsOverlay() }
+      ? { titleBarStyle: "hidden", titleBarOverlay: windowControlsOverlay() }
       : {}),
     backgroundColor: "#ffffff",
     webPreferences: {
@@ -897,7 +906,9 @@ if (!hasLock) {
   app
     .whenReady()
     .then(async () => {
-      storage = await new DesktopStorage(app.getPath("userData")).initialize();
+      storage = await new DesktopStorage(app.getPath("userData"), {
+        platform: process.platform,
+      }).initialize();
       plugins = await new PluginHost({
         userData: app.getPath("userData"),
         fork: (...args) => utilityProcess.fork(...args),

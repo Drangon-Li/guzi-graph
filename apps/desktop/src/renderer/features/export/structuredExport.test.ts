@@ -554,9 +554,14 @@ describe("desktop structured export", () => {
     expect(markdown).not.toContain("Orphan");
   });
 
-  it("adds one PDF page per reachable nonempty subcanvas when requested", async () => {
+  it("exports the root and reachable nonempty PDF subcanvases in the supplied owner document", async () => {
     const { exportScene } = await import("@excalidraw/utils");
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const ownerDocument =
+      document.implementation.createHTMLDocument("PDF owner");
+    const svg = ownerDocument.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "svg",
+    );
     svg.setAttribute("width", "100");
     svg.setAttribute("height", "200");
     vi.mocked(exportScene).mockResolvedValue(svg);
@@ -596,6 +601,7 @@ describe("desktop structured export", () => {
       {
         includeSubcanvases: true,
         snapshot,
+        ownerDocument,
       },
     );
     expect(savePdf).toHaveBeenCalledWith(
@@ -613,9 +619,18 @@ describe("desktop structured export", () => {
           elements: [expect.objectContaining({ id: "inside" })],
           appState: expect.objectContaining({ viewBackgroundColor: "#eeeeee" }),
         }),
-        config: expect.objectContaining({ canvasBackgroundColor: "#eeeeee" }),
+        config: expect.objectContaining({
+          canvasBackgroundColor: "#eeeeee",
+          environment: { document: ownerDocument },
+        }),
       }),
     );
+    const calls = vi.mocked(exportScene).mock.calls.slice(-2);
+    expect(calls).toHaveLength(2);
+    for (const [options] of calls) {
+      expect(options.config?.environment?.document).toBe(ownerDocument);
+      expect(options.config?.environment?.document).not.toBe(document);
+    }
   });
 
   it("commits edits before taking a PDF snapshot and saves an embedded SVG at scene dimensions", async () => {

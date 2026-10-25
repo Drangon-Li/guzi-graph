@@ -17,6 +17,7 @@ import {
 } from "@excalidraw/excalidraw/components/icons";
 
 import { fileTitle } from "../../shared/model/document";
+import { isPathInDirectory, parentDirectory } from "../../shared/model/path";
 import { translate } from "../../shared/i18n/i18n";
 import { DesktopSelect } from "../../shared/ui/DesktopControls";
 import { desktopShortcut } from "../../shared/ui/desktopShortcut";
@@ -33,26 +34,7 @@ const isInDefaultDirectory = (
   file: ProjectFile,
   directory: string | null,
   platform: string,
-) => {
-  const normalize = (path: string) =>
-    platform === "win32" ? path.replace(/\\/g, "/").toLowerCase() : path;
-  return (
-    !!directory &&
-    normalize(file.path).startsWith(
-      `${normalize(directory).replace(/\/$/, "")}/`,
-    )
-  );
-};
-
-const parentDirectory = (path: string, platform: string) => {
-  const separator =
-    platform === "win32"
-      ? Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))
-      : path.lastIndexOf("/");
-  return platform === "win32" && separator === 2 && path[1] === ":"
-    ? path.slice(0, 3)
-    : path.slice(0, separator) || "/";
-};
+) => isPathInDirectory(file.path, directory, platform);
 
 type FileMenu = {
   file: ProjectFile;
@@ -563,7 +545,7 @@ export const Projects = ({
               onSelect: () => onRemove(menu.file, "remove"),
             },
             {
-              label: t("彻底删除"),
+              label: t(platform === "win32" ? "移到回收站" : "彻底删除"),
               icon: TrashIcon,
               danger: true,
               onSelect: () => onRemove(menu.file, "trash"),

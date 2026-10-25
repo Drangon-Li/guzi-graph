@@ -100,6 +100,7 @@ export default defineConfig({
       ...configDefaults.exclude,
       "apps/desktop/src/main/**/*.test.cjs",
       "apps/desktop/src/preload/**/*.test.cjs",
+      "apps/desktop/scripts/**/*.test.cjs",
     ],
     // Since hooks are running in stack in v2, which means all hooks run serially whereas
     // we need to run them in parallel

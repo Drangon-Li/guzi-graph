@@ -1,15 +1,9 @@
-const path = require("node:path");
-
 const { build } = require("./package.json");
 
 module.exports = {
   ...build,
   appId: "local.excalidraw.desktop.dev-ppt",
   productName: "Excalidraw-Guzi Dev PPT",
-  electronDist: path.join(
-    path.dirname(require.resolve("electron/package.json")),
-    "dist",
-  ),
   directories: {
     ...build.directories,
     output: "release/dev-ppt",
@@ -23,6 +17,11 @@ module.exports = {
     // electron-builder expands these placeholders when packaging.
     // eslint-disable-next-line no-template-curly-in-string
     artifactName: "Excalidraw-Guzi-dev-ppt-${version}-${arch}.${ext}",
+  },
+  win: {
+    ...build.win,
+    // eslint-disable-next-line no-template-curly-in-string
+    artifactName: "Excalidraw-Guzi-dev-ppt-${version}-win-${arch}.${ext}",
   },
   fileAssociations: [],
 };

@@ -34,7 +34,22 @@ const inside = (root, target) =>
 const fail = (message, code = "INVALID_PATH") =>
   Object.assign(new Error(message), { code });
 
-function fileName(value, extension = "excalidraw", language = "zh-CN") {
+function invalidWindowsFileName(value) {
+  return (
+    /[<>:"|?*]/.test(value) ||
+    /[ .]$/.test(value) ||
+    /^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³]|CONIN\$|CONOUT\$) *(?:\.|$)/i.test(
+      value,
+    )
+  );
+}
+
+function fileName(
+  value,
+  extension = "excalidraw",
+  language = "zh-CN",
+  platform = process.platform,
+) {
   if (
     typeof value !== "string" ||
     !value.trim() ||
@@ -42,7 +57,8 @@ function fileName(value, extension = "excalidraw", language = "zh-CN") {
     // eslint-disable-next-line no-control-regex -- Control characters are intentionally rejected in user-supplied names.
     /[\\/\x00-\x1f]/.test(value) ||
     value === "." ||
-    value === ".."
+    value === ".." ||
+    (platform === "win32" && invalidWindowsFileName(value))
   ) {
     throw fail(translate(language, "请输入有效的文件名。"));
   }
@@ -51,7 +67,7 @@ function fileName(value, extension = "excalidraw", language = "zh-CN") {
     : `${value}.${extension}`;
 }
 
-function categoryParts(value) {
+function categoryParts(value, platform = process.platform) {
   if (
     typeof value !== "string" ||
     path.isAbsolute(value) ||
@@ -66,7 +82,12 @@ function categoryParts(value) {
   const parts = value.split("/");
   if (
     parts.some(
-      (part) => !part || part === "." || part === ".." || part !== part.trim(),
+      (part) =>
+        !part ||
+        part === "." ||
+        part === ".." ||
+        part !== part.trim() ||
+        (platform === "win32" && invalidWindowsFileName(part)),
     )
   ) {
     throw fail("分类路径无效。");
@@ -86,6 +107,9 @@ function documentPath(value, language = "zh-CN") {
   }
   return path.resolve(value);
 }
+
+const canCopyInsteadOfLink = (error) =>
+  ["EXDEV", "ENOSYS", "ENOTSUP", "EOPNOTSUPP"].includes(error.code);
 
 async function atomicWrite(
   target,
@@ -120,7 +144,16 @@ async function atomicWrite(
     handle = null;
     stage(`${kind}:commit`);
     if (createOnly) {
-      await fs.link(temporary, target);
+      await fs.link(temporary, target).catch((error) => {
+        if (!canCopyInsteadOfLink(error)) {
+          throw error;
+        }
+        return fs.copyFile(
+          temporary,
+          target,
+          require("node:fs").constants.COPYFILE_EXCL,
+        );
+      });
     } else {
       await fs.rename(temporary, target);
     }
@@ -136,8 +169,9 @@ async function atomicWrite(
 }
 
 class DesktopStorage {
-  constructor(userData) {
+  constructor(userData, { platform = process.platform } = {}) {
     this.userData = userData;
+    this.platform = platform;
     this.settings = {
       rootDirectory: null,
       theme: "system",
@@ -717,20 +751,15 @@ class DesktopStorage {
         if (!stat.isFile()) {
           continue;
         }
-        const relativePath =
+        const relativeParts =
           rootDirectory && inside(rootDirectory, target)
-            ? path.relative(rootDirectory, target).split(path.sep).join("/")
-            : target;
+            ? path.relative(rootDirectory, target).split(path.sep)
+            : null;
         history.push({
           path: target,
-          relativePath,
+          relativePath: relativeParts ? relativeParts.join("/") : target,
           name: path.basename(target),
-          category:
-            rootDirectory && inside(rootDirectory, target)
-              ? path.posix.dirname(relativePath) === "."
-                ? ""
-                : path.posix.dirname(relativePath)
-              : "",
+          category: relativeParts ? relativeParts.slice(0, -1).join("/") : "",
           modifiedAt: stat.mtimeMs,
           size: stat.size,
           lastOpenedAt,
@@ -824,7 +853,9 @@ class DesktopStorage {
           throw this.fail("已打开文件列表无效。");
         }
         const key = (value) =>
-          process.platform === "darwin" ? value.toLowerCase() : value;
+          ["darwin", "win32"].includes(this.platform)
+            ? value.toLowerCase()
+            : value;
         for (const candidate of request.occupiedPaths) {
           const resolved = this.documentPath(candidate);
           const canonical = await fs.realpath(resolved).catch((error) => {
@@ -903,7 +934,7 @@ class DesktopStorage {
       throw this.fail("项目根目录已变更，请重新选择。");
     }
     let current = root;
-    for (const part of categoryParts(category)) {
+    for (const part of categoryParts(category, this.platform)) {
       current = path.join(current, part);
       if (create) {
         await fs.mkdir(current).catch((error) => {
@@ -936,7 +967,7 @@ class DesktopStorage {
       if (error.code === "EEXIST") {
         throw this.fail("已有同名文件，请使用其他名称。", "NAME_CONFLICT");
       }
-      if (error.code === "EXDEV") {
+      if (canCopyInsteadOfLink(error)) {
         copiedTimes = await fs.stat(source);
         await fs
           .copyFile(
@@ -1026,13 +1057,14 @@ class DesktopStorage {
   }
 
   renameFile(candidate, name) {
-    fileName(name, undefined, this.settings.language);
+    fileName(name, undefined, this.settings.language, this.platform);
     return this.serialize(async () => {
       const source = await this.allowedPath(candidate);
       const nextName = fileName(
         name,
         path.extname(source).slice(1).toLowerCase(),
         this.settings.language,
+        this.platform,
       );
       return this.relocate(source, path.join(path.dirname(source), nextName));
     });
@@ -1242,6 +1274,7 @@ module.exports = {
   atomicWrite,
   fileName,
   categoryParts,
+  invalidWindowsFileName,
   EXPORT_EXTENSIONS,
   DOCUMENT_EXTENSIONS,
 };

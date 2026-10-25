@@ -256,11 +256,14 @@ async function harness(
 
 test("Windows native controls follow app and system themes while macOS retains traffic lights", async (t) => {
   const mac = await harness(t);
+  assert.equal(mac.calls.windowOptions.titleBarStyle, "hidden");
   assert.equal(mac.calls.windowOptions.titleBarOverlay, undefined);
   assert.equal(mac.calls.windowOptions.trafficLightPosition.x, 14);
   assert.equal(mac.calls.windowOptions.trafficLightPosition.y, 16);
 
   const win = await harness(t, { platform: "win32" });
+  assert.equal(win.calls.windowOptions.titleBarStyle, "hidden");
+  assert.equal(win.calls.windowOptions.frame, undefined);
   assert.equal(win.calls.windowOptions.trafficLightPosition, undefined);
   assert.equal(win.calls.windowOptions.titleBarOverlay.height, 48);
   assert.equal(win.calls.windowOptions.titleBarOverlay.color, "#f6f6f9");
@@ -281,6 +284,9 @@ test("Windows native controls follow app and system themes while macOS retains t
   win.nativeTheme.shouldUseDarkColors = false;
   win.nativeTheme.emit("updated");
   assert.equal(win.calls.titleBarOverlay.color, "#f6f6f9");
+  const linux = await harness(t, { platform: "linux" });
+  assert.equal(linux.calls.windowOptions.titleBarStyle, undefined);
+  assert.equal(linux.calls.windowOptions.titleBarOverlay, undefined);
 });
 
 test("renamed product keeps using the existing legacy profile by default", async (t) => {
@@ -1034,6 +1040,33 @@ test("Markdown export keeps its attachment directory when the chosen document na
     "png-fixture",
   );
   assert.equal(await invoke("save-export", request), true);
+});
+
+test("Windows exports reject device names in attachment directories and filenames", async (t) => {
+  const { base, calls, invoke } = await harness(t, { platform: "win32" });
+  calls.saveResult = { canceled: false, filePath: path.join(base, "safe.md") };
+  const request = {
+    name: "safe",
+    extension: "md",
+    data: arrayBuffer("body"),
+    assetDirectory: "assets",
+    assets: [{ name: "one.png", data: arrayBuffer("image") }],
+  };
+  for (const reserved of ["CON", "nul.png", "COM1.md", "LPT²", "CONOUT$"]) {
+    await assert.rejects(
+      invoke("save-export", { ...request, assetDirectory: reserved }),
+      /路径无效/,
+    );
+    await assert.rejects(
+      invoke("save-export", {
+        ...request,
+        assets: [{ name: reserved, data: arrayBuffer("image") }],
+      }),
+      /路径无效/,
+    );
+  }
+  await assert.rejects(fs.stat(path.join(base, "assets")), { code: "ENOENT" });
+  await assert.rejects(fs.stat(path.join(base, "safe.md")), { code: "ENOENT" });
 });
 
 test("Markdown export rejects unsafe paths and symlinks and preserves unrelated existing attachments", async (t) => {

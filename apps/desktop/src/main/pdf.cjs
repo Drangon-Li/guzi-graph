@@ -208,7 +208,9 @@ async function renderPdf(
     await run("写入页面", () =>
       fs.writeFile(documentPath, html, { mode: 0o600, flag: "wx" }),
     );
-    await run("加载页面", () => printWindow.loadFile(documentPath));
+    // loadFile formats paths differently (notably ~ in Windows short paths).
+    // Use the exact encoded URL that the isolated session allows.
+    await run("加载页面", () => printWindow.loadURL(documentURL));
     await run("解码字体与图片", () =>
       contents.executeJavaScript(
         "Promise.all([document.fonts.ready, ...Array.from(document.images, image => image.decode())]).then(() => undefined)",

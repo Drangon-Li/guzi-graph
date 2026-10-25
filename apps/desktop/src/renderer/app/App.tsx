@@ -432,7 +432,10 @@ const Editor = ({
                   document.api,
                   document.title,
                   root.ownerDocument.defaultView!.desktop,
-                  { snapshot: document.getSnapshot?.() },
+                  {
+                    snapshot: document.getSnapshot?.(),
+                    ownerDocument: root.ownerDocument,
+                  },
                 ).catch(workspace.reportError);
               }
             }}
@@ -449,7 +452,10 @@ const Editor = ({
                     document.api,
                     document.title,
                     root.ownerDocument.defaultView!.desktop,
-                    { includeSubcanvases: true },
+                    {
+                      includeSubcanvases: true,
+                      ownerDocument: root.ownerDocument,
+                    },
                   ).catch(workspace.reportError);
                 }
               }}
@@ -494,13 +500,20 @@ const RemoveConfirmation = ({
   onConfirm: (skip: boolean) => void;
 }) => {
   const [skip, setSkip] = useState(false);
+  const windows = root.ownerDocument.defaultView!.desktop?.platform === "win32";
   const t = (message: string, params?: Record<string, string | number>) =>
     translate(workspace.settings.language, message, params);
   return (
     <Modal
       root={root}
       language={workspace.settings.language}
-      title={t(mode === "remove" ? "删除画布？" : "彻底删除画布？")}
+      title={t(
+        mode === "remove"
+          ? "删除画布？"
+          : windows
+          ? "移到回收站？"
+          : "彻底删除画布？",
+      )}
       onClose={onClose}
     >
       <div className="desktop-modal-body">
@@ -508,7 +521,9 @@ const RemoveConfirmation = ({
           {t(
             mode === "remove"
               ? "「{title}」将从软件中隐藏，原文件会保留在当前位置。"
-              : "「{title}」将移到 macOS 废纸篓，并从项目页移除。",
+              : windows
+              ? "「{title}」将移到回收站，并从项目页移除。"
+              : "「{title}」将移到废纸篓，并从项目页移除。",
             { title: fileTitle(file.name) },
           )}
         </p>
@@ -516,6 +531,8 @@ const RemoveConfirmation = ({
           {t(
             mode === "remove"
               ? "以后可通过打开原文件将它重新加入项目页。"
+              : windows
+              ? "可从回收站恢复；清空回收站后将无法恢复。"
               : "可从废纸篓恢复；清空废纸篓后将无法恢复。",
           )}
         </p>
@@ -531,7 +548,9 @@ const RemoveConfirmation = ({
       <footer>
         <Button onSelect={onClose}>{t("取消")}</Button>
         <Button className="desktop-danger" onSelect={() => onConfirm(skip)}>
-          {t(mode === "remove" ? "删除" : "移到废纸篓")}
+          {t(
+            mode === "remove" ? "删除" : windows ? "移到回收站" : "移到废纸篓",
+          )}
         </Button>
       </footer>
     </Modal>
@@ -648,19 +667,26 @@ export const App = ({ root }: { root: HTMLElement }) => {
       return;
     }
     const onKeyDown = (event: KeyboardEvent) => {
+      const ownerWindow = root.ownerDocument.defaultView!;
       if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.repeat ||
+        event.altKey ||
+        event.shiftKey ||
         (platform === "darwin"
-          ? event.metaKey && !event.ctrlKey
-          : event.ctrlKey && !event.metaKey) &&
-        !event.altKey &&
-        !event.shiftKey &&
-        !event.repeat &&
-        !event.isComposing &&
-        event.key.toLowerCase() === "o"
+          ? !event.metaKey || event.ctrlKey
+          : !event.ctrlKey || event.metaKey) ||
+        event.key.toLowerCase() !== "o" ||
+        (event.target instanceof ownerWindow.Element &&
+          event.target.closest(
+            "input, textarea, select, [contenteditable='true'], [role='textbox'], [role='dialog'], [role='menu']",
+          ))
       ) {
-        event.preventDefault();
-        void openFiles();
+        return;
       }
+      event.preventDefault();
+      void openFiles();
     };
     root.ownerDocument.addEventListener("keydown", onKeyDown);
     return () => root.ownerDocument.removeEventListener("keydown", onKeyDown);
@@ -715,7 +741,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
     <div
       className={`excalidraw desktop-shell${
         theme === "dark" ? " theme--dark" : ""
-      }`}
+      }${platform === "darwin" ? " desktop-shell--mac" : ""}`}
       data-platform={platform}
     >
       <header
