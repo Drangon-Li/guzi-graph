@@ -106,7 +106,9 @@ function signMac(directory, version) {
       <title>Excalidraw-Guzi ${version}</title>
       <sparkle:version>${version}</sparkle:version>
       <sparkle:shortVersionString>${version}</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>${metadata.build.mac.minimumSystemVersion}</sparkle:minimumSystemVersion>
+      <sparkle:minimumSystemVersion>${
+        metadata.build.mac.minimumSystemVersion
+      }</sparkle:minimumSystemVersion>
       <enclosure url="${url}" length="${
     fs.statSync(file).size
   }" type="application/octet-stream" sparkle:edSignature="${signature}" />
@@ -216,7 +218,7 @@ function archiveMac(directory) {
   console.log(`Created ${path.basename(zip)}`);
 }
 
-function archiveWindows(directory) {
+async function archiveWindows(directory) {
   verifyWindows(directory, metadata.version);
   const config = yaml.load(
     fs.readFileSync(
@@ -231,19 +233,21 @@ function archiveWindows(directory) {
     !fs.existsSync(zip),
     "Refusing to replace an existing unpacked archive",
   );
-  execFileSync(require("7zip-bin").path7za, ["a", "-tzip", zip, "."], {
+  const archiver =
+    await require("app-builder-lib/out/toolsets/7zip").getPath7za();
+  execFileSync(archiver, ["a", "-tzip", zip, "."], {
     cwd: path.join(directory, "win-unpacked"),
     stdio: "ignore",
   });
   console.log(`Created ${path.basename(zip)}`);
 }
 
-if (require.main === module) {
+async function main() {
   const [command, input] = process.argv.slice(2);
   const directory = path.resolve(input || path.join(desktop, "release"));
   try {
     if (command === "mac-archive") archiveMac(directory);
-    else if (command === "windows-archive") archiveWindows(directory);
+    else if (command === "windows-archive") await archiveWindows(directory);
     else if (command === "sign") {
       const tag = process.env.GITHUB_REF_NAME;
       assert.equal(
@@ -268,5 +272,7 @@ if (require.main === module) {
     process.exitCode = 1;
   }
 }
+
+if (require.main === module) main();
 
 module.exports = { assetNames, verifyWindows, verifyRelease, hash };
