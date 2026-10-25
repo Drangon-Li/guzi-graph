@@ -14,6 +14,7 @@ import {
 } from "@excalidraw/element";
 import { exportToCanvas } from "@excalidraw/utils";
 import {
+  $getSelection,
   CONTROLLED_TEXT_INSERTION_COMMAND,
   getNearestEditorFromDOMNode,
 } from "lexical";
@@ -817,6 +818,90 @@ describe("rich text application integration", () => {
       expect(document.getSelection()?.toString()).toBe(text.originalText),
     );
     fireEvent.keyDown(getRichEditor(), { key: "Escape" });
+  });
+
+  it("selects all rich text with Cmd/Ctrl+A and replaces every paragraph without reaching the canvas", async () => {
+    const base = API.createElement({
+      type: "text",
+      text: "abc中文def\n第二段text\n末段",
+    });
+    const text = newElementWith(base, {
+      richText: richTextFromPlainText(base.originalText),
+    });
+    const rectangle = API.createElement({ type: "rectangle" });
+    API.setElements([text, rectangle]);
+    API.setSelectedElements([text]);
+    API.setAppState({ editingTextElement: text });
+    act(() =>
+      h.app.text.handleTextWysiwyg(text, {
+        isExistingElement: true,
+        initialSelection: { start: 3, end: 5 },
+      }),
+    );
+    await waitFor(() => expect(getRichEditor()).not.toBeNull());
+    const editor = getRichEditor();
+    const lexicalEditor = getNearestEditorFromDOMNode(editor)!;
+    const ownerDocument = editor.ownerDocument;
+    const ownerWindow = ownerDocument.defaultView!;
+    // jsdom does not implement the browser's isContentEditable getter.
+    Object.defineProperty(editor, "isContentEditable", { value: true });
+    editor.tabIndex = 0;
+    editor.focus();
+    await waitFor(() =>
+      expect(ownerWindow.getSelection()?.toString()).toBe("中文"),
+    );
+    const leaked = vi.fn();
+    const rangePrototype = ownerWindow.Range.prototype;
+    const previousRangeRect = Object.getOwnPropertyDescriptor(
+      rangePrototype,
+      "getBoundingClientRect",
+    );
+    Object.defineProperty(rangePrototype, "getBoundingClientRect", {
+      configurable: true,
+      value: () => editor.getBoundingClientRect(),
+    });
+    ownerDocument.addEventListener("keydown", leaked);
+    try {
+      expect(
+        fireEvent.keyDown(editor, {
+          key: "a",
+          code: "KeyA",
+          [KEYS.CTRL_OR_CMD]: true,
+        }),
+      ).toBe(false);
+      await waitFor(() =>
+        lexicalEditor
+          .getEditorState()
+          .read(() =>
+            expect($getSelection()?.getTextContent()).toBe(text.originalText),
+          ),
+      );
+      expect(leaked).not.toHaveBeenCalled();
+      expect(h.state.selectedElementIds[rectangle.id]).toBeFalsy();
+      act(() =>
+        lexicalEditor.dispatchCommand(
+          CONTROLLED_TEXT_INSERTION_COMMAND,
+          "替换全部",
+        ),
+      );
+      await waitFor(() =>
+        expect(current(text.id).originalText).toBe("替换全部"),
+      );
+      expect(current(text.id).richText?.paragraphs).toHaveLength(1);
+      expect(h.state.editingTextElement?.id).toBe(text.id);
+    } finally {
+      ownerDocument.removeEventListener("keydown", leaked);
+      fireEvent.keyDown(editor, { key: "Escape" });
+      if (previousRangeRect) {
+        Object.defineProperty(
+          rangePrototype,
+          "getBoundingClientRect",
+          previousRangeRect,
+        );
+      } else {
+        Reflect.deleteProperty(rangePrototype, "getBoundingClientRect");
+      }
+    }
   });
 
   it.each(["ctrlKey", "metaKey"] as const)(

@@ -90,6 +90,78 @@ describe("textWysiwyg", () => {
       API.setElements([]);
     });
 
+    it.each([
+      { key: "a", start: 2, end: 2 },
+      { key: "A", start: 1, end: 7 },
+    ])(
+      "selects all editing text with the platform shortcut ($key) without selecting canvas elements",
+      async ({ key, start, end }) => {
+        const text = API.createElement({
+          type: "text",
+          text: "第一行\nsecond 😀",
+        });
+        const rectangle = API.createElement({ type: "rectangle" });
+        API.setElements([text, rectangle]);
+        API.setSelectedElements([text]);
+        Keyboard.keyPress(KEYS.ENTER);
+        const editor = await getTextEditor();
+        editor.setSelectionRange(start, end);
+        const selectedElementIds = h.state.selectedElementIds;
+        const leaked = vi.fn();
+        editor.ownerDocument.addEventListener("keydown", leaked);
+        try {
+          const event = new h.app.ownerWindow.KeyboardEvent("keydown", {
+            key,
+            code: "KeyA",
+            [KEYS.CTRL_OR_CMD]: true,
+            bubbles: true,
+            cancelable: true,
+          });
+          act(() => editor.dispatchEvent(event));
+
+          expect(editor.selectionStart).toBe(0);
+          expect(editor.selectionEnd).toBe(editor.value.length);
+          expect(editor.value).toBe(text.originalText);
+          expect(event.defaultPrevented).toBe(true);
+          expect(leaked).not.toHaveBeenCalled();
+          expect(h.state.editingTextElement?.id).toBe(text.id);
+          expect(h.state.selectedElementIds).toEqual(selectedElementIds);
+        } finally {
+          editor.ownerDocument.removeEventListener("keydown", leaked);
+        }
+      },
+    );
+
+    it.each([
+      { altKey: true },
+      { shiftKey: true },
+      { isComposing: true },
+      { keyCode: 229 },
+    ])(
+      "does not intercept modified or composing select-all input (%j)",
+      async (modifiers) => {
+        const text = API.createElement({ type: "text", text: "abc中文" });
+        API.setElements([text]);
+        API.setSelectedElements([text]);
+        Keyboard.keyPress(KEYS.ENTER);
+        const editor = await getTextEditor();
+        editor.setSelectionRange(2, 2);
+        const event = new h.app.ownerWindow.KeyboardEvent("keydown", {
+          key: "a",
+          code: "KeyA",
+          [KEYS.CTRL_OR_CMD]: true,
+          bubbles: true,
+          cancelable: true,
+          ...modifiers,
+        });
+        act(() => editor.dispatchEvent(event));
+
+        expect(editor.selectionStart).toBe(2);
+        expect(editor.selectionEnd).toBe(2);
+        expect(event.defaultPrevented).toBe(false);
+      },
+    );
+
     it("should prefer editing selected text element (non-bindable container present)", async () => {
       const line = API.createElement({
         type: "line",
