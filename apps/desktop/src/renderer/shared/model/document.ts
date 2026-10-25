@@ -6,6 +6,8 @@ import { cleanAppStateForExport } from "@excalidraw/excalidraw/appState";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 
+import { fileName } from "./path";
+
 export interface SceneSnapshot {
   elements: readonly ExcalidrawElement[];
   appState: AppState;
@@ -119,7 +121,7 @@ export const createSceneTracker = () => {
 };
 
 export const fileTitle = (path: string) =>
-  (path.split(/[\\/]/).pop() || "未命名").replace(
+  (fileName(path) || "未命名").replace(
     /\.(excalidraw|guzi-presentation)$/i,
     "",
   );

@@ -94,13 +94,24 @@ body,
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 0 12px 0 80px;
+    padding: 0 12px;
     background: var(--color-surface-mid);
     border-bottom: 1px solid var(--default-border-color);
     -webkit-app-region: drag;
     button {
       -webkit-app-region: no-drag;
     }
+  }
+
+  &[data-platform="win32"] .desktop-titlebar {
+    padding-left: calc(env(titlebar-area-x, 0px) + 12px);
+    padding-right: calc(
+      100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%) + 12px
+    );
+  }
+
+  &.desktop-shell--mac .desktop-titlebar {
+    padding-left: 80px;
   }
 
   .desktop-home-button {

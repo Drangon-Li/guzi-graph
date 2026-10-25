@@ -39,10 +39,11 @@ test("built-in MCP is disabled by default and persists its private token separat
   assert.equal(host.list()[0].enabled, false);
   assert.equal(host.list()[0].port, 43123);
   assert.match(host.list()[0].token, /^[a-f0-9]{64}$/);
-  assert.equal(
-    (await fs.stat(path.join(userData, "plugins.json"))).mode & 0o777,
-    0o600,
-  );
+  const configStat = await fs.stat(path.join(userData, "plugins.json"));
+  assert.equal(configStat.isFile(), true);
+  if (process.platform !== "win32") {
+    assert.equal(configStat.mode & 0o777, 0o600);
+  }
   assert.equal(
     (await new PluginHost(configuration).initialize()).list()[0].token,
     host.list()[0].token,
@@ -335,17 +336,34 @@ test(
 
 test("a child that does not exit prevents another fork after bounded shutdown", async (t) => {
   const { host, children } = await fixture(t, { stopTimeout: 15 });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   await host.setReady(true);
   await host.setEnabled("mcp", true);
   const child = children[0];
+  let confirmKill;
+  const killed = new Promise((resolve) => {
+    confirmKill = resolve;
+  });
   child.kill = () => {
     child.killed = true;
+    confirmKill();
   };
   const configure = host.configure("mcp", { port: 44000 });
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  let configured = false;
+  void configure.then(() => {
+    configured = true;
+  });
+  await killed;
+  assert.equal(child.killed, true);
+  t.mock.timers.tick(14);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(configured, false);
+  assert.equal(children.length, 1);
+  t.mock.timers.tick(1);
   await configure;
   assert.equal(children.length, 1);
   assert.equal(host.list()[0].status, "error");
+  assert.match(host.list()[0].error, /插件进程尚未退出/);
   child.emit("exit", 0);
 });
 

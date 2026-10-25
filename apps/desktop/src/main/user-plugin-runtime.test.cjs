@@ -138,7 +138,10 @@ test("each runtime owns a sandboxed hidden window, private session, and narrow f
   assert.equal(preferences.backgroundThrottling, false);
   assert.equal(preferences.webviewTag, false);
   assert.equal(preferences.devTools, false);
-  assert.match(preferences.preload, /preload\/plugin-runtime\.cjs$/);
+  assert.equal(
+    preferences.preload,
+    path.join(__dirname, "..", "preload", "plugin-runtime.cjs"),
+  );
   assert.equal(session.partition.startsWith("persist:"), false);
   assert.equal(session.options.cache, false);
   assert.equal(session.permissionCheck(), false);

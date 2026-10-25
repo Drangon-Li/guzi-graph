@@ -57,6 +57,7 @@ import {
   getPreferenceColorTopPicks,
 } from "../../shared/config/editorPreferences";
 import { translate } from "../../shared/i18n/i18n";
+import { fileName } from "../../shared/model/path";
 import {
   copyPresentationScene,
   createPresentation,
@@ -163,6 +164,7 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
   const readyRef = useRef(false);
   const closingRef = useRef(false);
   const openQueue = useRef(Promise.resolve());
+  const fileDialogPending = useRef(false);
   const removalVersion = useRef(0);
   const removedPaths = useRef(new Map<string, number>());
   const pendingRemovals = useRef(new Map<string, Promise<void>>());
@@ -467,11 +469,17 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
   };
 
   const openFiles = async () => {
+    if (fileDialogPending.current) {
+      return;
+    }
+    fileDialogPending.current = true;
     const requestedAt = removalVersion.current;
     try {
       await openDocuments(await desktop.openFiles(), true, requestedAt);
     } catch (failure) {
       reportError(failure);
+    } finally {
+      fileDialogPending.current = false;
     }
   };
 
@@ -1917,7 +1925,7 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
         {
           path: document.path,
           relativePath: document.path,
-          name: document.path.split("/").pop()!,
+          name: fileName(document.path),
           category: "",
           modifiedAt: document.modifiedAt || 0,
           size: document.content.length,

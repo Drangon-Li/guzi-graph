@@ -5,6 +5,7 @@ import {
   render,
   waitFor,
 } from "@testing-library/react";
+import { Children, isValidElement } from "react";
 
 import { Excalidraw } from "@excalidraw/excalidraw";
 import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
@@ -12,6 +13,7 @@ import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 import { useWorkspace } from "../features/workspace/workspace";
+import * as structuredExport from "../features/export/structuredExport";
 
 import { App } from "./App";
 
@@ -19,6 +21,8 @@ import type {
   CanvasDocument,
   Workspace,
 } from "../features/workspace/workspace";
+import type { DesktopAPI } from "../../shared/desktop-api";
+import type { ReactElement, ReactNode } from "react";
 
 vi.mock("../features/projects/FilePreview", () => ({
   FilePreview: () => <div />,
@@ -41,6 +45,9 @@ describe("desktop inline tab rename interaction", () => {
   beforeEach(() => {
     root = document.createElement("div");
     document.body.append(root);
+    root.ownerDocument.defaultView!.desktop = {
+      platform: "darwin",
+    } as DesktopAPI;
     canvas = {
       id: "canvas-id",
       title: "原名称",
@@ -75,6 +82,7 @@ describe("desktop inline tab rename interaction", () => {
       error: null,
       closePrompt: null,
       activate: vi.fn(),
+      openFiles: vi.fn().mockResolvedValue(undefined),
       newDocument: vi.fn(),
       closeDocument: vi.fn(),
       removeFile: vi.fn().mockResolvedValue(true),
@@ -93,6 +101,65 @@ describe("desktop inline tab rename interaction", () => {
     root.remove();
     vi.clearAllMocks();
   });
+
+  it.each([
+    ["导出 PDF…", false],
+    ["导出 PDF（包含子画布）…", true],
+  ] as const)(
+    "passes the mounted document to %s",
+    (label, includeSubcanvases) => {
+      const ownerWindow = root.ownerDocument.defaultView!;
+      const frame = root.ownerDocument.createElement("iframe");
+      root.ownerDocument.body.append(frame);
+      root.remove();
+      const ownerDocument = frame.contentDocument!;
+      ownerDocument.defaultView!.matchMedia = ownerWindow.matchMedia;
+      ownerDocument.defaultView!.desktop = { platform: "win32" } as DesktopAPI;
+      root = ownerDocument.createElement("div");
+      ownerDocument.body.append(root);
+      canvas.api = {} as ExcalidrawImperativeAPI;
+      const snapshot = {
+        elements: [],
+        appState: {
+          ...getDefaultAppState(),
+          width: ownerDocument.defaultView!.innerWidth,
+          height: ownerDocument.defaultView!.innerHeight,
+          offsetLeft: 0,
+          offsetTop: 0,
+        },
+        files: {},
+      };
+      const exportPdf = vi
+        .spyOn(structuredExport, "exportCanvasPdf")
+        .mockResolvedValue(true);
+      try {
+        render(<App root={root} />, { container: root });
+        canvas.flushEditing = vi.fn();
+        canvas.getSnapshot = () => snapshot;
+        const menu = vi.mocked(Excalidraw).mock.lastCall![0]
+          .children as ReactElement<{ children: ReactNode }>;
+        const item = Children.toArray(menu.props.children).find(
+          (node) =>
+            isValidElement<{ children: ReactNode }>(node) &&
+            node.props.children === label,
+        ) as ReactElement<{ onSelect: () => void }>;
+        act(() => item.props.onSelect());
+        expect(canvas.flushEditing).toHaveBeenCalledTimes(1);
+        expect(exportPdf).toHaveBeenCalledWith(
+          canvas.api,
+          canvas.title,
+          ownerDocument.defaultView!.desktop,
+          includeSubcanvases
+            ? { includeSubcanvases: true, ownerDocument }
+            : { snapshot, ownerDocument },
+        );
+      } finally {
+        cleanup();
+        exportPdf.mockRestore();
+        frame.remove();
+      }
+    },
+  );
 
   it("routes style shortcuts to the active child editor and leaves text inputs alone", () => {
     render(<App root={root} />);
@@ -330,6 +397,159 @@ describe("desktop inline tab rename interaction", () => {
     workspace.index.files = [file];
     return file;
   };
+
+  it.each([
+    { platform: "darwin", modifier: "metaKey", shortcut: "⌘" },
+    { platform: "win32", modifier: "ctrlKey", shortcut: "Ctrl+" },
+  ])(
+    "uses the $platform platform for project shortcuts and labels",
+    ({ platform, modifier, shortcut }) => {
+      root.ownerDocument.defaultView!.desktop = { platform } as DesktopAPI;
+      showProject();
+      const view = render(<App root={root} />);
+      expect(view.container.querySelector(".desktop-shell")).toHaveAttribute(
+        "data-platform",
+        platform,
+      );
+      expect(view.getByTitle(`新建画布 · ${shortcut}N`)).toBeInTheDocument();
+      expect(
+        view.getByTitle(
+          `项目页 · ${platform === "darwin" ? "⌘⇧P" : "Ctrl+Shift+P"}`,
+        ),
+      ).toBeInTheDocument();
+      expect(view.getByText(`${shortcut}O`, { selector: "kbd" })).toBeVisible();
+      const menu = vi.mocked(Excalidraw).mock.lastCall![0]
+        .children as ReactElement<{ children: ReactNode }>;
+      const menuShortcuts = Children.toArray(menu.props.children)
+        .filter((node) => isValidElement<{ shortcut?: string }>(node))
+        .map(
+          (node) =>
+            (node as ReactElement<{ shortcut?: string }>).props.shortcut,
+        )
+        .filter(Boolean);
+      expect(menuShortcuts).toEqual([
+        `${shortcut}N`,
+        `${shortcut}O`,
+        platform === "darwin" ? "⌘⇧S" : "Ctrl+Shift+S",
+      ]);
+      const ownerDocument = root.ownerDocument;
+      const valid = { key: "o", [modifier]: true };
+      fireEvent.keyDown(ownerDocument, valid);
+      expect(workspace.openFiles).toHaveBeenCalledTimes(1);
+      vi.mocked(workspace.openFiles).mockClear();
+      for (const invalid of [
+        { key: "o" },
+        { key: "o", [platform === "darwin" ? "ctrlKey" : "metaKey"]: true },
+        { ...valid, metaKey: true, ctrlKey: true },
+        { ...valid, altKey: true },
+        { ...valid, shiftKey: true },
+        { ...valid, repeat: true },
+        { ...valid, isComposing: true },
+      ]) {
+        fireEvent.keyDown(ownerDocument, invalid);
+      }
+      expect(workspace.openFiles).not.toHaveBeenCalled();
+      fireEvent.keyDown(ownerDocument, { ...valid, key: "O" });
+      expect(workspace.openFiles).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("keeps Windows project opening blocked by modals, closing and the editor", () => {
+    root.ownerDocument.defaultView!.desktop = {
+      platform: "win32",
+    } as DesktopAPI;
+    showProject();
+    const view = render(<App root={root} />);
+    fireEvent.click(view.getByRole("button", { name: "设置" }));
+    fireEvent.keyDown(root.ownerDocument, { key: "o", ctrlKey: true });
+    expect(workspace.openFiles).not.toHaveBeenCalled();
+    fireEvent.click(view.getByRole("button", { name: "完成" }));
+    workspace.closing = true;
+    view.rerender(<App root={root} />);
+    fireEvent.keyDown(root.ownerDocument, { key: "o", ctrlKey: true });
+    expect(workspace.openFiles).not.toHaveBeenCalled();
+    workspace.closing = false;
+    workspace.projectsVisible = false;
+    view.rerender(<App root={root} />);
+    fireEvent.keyDown(root.ownerDocument, { key: "o", ctrlKey: true });
+    expect(workspace.openFiles).not.toHaveBeenCalled();
+    workspace.projectsVisible = true;
+    view.rerender(<App root={root} />);
+    fireEvent.keyDown(root.ownerDocument, { key: "o", ctrlKey: true });
+    expect(workspace.openFiles).toHaveBeenCalledTimes(1);
+  });
+  it.each(["ctrlKey", "metaKey"] as const)(
+    "opens projects with %s+O only when the page can handle the shortcut",
+    (modifier) => {
+      root.ownerDocument.defaultView!.desktop = {
+        platform: modifier === "metaKey" ? "darwin" : "win32",
+      } as DesktopAPI;
+      showProject();
+      const view = render(<App root={root} />);
+      const key = { key: "o", [modifier]: true };
+      fireEvent.keyDown(root, key);
+      expect(workspace.openFiles).toHaveBeenCalledTimes(1);
+      vi.mocked(workspace.openFiles).mockClear();
+      fireEvent.keyDown(root, {
+        key: "o",
+        [modifier === "ctrlKey" ? "metaKey" : "ctrlKey"]: true,
+      });
+      fireEvent.keyDown(root, { ...key, repeat: true });
+      fireEvent.keyDown(root, { ...key, isComposing: true });
+      fireEvent.keyDown(root, { ...key, altKey: true });
+      fireEvent.keyDown(root, { ...key, shiftKey: true });
+      const handled = new root.ownerDocument.defaultView!.KeyboardEvent(
+        "keydown",
+        {
+          ...key,
+          bubbles: true,
+          cancelable: true,
+        },
+      );
+      handled.preventDefault();
+      root.dispatchEvent(handled);
+      fireEvent.keyDown(view.getByRole("searchbox"), key);
+      const menu = root.ownerDocument.createElement("div");
+      menu.setAttribute("role", "menu");
+      root.append(menu);
+      fireEvent.keyDown(menu, key);
+      expect(workspace.openFiles).not.toHaveBeenCalled();
+      fireEvent.click(view.getByRole("button", { name: "设置" }));
+      fireEvent.keyDown(root, key);
+      fireEvent.keyDown(view.getByRole("dialog"), key);
+      expect(workspace.openFiles).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["darwin", "win32"])(
+    "uses the %s titlebar layout and deletion wording",
+    (platform) => {
+      root.ownerDocument.defaultView!.desktop = { platform } as DesktopAPI;
+      showProject();
+      const view = render(<App root={root} />);
+      expect(
+        view.container
+          .querySelector(".desktop-shell")!
+          .classList.contains("desktop-shell--mac"),
+      ).toBe(platform === "darwin");
+      fireEvent.click(
+        view.getByRole("button", { name: "原名称.excalidraw 的操作" }),
+      );
+      fireEvent.click(
+        view.getByRole("menuitem", {
+          name: platform === "win32" ? "移到回收站" : "彻底删除",
+        }),
+      );
+      expect(view.getByRole("dialog")).toHaveTextContent(
+        platform === "win32" ? "将移到回收站" : "将移到废纸篓",
+      );
+      expect(
+        view.getByRole("button", {
+          name: platform === "win32" ? "移到回收站" : "移到废纸篓",
+        }),
+      ).toBeInTheDocument();
+    },
+  );
 
   it.each(["remove", "trash"] as const)(
     "explains %s and cancels without persisting a checked skip option",

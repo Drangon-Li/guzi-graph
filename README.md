@@ -1,6 +1,6 @@
 # Excalidraw-Guzi
 
-**Excalidraw-Guzi（谷子白板）** 是基于 [Excalidraw](https://github.com/excalidraw/excalidraw) 二次开发的**免费开源 macOS 桌面白板**。用简洁的面板和顺手的快捷键，把想法、论文笔记和流程图整理成自己的图片知识库。保留手绘画布与 `.excalidraw` 文件格式，并加入本地工作区、可编辑表格、富文本、子画布和自定义样式预设。
+**Excalidraw-Guzi（谷子白板）** 是基于 [Excalidraw](https://github.com/excalidraw/excalidraw) 二次开发的**免费开源本地桌面白板**。用简洁的面板和顺手的快捷键，把想法、论文笔记和流程图整理成自己的图片知识库。保留手绘画布与 `.excalidraw` 文件格式，并加入本地工作区、可编辑表格、富文本、子画布和自定义样式预设。
 
 本项目使用 [MIT 开源许可](./LICENSE)。感谢 Excalidraw 团队与所有贡献者提供优秀的画布基础。
 
@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 
 ## 安装
 
-v0.7.2 面向 **macOS Apple Silicon（arm64）**，安装包名为 `Excalidraw-Guzi-0.7.2-arm64.dmg`。暂未提供 Intel Mac、Windows 或 Linux 安装包。
+已发布的 v0.7.2 面向 **macOS Apple Silicon（arm64）**，安装包名为 `Excalidraw-Guzi-0.7.2-arm64.dmg`。本分支增加 **Windows 10 / 11 x64** 的 NSIS `.exe` 构建入口；Windows 安装包需构建并完成实机验收后发布，不表示当前 Releases 已有可下载的 Windows 版本。暂未提供 Intel Mac 或 Linux 安装包。
 
 1. 在 [Releases](https://github.com/Drangon-Li/guzi-graph/releases) 下载对应版本的 DMG。
 2. 打开 DMG，将 **Excalidraw-Guzi.app** 拖入「应用程序」。
@@ -49,6 +49,8 @@ v0.7.2 面向 **macOS Apple Silicon（arm64）**，安装包名为 `Excalidraw-G
 当前构建使用 ad-hoc 签名，**尚未经过 Apple 公证（notarization）**。首次启动可能受到 Gatekeeper 限制；确认安装包来源后，可在 macOS「系统设置 → 隐私与安全性」中按系统提示允许打开。
 
 更新应用后，macOS 可能再次请求桌面等文件夹访问权限；允许后工作区会继续加载。同一个已授权版本正常重开无需重复授权。
+
+Windows 构建产物名为 `Excalidraw-Guzi-<version>-win-x64.exe`，运行后按安装向导选择目录。正式渠道沿用 `.excalidraw` 和 `.guzi-presentation` 文件关联。Windows 安装、升级、卸载及文件关联仍需在真实 Windows 10 / 11 上验收；具体步骤见 [Windows 开发与验收](./docs/windows-desktop.md)。
 
 ## 连接 MCP
 
@@ -60,9 +62,9 @@ MCP 服务仅监听本机回环地址，并校验访问令牌；关闭设置中�
 
 ## 开始使用与经典示例
 
-1. 在项目页新建画布（`⌘N`），或打开已有文件（`⌘O`）。
+1. 在项目页新建画布（macOS `⌘N` / Windows `Ctrl+N`），或打开已有文件（`⌘O` / `Ctrl+O`）。
 2. 使用顶部工具绘图，选中元素后调整属性；在桌面设置中配置字体、颜色与样式预设。
-3. 使用 `⌘S` 保存，或使用 `⌘⇧S` 另存为 `.excalidraw` 文件。
+3. 使用 `⌘S` / `Ctrl+S` 保存，或使用 `⌘⇧S` / `Ctrl+Shift+S` 另存为 `.excalidraw` 文件。
 4. 从画布主菜单导出图片、PDF 或结构化信息，返回项目页管理文件。
 
 保存下面的 `.excalidraw` 文件，用 Excalidraw-Guzi 打开即可继续编辑：
@@ -74,7 +76,7 @@ MCP 服务仅监听本机回环地址，并校验访问令牌；关闭设置中�
 
 编辑会自动写入本地恢复草稿，可从草稿恢复入口找回未保存内容。**自动草稿不等于原文件已保存**，需要长期保留的内容仍应显式保存。
 
-项目页的「删除」只从应用中隐藏画布，原文件保留，重新打开即可加入项目页；「彻底删除」会将原文件移到 macOS 废纸篓。两种操作首次都会提示，并可分别选择不再提示。尚未恢复的草稿会保留；当前文档的未保存改动仍会询问保存或放弃。
+项目页的「删除」只从应用中隐藏画布，原文件保留，重新打开即可加入项目页；「彻底删除」会将原文件移到系统废纸篓或回收站。两种操作首次都会提示，并可分别选择不再提示。尚未恢复的草稿会保留；当前文档的未保存改动仍会询问保存或放弃。
 
 ## 选择导出格式
 
@@ -107,7 +109,7 @@ PDF 导出先将画布转为 SVG，再通过 Electron 的打印接口生成 PDF�
 
 共享环境变量、测试配置和构建脚本位于 [`tooling/`](./tooling)，Web 静态资源位于 `apps/web/public/`，Docker 与 Firebase 部署配置位于 [`apps/web/deploy/`](./apps/web/deploy)。开发文档集中在 [`docs/development/`](./docs/development)，用户画布示例与 SDK 集成示例保留在 [`examples/`](./examples)。本地环境覆盖文件放在 `tooling/config/env/.env.local` 或对应模式的 `.env.*.local` 中。
 
-需要 Node.js **22.12.0 或更高版本**和 Yarn **1.22.22**。生成 DMG 需要 macOS；首次安装依赖与打包可能需要下载 Electron 和构建工具。
+需要 Node.js **22.12.0 或更高版本**和 Yarn **1.22.22**。生成 DMG 需要 macOS；Windows 安装与运行验收使用 Windows x64 环境。首次安装依赖与打包可能需要下载 Electron 和构建工具。
 
 ```bash
 yarn install --frozen-lockfile
@@ -122,8 +124,12 @@ yarn desktop:test
 # 构建桌面前端
 yarn desktop:build
 
-# 构建 Apple Silicon DMG
+# 构建 Apple Silicon DMG（保留原入口）
 yarn desktop:package
+
+# 构建 Windows x64 NSIS .exe / unpacked 目录
+yarn desktop:package:win
+yarn desktop:package:win:dir
 ```
 
 桌面构建输出位于 `apps/desktop/dist/`，打包产物位于 `apps/desktop/release/`。只生成 `.app` 目录可运行：
@@ -131,6 +137,14 @@ yarn desktop:package
 ```bash
 npm --prefix apps/desktop run package:dir
 ```
+
+Windows unpacked 产物位于 `apps/desktop/release/win-unpacked/`。基础 smoke 使用独立临时工作区，启动打包应用、通过内置 MCP 保存画布与演示文稿，再重启应用重开文件：
+
+```bash
+yarn desktop:test:smoke --executable "apps/desktop/release/win-unpacked/Excalidraw-Guzi.exe"
+```
+
+`.github/workflows/desktop-windows.yml` 在 Windows runner 上执行检查、打包和 smoke，只上传 Actions artifact，不发布 Release。CI 与真实 Windows 10 / 11 验收的覆盖边界、测试渠道命令及签名说明见 [Windows 开发与验收](./docs/windows-desktop.md)。
 
 修改画布核心后，按受影响范围运行相关测试，例如：
 

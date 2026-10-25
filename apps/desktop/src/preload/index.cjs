@@ -10,6 +10,7 @@ const listen = (name, callback) => {
 };
 
 contextBridge.exposeInMainWorld("desktop", {
+  platform: process.platform,
   getUserPlugins: () => invoke("get-user-plugins"),
   installUserPlugin: (plugin, overwrite) =>
     invoke("install-user-plugin", plugin, overwrite),

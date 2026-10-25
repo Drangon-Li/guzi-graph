@@ -7,6 +7,8 @@ import {
   MoonIcon,
   SunIcon,
   palette,
+  codeIcon,
+  settingsIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { Button } from "@excalidraw/excalidraw";
 
@@ -91,12 +93,12 @@ export const SettingsPanel = ({
     {
       id: "shortcuts",
       label: en ? "Shortcuts" : "快捷键",
-      icon: <span className="desktop-settings-command">⌘</span>,
+      icon: settingsIcon,
     },
     {
       id: "mcp",
       label: t("内置 MCP"),
-      icon: <span className="desktop-settings-command">⌘</span>,
+      icon: codeIcon,
     },
     {
       id: "files",

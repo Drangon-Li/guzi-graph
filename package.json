@@ -85,7 +85,10 @@
     "desktop:build": "npm --prefix apps/desktop run build",
     "desktop:package": "npm --prefix apps/desktop run package",
     "desktop:test": "npm --prefix apps/desktop run test",
-    "desktop:typecheck": "npm --prefix apps/desktop run typecheck"
+    "desktop:typecheck": "npm --prefix apps/desktop run typecheck",
+    "desktop:package:win": "npm --prefix apps/desktop run package:win",
+    "desktop:package:win:dir": "npm --prefix apps/desktop run package:win:dir",
+    "desktop:test:smoke": "npm --prefix apps/desktop run test:smoke --"
   },
   "resolutions": {
     "strip-ansi": "6.0.1"

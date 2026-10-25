@@ -10,6 +10,7 @@ const {
   dialog,
   ipcMain,
   Menu,
+  nativeTheme,
   net,
   protocol,
   session,
@@ -29,6 +30,7 @@ const {
   DesktopStorage,
   atomicWrite,
   fileName,
+  invalidWindowsFileName,
   EXPORT_EXTENSIONS,
   DOCUMENT_EXTENSIONS,
 } = require("./storage.cjs");
@@ -212,7 +214,12 @@ async function saveDocument(request) {
           code: "ROOT_REQUIRED",
         });
       }
-      const name = fileName(request.name, extension);
+      const name = fileName(
+        request.name,
+        extension,
+        undefined,
+        process.platform,
+      );
       target = path.join(
         root,
         `${path.basename(name, `.${extension}`)}-${randomUUID()}.${extension}`,
@@ -225,7 +232,7 @@ async function saveDocument(request) {
     return storage.saveFile(request);
   }
   if (request.saveAs || !target) {
-    const name = fileName(request.name, extension);
+    const name = fileName(request.name, extension, undefined, process.platform);
     const root = storage.getSettings().rootDirectory;
     const result = await dialog.showSaveDialog(
       ...nativeDialogOptions({
@@ -293,7 +300,8 @@ function safeSegment(value) {
     /[\\/\x00-\x1f<>:"|?*]/.test(value) ||
     value === "." ||
     value === ".." ||
-    value.endsWith(".")
+    value.endsWith(".") ||
+    (process.platform === "win32" && invalidWindowsFileName(value))
   ) {
     throw new Error(t("导出附件路径无效。"));
   }
@@ -320,7 +328,7 @@ async function chooseExport(name, extension) {
   const result = await dialog.showSaveDialog(
     ...nativeDialogOptions({
       title: t("导出画布"),
-      defaultPath: fileName(name, extension),
+      defaultPath: fileName(name, extension, undefined, process.platform),
       filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
       properties: ["createDirectory", "showOverwriteConfirmation"],
     }),
@@ -382,6 +390,7 @@ function installIPC() {
   handle("update-settings", async (settings) => {
     const updated = await storage.updateSettings(settings);
     installMenu();
+    updateWindowControls();
     return updated;
   });
   handle("choose-directory", async () => {
@@ -669,6 +678,23 @@ function secureSession() {
   });
 }
 
+function windowControlsOverlay() {
+  const theme = storage.getSettings().theme;
+  const dark =
+    theme === "dark" || (theme === "system" && nativeTheme.shouldUseDarkColors);
+  return {
+    height: 48,
+    color: dark ? "#18181b" : "#f6f6f9",
+    symbolColor: dark ? "#e3e3e8" : "#1b1b1f",
+  };
+}
+
+function updateWindowControls() {
+  if (process.platform === "win32" && window && !window.isDestroyed()) {
+    window.setTitleBarOverlay(windowControlsOverlay());
+  }
+}
+
 function createWindow() {
   closePending = false;
   closeApproved = false;
@@ -681,8 +707,14 @@ function createWindow() {
     minHeight: 620,
     show: false,
     title: "Excalidraw",
-    titleBarStyle: "hidden",
-    trafficLightPosition: { x: 14, y: 16 },
+    ...(process.platform === "darwin"
+      ? {
+          titleBarStyle: "hidden",
+          trafficLightPosition: { x: 14, y: 16 },
+        }
+      : process.platform === "win32"
+      ? { titleBarStyle: "hidden", titleBarOverlay: windowControlsOverlay() }
+      : {}),
     backgroundColor: "#ffffff",
     webPreferences: {
       preload: path.join(__dirname, "..", "preload", "index.cjs"),
@@ -874,7 +906,9 @@ if (!hasLock) {
   app
     .whenReady()
     .then(async () => {
-      storage = await new DesktopStorage(app.getPath("userData")).initialize();
+      storage = await new DesktopStorage(app.getPath("userData"), {
+        platform: process.platform,
+      }).initialize();
       plugins = await new PluginHost({
         userData: app.getPath("userData"),
         fork: (...args) => utilityProcess.fork(...args),
@@ -910,6 +944,9 @@ if (!hasLock) {
       installMenu();
       await receiveFiles(process.argv);
       createWindow();
+      if (process.platform === "win32") {
+        nativeTheme.on("updated", updateWindowControls);
+      }
       app.on("activate", () => {
         if (!window) {
           createWindow();

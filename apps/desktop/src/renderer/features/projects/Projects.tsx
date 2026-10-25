@@ -17,8 +17,10 @@ import {
 } from "@excalidraw/excalidraw/components/icons";
 
 import { fileTitle } from "../../shared/model/document";
+import { isPathInDirectory, parentDirectory } from "../../shared/model/path";
 import { translate } from "../../shared/i18n/i18n";
 import { DesktopSelect } from "../../shared/ui/DesktopControls";
+import { desktopShortcut } from "../../shared/ui/desktopShortcut";
 
 import { FilePreview } from "./FilePreview";
 import { ProjectContextMenu } from "./ProjectContextMenu";
@@ -28,11 +30,11 @@ import type { ReactNode } from "react";
 import type { ProjectFile, RecentFile } from "../../../shared/desktop-api";
 import type { Workspace } from "../workspace/workspace";
 
-const isInDefaultDirectory = (file: ProjectFile, directory: string | null) =>
-  !!directory && file.path.startsWith(`${directory.replace(/\/$/, "")}/`);
-
-const parentDirectory = (path: string) =>
-  path.slice(0, path.lastIndexOf("/")) || "/";
+const isInDefaultDirectory = (
+  file: ProjectFile,
+  directory: string | null,
+  platform: string,
+) => isPathInDirectory(file.path, directory, platform);
 
 type FileMenu = {
   file: ProjectFile;
@@ -69,6 +71,7 @@ export const Projects = ({
   onRecovery: () => void;
   onRemove: (file: ProjectFile, mode: "remove" | "trash") => void;
 }) => {
+  const platform = root.ownerDocument.defaultView!.desktop.platform;
   const t = (message: string, params?: Record<string, string | number>) =>
     translate(workspace.settings.language, message, params);
   const [view, setView] = useState<"history" | "files" | "examples" | "market">(
@@ -114,7 +117,10 @@ export const Projects = ({
         (file) =>
           (historyVisible || category === null || file.category === category) &&
           (!search ||
-            `${file.name} ${file.category} ${parentDirectory(file.path)}`
+            `${file.name} ${file.category} ${parentDirectory(
+              file.path,
+              platform,
+            )}`
               .toLocaleLowerCase()
               .includes(search)),
       )
@@ -134,6 +140,7 @@ export const Projects = ({
     category,
     query,
     sort,
+    platform,
   ]);
   const count = (name: string) =>
     workspace.index.files.filter((file) => file.category === name).length;
@@ -237,7 +244,7 @@ export const Projects = ({
             <span>{t("设置")}</span>
           </Button>
           <span className="desktop-local-label">
-            {t("文件保存在这台 Mac 上")}
+            {t("文件保存在这台电脑上")}
           </span>
         </div>
       </aside>
@@ -273,7 +280,7 @@ export const Projects = ({
             <Button onSelect={workspace.openFiles}>
               {LoadIcon}
               <span>{t("打开文件")}</span>
-              <kbd>⌘O</kbd>
+              <kbd>{desktopShortcut(platform, "O")}</kbd>
             </Button>
             <Button
               className="desktop-primary"
@@ -397,14 +404,19 @@ export const Projects = ({
                         isInDefaultDirectory(
                           file,
                           workspace.index.rootDirectory,
+                          platform,
                         )
                           ? file.category || t("默认文件夹")
-                          : parentDirectory(file.path)
+                          : parentDirectory(file.path, platform)
                       }
                     >
-                      {isInDefaultDirectory(file, workspace.index.rootDirectory)
+                      {isInDefaultDirectory(
+                        file,
+                        workspace.index.rootDirectory,
+                        platform,
+                      )
                         ? file.category || t("未分类")
-                        : parentDirectory(file.path)}
+                        : parentDirectory(file.path, platform)}
                     </span>
                   </button>
                   <button
@@ -504,6 +516,7 @@ export const Projects = ({
               label: isInDefaultDirectory(
                 menu.file,
                 workspace.index.rootDirectory,
+                platform,
               )
                 ? t("移动到分类")
                 : t("移入默认文件夹分类"),
@@ -515,7 +528,7 @@ export const Projects = ({
               onSelect: () => onEdit({ kind: "move", file: menu.file }),
             },
             {
-              label: t("在 Finder 中显示"),
+              label: t("在文件管理器中显示"),
               icon: ExternalLinkIcon,
               separatorBefore: true,
               onSelect: () => {
@@ -532,7 +545,7 @@ export const Projects = ({
               onSelect: () => onRemove(menu.file, "remove"),
             },
             {
-              label: t("彻底删除"),
+              label: t(platform === "win32" ? "移到回收站" : "彻底删除"),
               icon: TrashIcon,
               danger: true,
               onSelect: () => onRemove(menu.file, "trash"),

@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const os = require("node:os");
+const vm = require("node:vm");
 const { randomUUID } = require("node:crypto");
 
 const {
@@ -12,7 +13,7 @@ const {
   categoryParts,
 } = require("./storage.cjs");
 
-async function fixture(t) {
+async function fixture(t, options) {
   const base = await fs.realpath(
     await fs.mkdtemp(path.join(os.tmpdir(), "excalidraw-storage-")),
   );
@@ -21,6 +22,7 @@ async function fixture(t) {
   await fs.mkdir(root);
   const storage = await new DesktopStorage(
     path.join(base, "userData"),
+    options,
   ).initialize();
   await storage.chooseRoot(root);
   const create = async (name, content = '{"type":"excalidraw"}') => {
@@ -64,6 +66,228 @@ const request = (document, content) => ({
   name: "drawing",
   content,
   expectedModifiedAt: document.modifiedAt,
+});
+
+test("Windows rejects invalid filenames and categories without restricting macOS names", async (t) => {
+  const { storage, create } = await fixture(t, { platform: "win32" });
+  const original = await create("drawing.excalidraw", "original");
+  const invalidNames = [
+    "CON",
+    "prn.txt",
+    "AUX",
+    "nul.excalidraw",
+    "COM1",
+    "COM¹.txt",
+    "LPT9",
+    "LPT²",
+    "CONIN$",
+    "CONOUT$",
+    "end.",
+    "end ",
+    "a<b",
+    "a>b",
+    'a"b',
+    "a:b",
+    "a|b",
+    "a?b",
+    "a*b",
+  ];
+  for (const name of invalidNames) {
+    assert.throws(() => fileName(name, undefined, undefined, "win32"));
+    assert.throws(() => categoryParts(`nested/${name}`, "win32"));
+    assert.throws(() => storage.renameFile(original.path, name));
+    await assert.rejects(storage.createFolder(name));
+  }
+  for (const name of ["CON", "nul.txt", "a:b", "a?b", "end."]) {
+    assert.equal(
+      fileName(name, undefined, undefined, "darwin"),
+      `${name}.excalidraw`,
+    );
+    assert.deepEqual(categoryParts(name, "darwin"), [name]);
+  }
+  for (const name of ["CONsole", "COM10", "LPT0", "文档", "drawing.v2"]) {
+    assert.equal(
+      fileName(name, undefined, undefined, "win32"),
+      `${name}.excalidraw`,
+    );
+  }
+  assert.equal(await fs.readFile(original.path, "utf8"), "original");
+});
+
+test("exclusive saves on filesystems without hard links still reject concurrent and existing targets", async (t) => {
+  const { root } = await fixture(t, { platform: "win32" });
+  for (const code of ["ENOSYS", "ENOTSUP", "EOPNOTSUPP"]) {
+    await t.test(code, async (t) => {
+      t.mock.method(fs, "link", async () => {
+        throw Object.assign(new Error("hard links unsupported"), { code });
+      });
+      const target = path.join(root, `${code}.excalidraw`);
+      const results = await Promise.allSettled([
+        atomicWrite(target, "first", { createOnly: true }),
+        atomicWrite(target, "second", { createOnly: true }),
+      ]);
+      assert.equal(
+        results.filter((result) => result.status === "fulfilled").length,
+        1,
+      );
+      assert.equal(
+        results.filter((result) => result.reason?.code === "EEXIST").length,
+        1,
+      );
+      const content = await fs.readFile(target, "utf8");
+      await assert.rejects(
+        atomicWrite(target, "replacement", { createOnly: true }),
+        { code: "EEXIST" },
+      );
+      assert.equal(await fs.readFile(target, "utf8"), content);
+      assert.equal(
+        (await fs.readdir(root)).some((name) => name.endsWith(".tmp")),
+        false,
+      );
+    });
+  }
+});
+
+test("hard-link permission and busy errors preserve source and destination without copying", async (t) => {
+  const { root, storage, create } = await fixture(t, { platform: "win32" });
+  const original = await create("original.excalidraw", "original");
+  const target = path.join(root, "saved.excalidraw");
+  await fs.writeFile(target, "existing");
+  for (const code of ["EPERM", "EACCES", "EBUSY"]) {
+    await t.test(code, async (t) => {
+      t.mock.method(fs, "link", async () => {
+        throw Object.assign(new Error("denied"), { code });
+      });
+      const copy = t.mock.method(fs, "copyFile", () =>
+        assert.fail("must not copy"),
+      );
+      await assert.rejects(
+        atomicWrite(target, "replacement", { createOnly: true }),
+        { code },
+      );
+      await assert.rejects(storage.renameFile(original.path, "renamed"), {
+        code,
+      });
+      assert.equal(copy.mock.callCount(), 0);
+      assert.equal(await fs.readFile(target, "utf8"), "existing");
+      assert.equal(await fs.readFile(original.path, "utf8"), "original");
+      await assert.rejects(fs.stat(path.join(root, "renamed.excalidraw")), {
+        code: "ENOENT",
+      });
+    });
+  }
+});
+
+test("unsupported hard-link moves preserve timestamps and never replace another file", async (t) => {
+  const { root, storage, create } = await fixture(t, { platform: "win32" });
+  const original = await create("original.excalidraw", "original");
+  const existing = await create("existing.excalidraw", "existing");
+  t.mock.method(fs, "link", async () => {
+    throw Object.assign(new Error("unsupported"), { code: "ENOTSUP" });
+  });
+  await assert.rejects(storage.renameFile(original.path, "existing"), {
+    code: "NAME_CONFLICT",
+  });
+  assert.equal(await fs.readFile(original.path, "utf8"), "original");
+  assert.equal(await fs.readFile(existing.path, "utf8"), "existing");
+  const moved = await storage.renameFile(original.path, "renamed");
+  assert.equal(moved.content, "original");
+  assert.ok(Math.abs(moved.modifiedAt - original.modifiedAt) < 0.001);
+  await assert.rejects(fs.stat(original.path), { code: "ENOENT" });
+  assert.equal(
+    (
+      await storage.saveFile({
+        ...request(original, "saved"),
+        path: moved.path,
+      })
+    ).content,
+    "saved",
+  );
+});
+
+test("Windows saves recognize opened paths with different casing", async (t) => {
+  const { storage, create } = await fixture(t, { platform: "win32" });
+  const original = await create("drawing.excalidraw", "original");
+  await assert.rejects(
+    storage.saveFile(
+      {
+        ...request(original, "overwritten"),
+        occupiedPaths: [original.path.toUpperCase()],
+      },
+      { overwrite: true },
+    ),
+    { code: "OPEN_DOCUMENT_CONFLICT" },
+  );
+  assert.equal(await fs.readFile(original.path, "utf8"), "original");
+});
+
+test("Windows history serializes nested categories with the project API separators", async () => {
+  const root = String.raw`C:\projects`;
+  const nested = String.raw`C:\projects\research\drafts\drawing.excalidraw`;
+  const topLevel = String.raw`C:\projects\root.excalidraw`;
+  const external = String.raw`D:\external\drawing.excalidraw`;
+  const source = await fs.readFile(path.join(__dirname, "storage.cjs"), "utf8");
+  const module = { exports: {} };
+  vm.runInNewContext(source, {
+    module,
+    process: { platform: "win32" },
+    require: (name) =>
+      name === "node:path"
+        ? path.win32
+        : name === "node:fs/promises"
+        ? {
+            stat: async () => ({ isFile: () => true, mtimeMs: 1, size: 2 }),
+            realpath: async (candidate) => candidate,
+            readdir: async () => [],
+          }
+        : require(name),
+  });
+  const storage = new module.exports.DesktopStorage(String.raw`C:\userData`);
+  storage.settings.rootDirectory = root;
+  storage.allowedPath = async (candidate) => candidate;
+  storage.recentFiles = new Map([
+    [nested, 3],
+    [topLevel, 2],
+    [external, 1],
+  ]);
+  const index = await storage.listProjects();
+  assert.equal(index.history[0].path, nested);
+  assert.equal(
+    index.history[0].relativePath,
+    "research/drafts/drawing.excalidraw",
+  );
+  assert.equal(index.history[0].category, "research/drafts");
+  assert.equal(index.history[1].relativePath, "root.excalidraw");
+  assert.equal(index.history[1].category, "");
+  assert.equal(index.history[2].path, external);
+  assert.equal(index.history[2].relativePath, external);
+  assert.equal(index.history[2].category, "");
+});
+
+test("fallback moves keep the original and remove the new copy if finalization fails", async (t) => {
+  const { root, storage, create } = await fixture(t, { platform: "win32" });
+  const original = await create("original.excalidraw", "original");
+  t.mock.method(fs, "link", async () => {
+    throw Object.assign(new Error("unsupported"), { code: "ENOTSUP" });
+  });
+  for (const operation of ["copyFile", "utimes", "unlink"]) {
+    await t.test(operation, async (t) => {
+      const originalOperation = fs[operation];
+      t.mock.method(fs, operation, async (...args) => {
+        if (operation !== "unlink" || args[0] === original.path) {
+          throw Object.assign(new Error("denied"), { code: "EACCES" });
+        }
+        return originalOperation(...args);
+      });
+      await assert.rejects(storage.renameFile(original.path, "renamed"), {
+        code: "EACCES",
+      });
+      assert.equal(await fs.readFile(original.path, "utf8"), "original");
+      await assert.rejects(fs.stat(path.join(root, "renamed.excalidraw")), {
+        code: "ENOENT",
+      });
+    });
+  }
 });
 
 test("slow saves expose the blocked stage without releasing the atomic write queue", async (t) => {
@@ -861,9 +1085,9 @@ test("rename and move update persisted history without changing opening time", a
   const original = await create("original.excalidraw");
   await storage.recordOpenedFile(original.path);
   const lastOpenedAt = (await storage.listProjects()).history[0].lastOpenedAt;
-  await storage.createFolder("category");
+  await storage.createFolder("parent/child");
   const renamed = await storage.renameFile(original.path, "renamed");
-  const moved = await storage.moveFile(renamed.path, "category");
+  const moved = await storage.moveFile(renamed.path, "parent/child");
   const reopened = await new DesktopStorage(
     path.join(base, "userData"),
   ).initialize();
@@ -871,12 +1095,121 @@ test("rename and move update persisted history without changing opening time", a
   assert.equal(history.length, 1);
   assert.equal(
     history[0].path,
-    path.join(root, "category", "renamed.excalidraw"),
+    path.join(root, "parent", "child", "renamed.excalidraw"),
   );
-  assert.equal(history[0].category, "category");
-  assert.equal(history[0].relativePath, "category/renamed.excalidraw");
+  assert.equal(history[0].category, "parent/child");
+  assert.equal(history[0].relativePath, "parent/child/renamed.excalidraw");
   assert.equal(history[0].lastOpenedAt, lastOpenedAt);
+  assert.equal(
+    (await reopened.moveFile(history[0].path, history[0].category)).path,
+    moved.path,
+  );
   assert.equal((await reopened.readFile(moved.path)).content, original.content);
+});
+
+test("history paths match project categories under Windows and POSIX path semantics", async (t) => {
+  const source = await fs.readFile(require.resolve("./storage.cjs"), "utf8");
+  for (const platform of ["win32", "posix"]) {
+    await t.test(platform, async () => {
+      const nativePath = path[platform];
+      const base = platform === "win32" ? "C:\\workspace" : "/workspace";
+      const root = nativePath.join(base, "projects");
+      const nested = nativePath.join(
+        root,
+        "parent",
+        "child",
+        "nested.excalidraw",
+      );
+      const rootFile = nativePath.join(root, "root.excalidraw");
+      const external = nativePath.join(base, "external.excalidraw");
+      const directories = new Map([
+        [base, ["projects", "external.excalidraw"]],
+        [root, ["parent", "root.excalidraw"]],
+        [nativePath.join(root, "parent"), ["child"]],
+        [nativePath.join(root, "parent", "child"), ["nested.excalidraw"]],
+      ]);
+      const files = new Set([nested, rootFile, external]);
+      const stat = async (candidate) => {
+        assert.ok(directories.has(candidate) || files.has(candidate));
+        return {
+          isFile: () => files.has(candidate),
+          isDirectory: () => directories.has(candidate),
+          mtimeMs: 1000,
+          size: 7,
+        };
+      };
+      const nativeFs = {
+        realpath: async (candidate) => {
+          await stat(candidate);
+          return candidate;
+        },
+        stat,
+        readdir: async (directory) =>
+          directories.get(directory).map((name) => ({
+            name,
+            isSymbolicLink: () => false,
+            isDirectory: () =>
+              directories.has(nativePath.join(directory, name)),
+            isFile: () => files.has(nativePath.join(directory, name)),
+          })),
+        open: async (candidate) => ({
+          stat: () => stat(candidate),
+          readFile: async () => "drawing",
+          close: async () => {},
+        }),
+      };
+      const module = { exports: {} };
+      vm.runInNewContext(source, {
+        module,
+        process: { platform: platform === "win32" ? "win32" : "linux" },
+        setTimeout,
+        clearTimeout,
+        require: (id) =>
+          id === "node:path"
+            ? nativePath
+            : id === "node:fs/promises"
+            ? nativeFs
+            : require(id),
+      });
+      const storage = new module.exports.DesktopStorage(
+        nativePath.join(base, "userData"),
+      );
+      storage.settings.rootDirectory = root;
+      storage.authorized.add(external);
+      for (const candidate of files) {
+        storage.recentFiles.set(candidate, 1000);
+      }
+      const index = await storage.listProjects();
+      for (const file of index.files) {
+        const history = index.history.find((entry) => entry.path === file.path);
+        assert.equal(history.relativePath, file.relativePath);
+        assert.equal(history.category, file.category);
+        assert.equal(
+          (await storage.moveFile(history.path, history.category)).path,
+          file.path,
+        );
+      }
+      const nestedHistory = index.history.find(
+        (entry) => entry.path === nested,
+      );
+      assert.equal(nestedHistory.path, nested);
+      assert.equal(
+        nestedHistory.relativePath,
+        "parent/child/nested.excalidraw",
+      );
+      assert.equal(nestedHistory.category, "parent/child");
+      assert.ok(index.folders.includes(nestedHistory.category));
+      const externalHistory = index.history.find(
+        (entry) => entry.path === external,
+      );
+      assert.equal(externalHistory.path, external);
+      assert.equal(externalHistory.relativePath, external);
+      assert.equal(externalHistory.category, "");
+      assert.throws(() => module.exports.categoryParts("parent\\child"), {
+        code: "INVALID_PATH",
+      });
+    });
+  }
 });
 
 test("saving new and Save As drawings records both paths while failed saves do not", async (t) => {
