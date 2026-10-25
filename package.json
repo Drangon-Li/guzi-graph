@@ -147,6 +147,12 @@
     "overrides": [
       {
         "files": [
+          "apps/web/vite.config.mts"
+        ],
+        "parser": "@typescript-eslint/parser"
+      },
+      {
+        "files": [
           "packages/excalidraw/**/*.{ts,tsx}"
         ],
         "excludedFiles": [

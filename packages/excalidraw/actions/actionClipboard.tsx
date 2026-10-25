@@ -17,7 +17,7 @@ import { DuplicateIcon, cutIcon, pngIcon, svgIcon } from "../components/icons";
 import { exportCanvas, prepareElementsForExport } from "../data/index";
 import { canvasToBlob } from "../data/blob";
 import { t } from "../i18n";
-import { exportToCanvas } from "../scene/export";
+import { exportScene, getExportConfigFromAppState } from "../scene/export";
 
 import { actionDeleteSelected } from "./actionDeleteSelected";
 import { register } from "./register";
@@ -49,18 +49,19 @@ export const actionCopy = register<ClipboardEvent | null>({
             const { exportedElements, exportingFrame } =
               prepareElementsForExport(elements, appState, true);
             return canvasToBlob(
-              exportToCanvas(
-                exportedElements,
-                appState,
-                app.files,
-                { ...appState, exportingFrame },
-                (width, height) => {
-                  const canvas = app.ownerDocument.createElement("canvas");
-                  canvas.width = width * appState.exportScale;
-                  canvas.height = height * appState.exportScale;
-                  return { canvas, scale: appState.exportScale };
+              exportScene({
+                type: "canvas",
+                data: {
+                  elements: exportedElements,
+                  appState,
+                  files: app.files,
                 },
-              ),
+                config: {
+                  ...getExportConfigFromAppState(appState),
+                  exportingFrame,
+                  environment: app.renderEnvironment,
+                },
+              }),
             );
           },
         },
@@ -203,9 +204,9 @@ export const actionCopyAsSvg = register({
         appState,
         app.files,
         {
-          ...appState,
           exportingFrame,
           name: app.getName(),
+          renderEnvironment: app.renderEnvironment,
         },
       );
 
@@ -270,9 +271,9 @@ export const actionCopyAsPng = register({
     );
     try {
       await exportCanvas("clipboard", exportedElements, appState, app.files, {
-        ...appState,
         exportingFrame,
         name: app.getName(),
+        renderEnvironment: app.renderEnvironment,
       });
       return {
         appState: {

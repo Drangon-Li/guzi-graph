@@ -12,7 +12,7 @@ import {
   restoreAppState,
   restoreElements,
 } from "@excalidraw/excalidraw/data/restore";
-import { exportToSvg } from "@excalidraw/excalidraw/scene/export";
+import { exportScene } from "@excalidraw/excalidraw/scene/export";
 
 import { getSlideBounds, serializePresentation } from "./model";
 
@@ -99,20 +99,25 @@ export const renderSlideSvg = async (
     // Core SVG export normalizes to content bounds; undo that translation so
     // the fixed outer viewport retains the slide's editing coordinates.
     const [minX, minY] = getCommonBounds(getRootElements(elements));
-    const content = await exportToSvg(
-      elements,
-      {
-        ...appState,
-        exportBackground: false,
-        exportPadding: 0,
-        exportScale: 1,
-        exportEmbedScene: false,
-        exportWithDarkMode: darkMode,
-        frameRendering: { ...appState.frameRendering, name: false },
+    const content = await exportScene({
+      type: "svg",
+      data: { elements, appState, files: slide.scene.files ?? {} },
+      config: {
+        canvasBackgroundColor: false,
+        padding: 0,
+        scale: 1,
+        embedScene: false,
+        theme: darkMode ? "dark" : "light",
+        frames: {
+          ...(appState.frameRendering.enabled
+            ? appState.frameRendering
+            : { outline: false, clip: false }),
+          name: false,
+        },
+        reuseImages: true,
+        environment: { document: ownerDocument },
       },
-      slide.scene.files ?? {},
-      { reuseImages: true, ownerDocument },
-    );
+    });
     const imported = ownerDocument.importNode(content, true);
     const contentWidth = Math.max(1, Number(imported.getAttribute("width")));
     const contentHeight = Math.max(1, Number(imported.getAttribute("height")));

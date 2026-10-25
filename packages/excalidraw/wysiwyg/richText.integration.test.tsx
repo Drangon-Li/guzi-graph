@@ -12,7 +12,6 @@ import {
   newElementWith,
   richTextFromPlainText,
 } from "@excalidraw/element";
-import { exportToCanvas } from "@excalidraw/utils";
 import {
   $getSelection,
   CONTROLLED_TEXT_INSERTION_COMMAND,
@@ -28,7 +27,7 @@ import { API } from "../tests/helpers/api";
 import { Keyboard } from "../tests/helpers/ui";
 import { getTextEditor } from "../tests/queries/dom";
 import { act, fireEvent, render, waitFor } from "../tests/test-utils";
-import { exportToSvg } from "../scene/export";
+import { exportScene } from "../scene/export";
 import { restoreElements } from "../data/restore";
 import { serializeAsJSON } from "../data/json";
 import * as dataModule from "../data";
@@ -1440,11 +1439,15 @@ describe("rich text application integration", () => {
       },
     });
     const layout = layoutRichText(text, text.width);
-    const svg = await exportToSvg(
-      [text],
-      { exportBackground: false, viewBackgroundColor: "#ffffff" },
-      {},
-    );
+    const svg = await exportScene({
+      type: "svg",
+      data: {
+        elements: [text],
+        appState: { viewBackgroundColor: "#ffffff" },
+        files: {},
+      },
+      config: { canvasBackgroundColor: false },
+    });
     const rendered = [...svg.querySelectorAll("text")];
     const runs = layout.lines.flatMap((line) => line.runs);
     expect(rendered.map((node) => node.textContent)).toEqual(
@@ -1459,7 +1462,10 @@ describe("rich text application integration", () => {
     expect(svg.querySelectorAll("rect[fill='rgb(255, 243, 191)']").length).toBe(
       runs.filter((run) => run.background).length,
     );
-    const canvas = await exportToCanvas({ elements: [text], files: {} });
+    const canvas = await exportScene({
+      type: "canvas",
+      data: { elements: [text], files: {} },
+    });
     const draw = canvas.getContext("2d")!.fillText;
     for (const run of runs) {
       expect(draw).toHaveBeenCalledWith(run.text, run.x, expect.any(Number));

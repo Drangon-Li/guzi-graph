@@ -13,7 +13,7 @@ import {
   cloneSubcanvasScenes,
   convertStickyNoteToSubcanvas,
 } from "../features/subcanvas/operations";
-import { exportToSvg } from "../scene/export";
+import { exportScene } from "../scene/export";
 
 import { API } from "./helpers/api";
 import { Keyboard, Pointer, UI } from "./helpers/ui";
@@ -113,11 +113,14 @@ describe("subcanvas documents", () => {
   it("exports a paper and pin glyph while keeping child content out of the parent SVG", async () => {
     const { note, text } = noteAndText();
     const converted = convertStickyNoteToSubcanvas([note, text], note.id, {})!;
-    const svg = await exportToSvg(
-      converted.elements.filter(isNonDeletedElement),
-      getDefaultAppState(),
-      {},
-    );
+    const svg = await exportScene({
+      type: "svg",
+      data: {
+        elements: converted.elements.filter(isNonDeletedElement),
+        appState: getDefaultAppState(),
+        files: {},
+      },
+    });
     const geometry = getSubcanvasPinGeometry(converted.elements[0]);
     const head = svg.querySelector("circle[r]")!;
     expect(head).not.toBeNull();

@@ -392,6 +392,7 @@ export const SubcanvasEditor = ({
               <Excalidraw
                 key={activeId}
                 ownerDocument={props.ownerDocument}
+                renderEnvironment={props.renderEnvironment}
                 initialData={{
                   elements: scene.elements,
                   scrollToContent: scene.appState.scrollX === undefined,

@@ -48,8 +48,35 @@ it("does not draw borders on existing images until enabled", () => {
   expect(stroke).toHaveBeenCalledTimes(1);
 });
 
+it("restores canvas state when drawing a hand-drawn border throws", () => {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d")!;
+  const image = newImageElement({
+    type: "image",
+    x: 0,
+    y: 0,
+    width: 120,
+    height: 60,
+    imageBorder: true,
+    roughness: 2,
+  });
+  const rc = rough.canvas(canvas);
+  vi.spyOn(rc, "draw").mockImplementation(() => {
+    context.translate(10, 20);
+    throw new Error("drawing failed");
+  });
+  context.translate(5, 7);
+  context.filter = "blur(2px)";
+  const transform = context.getTransform();
+  expect(() => drawImageBorder(context, image, "light", rc)).toThrow(
+    "drawing failed",
+  );
+  expect(context.getTransform()).toEqual(transform);
+  expect(context.filter).toBe("blur(2px)");
+});
+
 it("exports the same inset border for a cropped, rotated and flipped image", async () => {
-  const { exportToSvg } = await import("@excalidraw/excalidraw/scene/export");
+  const { exportScene } = await import("@excalidraw/excalidraw/scene/export");
   const image = {
     ...newImageElement({
       type: "image",
@@ -76,19 +103,22 @@ it("exports the same inset border for a cropped, rotated and flipped image", asy
     strokeColor: "#123456",
     angle: (Math.PI / 6) as import("@excalidraw/math").Radians,
   };
-  const svg = await exportToSvg(
-    [image],
-    { exportBackground: false, viewBackgroundColor: "#fff" },
-    {
-      [image.fileId]: {
-        id: image.fileId,
-        mimeType: "image/png",
-        dataURL:
-          "data:image/png;base64,AA==" as import("@excalidraw/excalidraw/types").DataURL,
-        created: 1,
+  const svg = await exportScene({
+    type: "svg",
+    config: { canvasBackgroundColor: false },
+    data: {
+      elements: [image],
+      files: {
+        [image.fileId]: {
+          id: image.fileId,
+          mimeType: "image/png",
+          dataURL:
+            "data:image/png;base64,AA==" as import("@excalidraw/excalidraw/types").DataURL,
+          created: 1,
+        },
       },
     },
-  );
+  });
   const border = svg.querySelector('rect[stroke="#123456"]')!;
   expect(border).not.toBeNull();
   expect(border.getAttribute("width")).toBe("116");
@@ -106,7 +136,7 @@ it("exports the same inset border for a cropped, rotated and flipped image", asy
 it.each(["solid", "dotted", "dashed"] as const)(
   "shares the seeded hand-drawn %s border between scaled Canvas and cropped, rotated, flipped SVG",
   async (strokeStyle) => {
-    const { exportToSvg } = await import("@excalidraw/excalidraw/scene/export");
+    const { exportScene } = await import("@excalidraw/excalidraw/scene/export");
     const image = newImageElement({
       type: "image",
       x: 20,
@@ -159,19 +189,22 @@ it.each(["solid", "dotted", "dashed"] as const)(
     expect(draw.mock.calls[0][0].sets).toEqual(drawable.sets);
     expect(curve).toHaveBeenCalled();
     expect(context.getTransform()).toEqual(transform);
-    const svg = await exportToSvg(
-      [image],
-      { exportBackground: false, viewBackgroundColor: "#fff" },
-      {
-        "sketch-border": {
-          id: image.fileId!,
-          mimeType: "image/png",
-          dataURL:
-            "data:image/png;base64,AA==" as import("@excalidraw/excalidraw/types").DataURL,
-          created: 1,
+    const svg = await exportScene({
+      type: "svg",
+      config: { canvasBackgroundColor: false },
+      data: {
+        elements: [image],
+        files: {
+          "sketch-border": {
+            id: image.fileId!,
+            mimeType: "image/png",
+            dataURL:
+              "data:image/png;base64,AA==" as import("@excalidraw/excalidraw/types").DataURL,
+            created: 1,
+          },
         },
       },
-    );
+    });
     const paths = Array.from(svg.querySelectorAll('path[stroke="#123456"]'));
     expect(paths.map((path) => path.getAttribute("d"))).toEqual(
       rough
@@ -195,19 +228,22 @@ it.each(["solid", "dotted", "dashed"] as const)(
     expect(paths[0].getAttribute("stroke-dasharray") ?? "").toBe(
       getImageBorderStyle(image).dash.join(" "),
     );
-    const none = await exportToSvg(
-      [{ ...image, imageBorder: false }],
-      { exportBackground: false, viewBackgroundColor: "#fff" },
-      {
-        "sketch-border": {
-          id: image.fileId!,
-          mimeType: "image/png",
-          dataURL:
-            "data:image/png;base64,AA==" as import("@excalidraw/excalidraw/types").DataURL,
-          created: 1,
+    const none = await exportScene({
+      type: "svg",
+      config: { canvasBackgroundColor: false },
+      data: {
+        elements: [{ ...image, imageBorder: false }],
+        files: {
+          "sketch-border": {
+            id: image.fileId!,
+            mimeType: "image/png",
+            dataURL:
+              "data:image/png;base64,AA==" as import("@excalidraw/excalidraw/types").DataURL,
+            created: 1,
+          },
         },
       },
-    );
+    });
     expect(
       none.querySelector('path[stroke="#123456"],rect[stroke="#123456"]'),
     ).toBeNull();

@@ -5,7 +5,7 @@ import { getNonDeletedElements, loadFromBlob } from "@excalidraw/excalidraw";
 import { ExcalLogo } from "@excalidraw/excalidraw/components/icons";
 import { restoreAppState } from "@excalidraw/excalidraw/data/restore";
 import { Fonts } from "@excalidraw/excalidraw/fonts";
-import { exportToCanvas } from "@excalidraw/excalidraw/scene/export";
+import { exportScene } from "@excalidraw/excalidraw/scene/export";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
@@ -102,40 +102,45 @@ const getThumbnail = (
       offsetTop: 0,
       offsetLeft: 0,
     };
-    let previewCanvas: HTMLCanvasElement | undefined;
+    const previewCanvases: HTMLCanvasElement[] = [];
     try {
-      const canvas = await exportToCanvas(
-        elements,
-        appState,
-        scene.files || {},
-        {
-          exportBackground: true,
-          viewBackgroundColor: appState.viewBackgroundColor,
-          exportPadding: 24,
+      const canvas = await exportScene({
+        type: "canvas",
+        data: { elements, appState, files: scene.files || {} },
+        config: {
+          theme,
+          canvasBackgroundColor: appState.viewBackgroundColor,
+          padding: 24,
+          frames: appState.frameRendering.enabled
+            ? appState.frameRendering
+            : { name: false, outline: false, clip: false },
+          scale: (width, height) =>
+            MAX_THUMBNAIL_SIZE / Math.max(width, height),
+          environment: {
+            document: ownerDocument,
+            createCanvas: () => {
+              const canvas = ownerDocument.createElement("canvas");
+              previewCanvases.push(canvas);
+              return canvas;
+            },
+            createImage: () => new ownerWindow.Image(),
+            loadFonts: async () => {
+              await loadThumbnailFonts(elements, ownerDocument);
+              if (cancelled()) {
+                throw new ownerWindow.DOMException(
+                  "Thumbnail cancelled",
+                  "AbortError",
+                );
+              }
+            },
+          },
         },
-        (width, height) => {
-          const scale = MAX_THUMBNAIL_SIZE / Math.max(width, height);
-          const canvas = ownerDocument.createElement("canvas");
-          previewCanvas = canvas;
-          canvas.width = Math.max(1, Math.round(width * scale));
-          canvas.height = Math.max(1, Math.round(height * scale));
-          return { canvas, scale };
-        },
-        async () => {
-          await loadThumbnailFonts(elements, ownerDocument);
-          if (cancelled()) {
-            throw new ownerWindow.DOMException(
-              "Thumbnail cancelled",
-              "AbortError",
-            );
-          }
-        },
-      );
+      });
       return cancelled() ? null : canvas.toDataURL("image/png");
     } finally {
-      if (previewCanvas) {
-        previewCanvas.width = 0;
-        previewCanvas.height = 0;
+      for (const canvas of previewCanvases) {
+        canvas.width = 0;
+        canvas.height = 0;
       }
     }
   });

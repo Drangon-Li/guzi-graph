@@ -196,6 +196,7 @@ const TableEditor = ({
       app.scene.getElementsIncludingDeleted(),
       root,
       transform,
+      app.renderEnvironment,
     );
     app.syncActionResult({
       elements,

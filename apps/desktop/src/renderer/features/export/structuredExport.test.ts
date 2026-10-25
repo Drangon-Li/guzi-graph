@@ -89,7 +89,7 @@ const element = (
 const options = { title: "Canvas", includeInferredStructure: true };
 const decode = (data: ArrayBuffer) => new TextDecoder().decode(data);
 
-vi.mock("@excalidraw/utils/export", () => ({ exportToSvg: vi.fn() }));
+vi.mock("@excalidraw/utils", () => ({ exportScene: vi.fn() }));
 
 describe("desktop structured export", () => {
   it("covers every live ID once, retains original paragraphs and filters deleted data", () => {
@@ -555,11 +555,11 @@ describe("desktop structured export", () => {
   });
 
   it("adds one PDF page per reachable nonempty subcanvas when requested", async () => {
-    const { exportToSvg } = await import("@excalidraw/utils/export");
+    const { exportScene } = await import("@excalidraw/utils");
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("width", "100");
     svg.setAttribute("height", "200");
-    vi.mocked(exportToSvg).mockResolvedValue(svg);
+    vi.mocked(exportScene).mockResolvedValue(svg);
     const api = {
       commitEditing: vi.fn(),
       getSceneElements: () => [
@@ -606,20 +606,24 @@ describe("desktop structured export", () => {
         ],
       }),
     );
-    expect(exportToSvg).toHaveBeenLastCalledWith(
+    expect(exportScene).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        elements: [expect.objectContaining({ id: "inside" })],
-        appState: expect.objectContaining({ viewBackgroundColor: "#eeeeee" }),
+        type: "svg",
+        data: expect.objectContaining({
+          elements: [expect.objectContaining({ id: "inside" })],
+          appState: expect.objectContaining({ viewBackgroundColor: "#eeeeee" }),
+        }),
+        config: expect.objectContaining({ canvasBackgroundColor: "#eeeeee" }),
       }),
     );
   });
 
   it("commits edits before taking a PDF snapshot and saves an embedded SVG at scene dimensions", async () => {
-    const { exportToSvg } = await import("@excalidraw/utils/export");
+    const { exportScene } = await import("@excalidraw/utils");
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("width", "900");
     svg.setAttribute("height", "600");
-    vi.mocked(exportToSvg).mockResolvedValue(svg);
+    vi.mocked(exportScene).mockResolvedValue(svg);
     const commitEditing = vi.fn();
     const getSceneElements = vi.fn(() => [element("box")]);
     const files = {};
@@ -638,14 +642,16 @@ describe("desktop structured export", () => {
     expect(commitEditing.mock.invocationCallOrder[0]).toBeLessThan(
       getSceneElements.mock.invocationCallOrder[0],
     );
-    expect(exportToSvg).toHaveBeenCalledWith(
+    expect(exportScene).toHaveBeenCalledWith(
       expect.objectContaining({
-        appState: expect.objectContaining({
-          exportScale: 1,
-          exportEmbedScene: false,
+        type: "svg",
+        data: expect.objectContaining({ files }),
+        config: expect.objectContaining({
+          scale: 1,
+          embedScene: false,
+          reuseImages: true,
+          padding: 24,
         }),
-        files,
-        reuseImages: true,
       }),
     );
     expect(savePdf).toHaveBeenCalledWith({

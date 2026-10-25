@@ -11,7 +11,7 @@ import type { ChartType } from "@excalidraw/element/types";
 import { trackEvent } from "../analytics";
 import { isSpreadsheetValidForChartType, renderSpreadsheet } from "../charts";
 import { t } from "../i18n";
-import { exportToSvg } from "../scene/export";
+import { exportScene } from "../scene/export";
 
 import { useUIAppState } from "../context/ui-appState";
 
@@ -52,6 +52,7 @@ const ChartPreviewBtn = (props: {
     null,
   );
   const { theme } = useUIAppState();
+  const { renderEnvironment } = useApp();
 
   useLayoutEffect(() => {
     if (!props.spreadsheet) {
@@ -65,6 +66,7 @@ const ChartPreviewBtn = (props: {
       0,
       0,
       props.colorSeed,
+      renderEnvironment,
     );
     if (!elements) {
       setChartElements(null);
@@ -76,18 +78,19 @@ const ChartPreviewBtn = (props: {
     const previewNode = previewRef.current!;
 
     (async () => {
-      svg = await exportToSvg(
-        elements,
-        {
-          exportBackground: false,
-          viewBackgroundColor: "#fff",
-          exportWithDarkMode: theme === "dark",
+      svg = await exportScene({
+        type: "svg",
+        data: {
+          elements,
+          files: null,
         },
-        null, // files
-        {
+        config: {
           skipInliningFonts: true,
+          theme,
+          canvasBackgroundColor: false,
+          environment: renderEnvironment,
         },
-      );
+      });
       svg.querySelector(".style-fonts")?.remove();
       previewNode.replaceChildren();
       previewNode.appendChild(svg);
@@ -96,7 +99,13 @@ const ChartPreviewBtn = (props: {
     return () => {
       previewNode.replaceChildren();
     };
-  }, [props.spreadsheet, props.chartType, props.colorSeed, theme]);
+  }, [
+    props.spreadsheet,
+    props.chartType,
+    props.colorSeed,
+    theme,
+    renderEnvironment,
+  ]);
 
   const chartTypeLabel = getChartTypeLabel(props.chartType);
 
@@ -123,6 +132,7 @@ const PlainTextPreviewBtn = (props: {
 }) => {
   const previewRef = useRef<HTMLDivElement | null>(null);
   const { theme } = useUIAppState();
+  const { renderEnvironment } = useApp();
 
   useLayoutEffect(() => {
     if (!props.rawText) {
@@ -133,23 +143,25 @@ const PlainTextPreviewBtn = (props: {
       text: props.rawText,
       x: 0,
       y: 0,
+      renderEnvironment,
     });
 
     const previewNode = previewRef.current!;
 
     (async () => {
-      const svg = await exportToSvg(
-        [textElement],
-        {
-          exportBackground: false,
-          viewBackgroundColor: "#fff",
-          exportWithDarkMode: theme === "dark",
+      const svg = await exportScene({
+        type: "svg",
+        data: {
+          elements: [textElement],
+          files: null,
         },
-        null,
-        {
+        config: {
           skipInliningFonts: true,
+          theme,
+          canvasBackgroundColor: false,
+          environment: renderEnvironment,
         },
-      );
+      });
       svg.querySelector(".style-fonts")?.remove();
       previewNode.replaceChildren();
       previewNode.appendChild(svg);
@@ -158,7 +170,7 @@ const PlainTextPreviewBtn = (props: {
     return () => {
       previewNode.replaceChildren();
     };
-  }, [props.rawText, theme]);
+  }, [props.rawText, theme, renderEnvironment]);
 
   return (
     <button
@@ -189,7 +201,7 @@ export const PasteChartDialog = ({
   onClose: () => void;
 }) => {
   const app = useApp();
-  const { onInsertElements, focusContainer } = app;
+  const { onInsertElements, focusContainer, renderEnvironment } = app;
   const [colorSeed, setColorSeed] = useState(Math.random());
 
   const handleReshuffleColors = React.useCallback(() => {
@@ -214,6 +226,7 @@ export const PasteChartDialog = ({
       text: rawText,
       x: 0,
       y: 0,
+      renderEnvironment,
     });
     onInsertElements([textElement]);
     trackEvent("paste", "chart", "plaintext");
@@ -257,10 +270,16 @@ export const PasteChartDialog = ({
             aria-label="可编辑表格"
             onClick={() => {
               onInsertElements(
-                createTableElements(tableData, 0, 0, {
-                  roughness: app.state.currentItemRoughness,
-                  opacity: app.state.currentItemOpacity,
-                }).elements,
+                createTableElements(
+                  tableData,
+                  0,
+                  0,
+                  {
+                    roughness: app.state.currentItemRoughness,
+                    opacity: app.state.currentItemOpacity,
+                  },
+                  renderEnvironment,
+                ).elements,
               );
               onClose();
               focusContainer();

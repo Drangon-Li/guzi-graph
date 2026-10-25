@@ -11,8 +11,8 @@ import {
   StoreIncrement,
 } from "@excalidraw/element";
 import {
-  exportToCanvas,
-  exportToSvg,
+  exportScene,
+  getExportConfigFromAppState,
 } from "@excalidraw/excalidraw/scene/export";
 import { HistoryDelta } from "@excalidraw/excalidraw/history";
 
@@ -2875,27 +2875,30 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       const appState = { ...snapshot.appState, exportEmbedScene: false };
       let blob: Blob;
       if (args.format === "svg") {
-        const svg = await exportToSvg(elements, appState, snapshot.files, {
-          ownerDocument,
+        const svg = await exportScene({
+          type: "svg",
+          data: { elements, appState, files: snapshot.files },
+          config: {
+            ...getExportConfigFromAppState(appState),
+            environment: { document: ownerDocument },
+          },
         });
         blob = new ownerWindow.Blob([svg.outerHTML], { type: "image/svg+xml" });
       } else {
-        const canvas = await exportToCanvas(
-          elements,
-          appState,
-          snapshot.files,
-          {
-            exportBackground: appState.exportBackground,
-            viewBackgroundColor: appState.viewBackgroundColor,
+        const canvas = await exportScene({
+          type: "canvas",
+          data: { elements, appState, files: snapshot.files },
+          config: {
+            ...getExportConfigFromAppState(appState),
+            scale: (width, height) =>
+              canvasExportDimensions(width, height).scale,
+            environment: {
+              document: ownerDocument,
+              createCanvas: () => ownerDocument.createElement("canvas"),
+              createImage: () => new ownerWindow.Image(),
+            },
           },
-          (width, height) => {
-            const dimensions = canvasExportDimensions(width, height);
-            const canvas = ownerDocument.createElement("canvas");
-            canvas.width = dimensions.width;
-            canvas.height = dimensions.height;
-            return { canvas, scale: dimensions.scale };
-          },
-        );
+        });
         blob = await new Promise<Blob>((resolve, reject) =>
           canvas.toBlob(
             (result) =>

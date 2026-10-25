@@ -34,6 +34,7 @@ export const actionInsertTable = register({
           roughness: appState.currentItemRoughness,
           opacity: appState.currentItemOpacity,
         },
+        app.renderEnvironment,
       ).elements,
     );
     app.focusContainer();

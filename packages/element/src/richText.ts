@@ -2,6 +2,7 @@ import { getFontString } from "@excalidraw/common";
 
 import { getLineWidth } from "./textMeasurements";
 
+import type { RenderEnvironment } from "./renderEnvironment";
 import type { ExcalidrawTextElement, FontString } from "./types";
 
 export type RichTextRun = {
@@ -136,6 +137,7 @@ export const layoutRichText = (
     | "paragraphSpacing"
   >,
   maxWidth = Infinity,
+  renderEnvironment?: RenderEnvironment,
 ) => {
   const document =
     element.richText ?? richTextFromPlainText(element.originalText);
@@ -165,7 +167,11 @@ export const layoutRichText = (
       Array.from(run.text).map((text) => ({
         text,
         run,
-        width: getLineWidth(text, getRichTextFont(element, run)),
+        width: getLineWidth(
+          text,
+          getRichTextFont(element, run),
+          renderEnvironment,
+        ),
       })),
     );
     let pending: Glyph[] = [];
@@ -190,7 +196,11 @@ export const layoutRichText = (
           : 0);
       const runs: RichTextLayoutRun[] = [];
       if (first && marker) {
-        const markerWidth = getLineWidth(marker, getFontString(element));
+        const markerWidth = getLineWidth(
+          marker,
+          getFontString(element),
+          renderEnvironment,
+        );
         runs.push({
           text: marker,
           x: indent - markerWidth,

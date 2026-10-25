@@ -206,6 +206,7 @@ export class AppText {
             { ...latestTextElement, originalText: nextOriginalText },
             {
               originalText: nextOriginalText,
+              renderEnvironment: this.app.renderEnvironment,
             },
           )
         : null;
@@ -238,6 +239,7 @@ export class AppText {
                   elementsMap,
                   nextOriginalText,
                   maxWidth,
+                  this.app.renderEnvironment,
                 )),
             });
           }
@@ -313,7 +315,12 @@ export class AppText {
         const table = getTableRoot(element, sceneElements);
         if (table) {
           this.app.scene.replaceAllElements(
-            updateTableElements(sceneElements, table, (data) => data),
+            updateTableElements(
+              sceneElements,
+              table,
+              (data) => data,
+              this.app.renderEnvironment,
+            ),
           );
         }
 
@@ -743,6 +750,7 @@ export class AppText {
       const minWidth = getApproxMinLineWidth(
         getFontString(fontString),
         lineHeight,
+        this.app.renderEnvironment,
       );
       const minHeight = getApproxMinLineHeight(fontSize, lineHeight);
       const newHeight = Math.max(container.height, minHeight);
@@ -847,6 +855,7 @@ export class AppText {
             ? container.angle
             : (0 as Radians),
         frameId,
+        renderEnvironment: this.app.renderEnvironment,
       });
 
     if (!existingTextElement && shouldBindToContainer && container) {

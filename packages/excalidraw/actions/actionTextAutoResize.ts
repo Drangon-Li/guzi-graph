@@ -50,12 +50,13 @@ export const actionTextAutoResize = register({
     }
 
     const metrics = target.richText
-      ? layoutRichText(target, Infinity)
+      ? layoutRichText(target, Infinity, app.renderEnvironment)
       : {
           ...measureText(
             target.originalText,
             getFontString(target),
             target.lineHeight,
+            app.renderEnvironment,
           ),
           text: target.originalText,
         };

@@ -281,9 +281,9 @@ describe("presentation PDF", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const original = sceneExport.exportToSvg;
+    const original = sceneExport.exportScene;
     const exportSvg = vi
-      .spyOn(sceneExport, "exportToSvg")
+      .spyOn(sceneExport, "exportScene")
       .mockImplementationOnce(async (...args) => {
         await gate;
         return original(...args);
@@ -381,9 +381,9 @@ describe("presentation PNG", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const original = sceneExport.exportToSvg;
+    const original = sceneExport.exportScene;
     const exportSvg = vi
-      .spyOn(sceneExport, "exportToSvg")
+      .spyOn(sceneExport, "exportScene")
       .mockImplementationOnce(async (...args) => {
         await gate;
         return original(...args);

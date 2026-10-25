@@ -18,6 +18,7 @@ import {
 } from "./richText";
 
 import type { RichTextDocument, RichTextRun } from "./richText";
+import type { RenderEnvironment } from "./renderEnvironment";
 import type {
   ExcalidrawElement,
   ExcalidrawTextElement,
@@ -231,6 +232,7 @@ const tableChildren = (
   root: TableRoot,
   data: TableData,
   previous: readonly ExcalidrawElement[] = [],
+  renderEnvironment?: RenderEnvironment,
 ): NonDeletedExcalidrawElement[] => {
   const groupIds = root.groupIds;
   const center = pointFrom(root.x + root.width / 2, root.y + root.height / 2);
@@ -297,9 +299,15 @@ const tableChildren = (
       opacity: root.opacity,
       customData: member("text"),
       autoResize: false,
+      renderEnvironment,
     });
     const labelWidth = Math.max(1, width - 16);
-    const wrapped = wrapText(cell.text, getFontString(text), labelWidth);
+    const wrapped = wrapText(
+      cell.text,
+      getFontString(text),
+      labelWidth,
+      renderEnvironment,
+    );
     const richLayout = cell.richText
       ? layoutRichText(
           {
@@ -308,6 +316,7 @@ const tableChildren = (
             paragraphSpacing: cell.paragraphSpacing,
           },
           labelWidth,
+          renderEnvironment,
         )
       : null;
     const labelHeight =
@@ -341,7 +350,10 @@ const tableChildren = (
   });
 };
 
-const fitTableData = (data: TableData): TableData => {
+const fitTableData = (
+  data: TableData,
+  renderEnvironment?: RenderEnvironment,
+): TableData => {
   const rows = [...data.rows];
   for (const cell of data.cells) {
     const width = Math.max(
@@ -361,6 +373,7 @@ const fitTableData = (data: TableData): TableData => {
             paragraphSpacing: cell.paragraphSpacing,
           },
           width,
+          renderEnvironment,
         ).height
       : wrapText(
           cell.text,
@@ -369,6 +382,7 @@ const fitTableData = (data: TableData): TableData => {
             fontFamily: cell.fontFamily,
           }),
           width,
+          renderEnvironment,
         ).split("\n").length *
         cell.fontSize *
         lineHeight;
@@ -386,8 +400,9 @@ export const createTableElements = (
   x: number,
   y: number,
   options: Pick<Partial<ExcalidrawElement>, "roughness" | "opacity"> = {},
+  renderEnvironment?: RenderEnvironment,
 ): { root: TableRoot; elements: NonDeletedExcalidrawElement[] } => {
-  data = fitTableData(data);
+  data = fitTableData(data, renderEnvironment);
   const root = newElement({
     type: "rectangle",
     x,
@@ -401,15 +416,22 @@ export const createTableElements = (
     groupIds: [randomId()],
     customData: { table: data },
   }) as TableRoot;
-  return { root, elements: [root, ...tableChildren(root, data)] };
+  return {
+    root,
+    elements: [root, ...tableChildren(root, data, [], renderEnvironment)],
+  };
 };
 
 export const updateTableElements = (
   elements: readonly ExcalidrawElement[],
   root: TableRoot,
   transform: (data: TableData) => TableData,
+  renderEnvironment?: RenderEnvironment,
 ): ExcalidrawElement[] => {
-  const data = fitTableData(transform(readTableData(root, elements)));
+  const data = fitTableData(
+    transform(readTableData(root, elements)),
+    renderEnvironment,
+  );
   const nextRoot = newElementWith(root, {
     width: sum(data.columns),
     height: sum(data.rows),
@@ -419,7 +441,7 @@ export const updateTableElements = (
     (element) =>
       getTableMember(element) && element.groupIds[0] === root.groupIds[0],
   );
-  const generated = tableChildren(nextRoot, data, children);
+  const generated = tableChildren(nextRoot, data, children, renderEnvironment);
   const byId = new Map(generated.map((element) => [element.id, element]));
   const result = elements.map((element) => {
     if (element.id === root.id) {

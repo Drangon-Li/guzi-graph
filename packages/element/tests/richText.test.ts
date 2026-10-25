@@ -53,6 +53,7 @@ describe("rich text layout", () => {
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d")!;
     const config: StaticCanvasRenderConfig = {
+      scale: 1,
       imageCache: new Map(),
       renderGrid: false,
       isExporting: false,
@@ -400,11 +401,8 @@ describe("rich text layout", () => {
   ])(
     "exports matching Canvas and SVG colors and underlines with highlights, wrapping and justified spaces at $fontSize px (dark=$dark)",
     async ({ fontSize, dark }) => {
-      const { exportToCanvas, exportToSvg } = await import(
+      const { exportScene } = await import(
         "@excalidraw/excalidraw/scene/export"
-      );
-      const { getDefaultAppState } = await import(
-        "@excalidraw/excalidraw/appState"
       );
       const text = element("a b c d", {
         fontSize,
@@ -460,25 +458,19 @@ describe("rich text layout", () => {
         textColors.push(context.fillStyle);
       });
       try {
-        await exportToCanvas(
-          [renderedText],
-          {
-            ...getDefaultAppState(),
-            width: 800,
-            height: 600,
-            offsetTop: 0,
-            offsetLeft: 0,
-            exportWithDarkMode: dark,
+        await exportScene({
+          type: "canvas",
+          data: { elements: [renderedText] },
+          config: {
+            canvasBackgroundColor: false,
+            theme: dark ? THEME.DARK : THEME.LIGHT,
+            scale: 2,
+            environment: {
+              createCanvas: () => canvas,
+              loadFonts: async () => {},
+            },
           },
-          {},
-          { exportBackground: false, viewBackgroundColor: "#fff" },
-          (width, height) => {
-            canvas.width = width * 2;
-            canvas.height = height * 2;
-            return { canvas, scale: 2 };
-          },
-          async () => {},
-        );
+        });
         expect(
           spy.mock.calls
             .filter(([, , , height]) => height === Math.max(1, fontSize * 0.05))
@@ -507,16 +499,15 @@ describe("rich text layout", () => {
         spy.mockRestore();
         textSpy.mockRestore();
       }
-      const svg = await exportToSvg(
-        [renderedText],
-        {
-          exportBackground: false,
-          viewBackgroundColor: "#fff",
-          exportWithDarkMode: dark,
+      const svg = await exportScene({
+        type: "svg",
+        data: { elements: [renderedText] },
+        config: {
+          canvasBackgroundColor: false,
+          theme: dark ? THEME.DARK : THEME.LIGHT,
+          skipInliningFonts: true,
         },
-        {},
-        { skipInliningFonts: true },
-      );
+      });
       expect(
         Array.from(
           svg.querySelectorAll(

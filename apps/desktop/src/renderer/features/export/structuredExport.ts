@@ -1,5 +1,7 @@
 import { registerCustomFontRegistry } from "@excalidraw/common";
 import { getElementAbsoluteCoords } from "@excalidraw/element/bounds";
+import { restoreAppState } from "@excalidraw/excalidraw/data/restore";
+import { getExportConfigFromAppState } from "@excalidraw/excalidraw/scene/export";
 
 import type {
   ExcalidrawElement,
@@ -1111,19 +1113,22 @@ export const exportCanvasPdf = async (
     throw new Error("The canvas is empty.");
   }
   const appState = {
-    ...(options.snapshot?.appState ?? api.getAppState()),
+    ...restoreAppState(options.snapshot?.appState ?? api.getAppState(), null),
     exportScale: 1,
     exportEmbedScene: false,
   };
   const files = { ...(options.snapshot?.files ?? api.getFiles()) };
-  const { exportToSvg } = await import("@excalidraw/utils/export");
+  const { exportScene } = await import("@excalidraw/utils");
   registerCustomFontRegistry(appState.fontRegistry ?? {});
-  const svg = await exportToSvg({
-    elements,
-    appState,
-    files,
-    exportPadding: 24,
-    reuseImages: true,
+  const svg = await exportScene({
+    type: "svg",
+    data: { elements, appState, files },
+    config: {
+      ...getExportConfigFromAppState(appState),
+      padding: 24,
+      embedScene: false,
+      reuseImages: true,
+    },
   });
   const width = Number(svg.getAttribute("width"));
   const height = Number(svg.getAttribute("height"));
@@ -1143,17 +1148,19 @@ export const exportCanvasPdf = async (
         continue;
       }
       registerCustomFontRegistry(scene.appState.fontRegistry ?? {});
-      const child = await exportToSvg({
-        elements: live,
-        appState: {
-          ...appState,
-          ...scene.appState,
-          exportScale: 1,
-          exportEmbedScene: false,
+      const childAppState = restoreAppState(
+        { ...appState, ...scene.appState, exportScale: 1 },
+        null,
+      );
+      const child = await exportScene({
+        type: "svg",
+        data: { elements: live, appState: childAppState, files },
+        config: {
+          ...getExportConfigFromAppState(childAppState),
+          padding: 24,
+          embedScene: false,
+          reuseImages: true,
         },
-        files,
-        exportPadding: 24,
-        reuseImages: true,
       });
       const pageWidth = Number(child.getAttribute("width"));
       const pageHeight = Number(child.getAttribute("height"));

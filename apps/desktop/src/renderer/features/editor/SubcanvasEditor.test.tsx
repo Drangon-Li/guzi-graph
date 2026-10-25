@@ -1,4 +1,8 @@
-import { CaptureUpdateAction, isNonDeletedElement } from "@excalidraw/element";
+import {
+  CaptureUpdateAction,
+  getRenderEnvironment,
+  isNonDeletedElement,
+} from "@excalidraw/element";
 import { FONT_FAMILY, KEYS } from "@excalidraw/common";
 
 import { API } from "@excalidraw/excalidraw/tests/helpers/api";
@@ -177,10 +181,12 @@ describe("desktop nested canvas lifecycle", () => {
     const converted = convertStickyNoteToSubcanvas([note], note.id, {})!;
     const document = { title: "Parent" } as CanvasDocument;
     const save = vi.fn().mockResolvedValue(true);
+    const renderEnvironment = { ...getRenderEnvironment() };
     let parent!: ExcalidrawImperativeAPI;
     const view = await render(
       <SubcanvasEditor
         document={document}
+        renderEnvironment={renderEnvironment}
         initialData={{
           elements: converted.elements,
           appState: { subscenes: converted.scenes },
@@ -205,6 +211,8 @@ describe("desktop nested canvas lifecycle", () => {
       expect(document.activeEditor?.()?.getAppState().isLoading).toBe(false),
     );
     const firstChild = document.activeEditor!()!;
+    expect(window.h.app.api).toBe(firstChild);
+    expect(window.h.app.renderEnvironment).toBe(renderEnvironment);
     const shape = API.createElement({ type: "rectangle", id: "child-shape" });
     act(() =>
       firstChild.updateScene({
@@ -238,6 +246,8 @@ describe("desktop nested canvas lifecycle", () => {
       expect(document.activeEditor?.()?.getAppState().isLoading).toBe(false),
     );
     const reopened = document.activeEditor!()!;
+    expect(window.h.app.api).toBe(reopened);
+    expect(window.h.app.renderEnvironment).toBe(renderEnvironment);
     expect(reopened).not.toBe(parent);
     expect(reopened.getSceneElements()[0].id).toBe(shape.id);
     expect(reopened.getAppState()).toMatchObject({

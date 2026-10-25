@@ -3,7 +3,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import { FONT_FAMILY } from "@excalidraw/common";
 import { loadFromBlob } from "@excalidraw/excalidraw";
 import { Fonts } from "@excalidraw/excalidraw/fonts";
-import { exportToCanvas } from "@excalidraw/excalidraw/scene/export";
+import { exportScene } from "@excalidraw/excalidraw/scene/export";
 
 import { FilePreview } from "./FilePreview";
 
@@ -18,7 +18,7 @@ vi.mock("@excalidraw/excalidraw", () => ({
 }));
 
 vi.mock("@excalidraw/excalidraw/scene/export", () => ({
-  exportToCanvas: vi.fn(),
+  exportScene: vi.fn(),
 }));
 
 describe("desktop canvas thumbnails", () => {
@@ -95,28 +95,24 @@ describe("desktop canvas thumbnails", () => {
       .mockResolvedValue([]);
     rendered = vi.fn();
     canvasSize = [2400, 600];
-    vi.mocked(exportToCanvas).mockImplementation(
-      async (
-        _elements,
-        _appState,
-        _files,
-        _options,
-        createCanvas,
-        prepareFonts,
-      ) => {
-        await prepareFonts!();
-        const { canvas, scale } = createCanvas!(...canvasSize);
-        rendered(canvas, scale, [canvas.width, canvas.height]);
-        return canvas;
-      },
-    );
+    vi.mocked(exportScene).mockImplementation(async ({ config }) => {
+      await config!.environment!.loadFonts!();
+      const canvas = config!.environment!.createCanvas!();
+      const scale = (
+        config!.scale as (width: number, height: number) => number
+      )(...canvasSize);
+      canvas.width = Math.max(1, Math.round(canvasSize[0] * scale));
+      canvas.height = Math.max(1, Math.round(canvasSize[1] * scale));
+      rendered(canvas, scale, [canvas.width, canvas.height]);
+      return canvas;
+    });
   });
 
   afterEach(() => {
     root.remove();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
-    vi.mocked(exportToCanvas).mockClear();
+    vi.mocked(exportScene).mockClear();
     vi.mocked(loadFromBlob).mockClear();
   });
 
@@ -171,15 +167,15 @@ describe("desktop canvas thumbnails", () => {
       expect(view.container.querySelector("img")!.src).toMatch(
         /^data:image\/png/,
       );
-      const [elements, appState, imageFiles, options] =
-        vi.mocked(exportToCanvas).mock.calls[0];
-      expect(elements).toHaveLength(2);
-      expect(appState.exportWithDarkMode).toBe(true);
-      expect(imageFiles).toBe(files);
-      expect(options).toEqual({
-        exportBackground: true,
-        viewBackgroundColor: "#fffce8",
-        exportPadding: 24,
+      const [{ type, data, config }] = vi.mocked(exportScene).mock.calls[0];
+      expect(type).toBe("canvas");
+      expect(data.elements).toHaveLength(2);
+      expect(data.files).toBe(files);
+      expect(config).toMatchObject({
+        theme: "dark",
+        canvasBackgroundColor: "#fffce8",
+        padding: 24,
+        environment: { document: root.ownerDocument },
       });
     },
   );
@@ -188,15 +184,11 @@ describe("desktop canvas thumbnails", () => {
     const view = render(<FilePreview file={file} root={root} theme="light" />);
     show();
     await waitFor(() => expect(rendered).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(exportToCanvas).mock.calls[0][1].exportWithDarkMode).toBe(
-      false,
-    );
+    expect(vi.mocked(exportScene).mock.calls[0][0].config?.theme).toBe("light");
     view.rerender(<FilePreview file={file} root={root} theme="dark" />);
     show();
     await waitFor(() => expect(rendered).toHaveBeenCalledTimes(2));
-    expect(vi.mocked(exportToCanvas).mock.calls[1][1].exportWithDarkMode).toBe(
-      true,
-    );
+    expect(vi.mocked(exportScene).mock.calls[1][0].config?.theme).toBe("dark");
     view.rerender(<FilePreview file={file} root={root} theme="light" />);
     show();
     await waitFor(() =>
@@ -255,7 +247,7 @@ describe("desktop canvas thumbnails", () => {
     );
     const preview = view.container.querySelector("img")!.src;
     await act(async () => finish({ content: "old scene" }));
-    expect(exportToCanvas).toHaveBeenCalledTimes(1);
+    expect(exportScene).toHaveBeenCalledTimes(1);
     expect(loadFromBlob).toHaveBeenCalledTimes(1);
     expect(view.container.querySelector("img")!.src).toBe(preview);
     expect(view.queryByText("预览不可用")).toBeNull();

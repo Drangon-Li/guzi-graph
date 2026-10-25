@@ -14,7 +14,7 @@ import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
 import { restoreElements } from "@excalidraw/excalidraw/data/restore";
 import { Fonts } from "@excalidraw/excalidraw/fonts";
 import * as textMeasurements from "@excalidraw/element/textMeasurements";
-import { exportToSvg } from "@excalidraw/excalidraw/scene/export";
+import { exportScene } from "@excalidraw/excalidraw/scene/export";
 import { API } from "@excalidraw/excalidraw/tests/helpers/api";
 import { syncInvalidIndices } from "@excalidraw/element";
 import { getTableMember, isTableRoot } from "@excalidraw/element/table";
@@ -1300,12 +1300,21 @@ describe("controlled canvas operations", () => {
 
   it("exports SVG nodes into the provided owner document", async () => {
     const ownerDocument = document.implementation.createHTMLDocument("export");
-    const svg = await exportToSvg(
-      diagram().elements.filter((element) => !element.isDeleted) as any,
-      { ...state(), exportEmbedScene: true },
-      {},
-      { ownerDocument, skipInliningFonts: true },
-    );
+    const svg = await exportScene({
+      type: "svg",
+      data: {
+        elements: diagram().elements.filter(
+          (element) => !element.isDeleted,
+        ) as any,
+        appState: state(),
+        files: {},
+      },
+      config: {
+        embedScene: true,
+        environment: { document: ownerDocument },
+        skipInliningFonts: true,
+      },
+    });
     expect(svg.ownerDocument).toBe(ownerDocument);
     expect(svg.outerHTML).toContain("svg-source:excalidraw");
     expect(svg.outerHTML).toContain("payload-start");

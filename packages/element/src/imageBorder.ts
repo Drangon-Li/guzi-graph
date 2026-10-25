@@ -83,31 +83,33 @@ export const drawImageBorder = (
   }
   const style = getImageBorderStyle(element);
   context.save();
-  context.filter = "none";
-  const drawable = getImageBorderDrawable(element, theme);
-  if (drawable) {
-    (rc ?? rough.canvas(context.canvas)).draw(drawable);
-    context.restore();
-    return;
-  }
-  context.strokeStyle = applyDarkModeFilter(
-    element.strokeColor,
-    theme === THEME.DARK,
-  );
-  context.lineWidth = style.strokeWidth;
-  context.setLineDash(style.dash);
-  context.beginPath();
-  if (style.radius && context.roundRect) {
-    context.roundRect(
-      style.inset,
-      style.inset,
-      style.width,
-      style.height,
-      style.radius,
+  try {
+    context.filter = "none";
+    const drawable = getImageBorderDrawable(element, theme);
+    if (drawable) {
+      (rc ?? rough.canvas(context.canvas)).draw(drawable);
+      return;
+    }
+    context.strokeStyle = applyDarkModeFilter(
+      element.strokeColor,
+      theme === THEME.DARK,
     );
-  } else {
-    context.rect(style.inset, style.inset, style.width, style.height);
+    context.lineWidth = style.strokeWidth;
+    context.setLineDash(style.dash);
+    context.beginPath();
+    if (style.radius && context.roundRect) {
+      context.roundRect(
+        style.inset,
+        style.inset,
+        style.width,
+        style.height,
+        style.radius,
+      );
+    } else {
+      context.rect(style.inset, style.inset, style.width, style.height);
+    }
+    context.stroke();
+  } finally {
+    context.restore();
   }
-  context.stroke();
-  context.restore();
 };
