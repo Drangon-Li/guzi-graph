@@ -1,7 +1,11 @@
 import React from "react";
 import { vi } from "vitest";
 
-import { CaptureUpdateAction, getLineHeightInPx } from "@excalidraw/element";
+import {
+  CaptureUpdateAction,
+  getCommonBounds,
+  getLineHeightInPx,
+} from "@excalidraw/element";
 
 import {
   KEYS,
@@ -15,6 +19,7 @@ import {
 } from "@excalidraw/common";
 
 import { getElementBounds } from "@excalidraw/element";
+import { pointFrom, type LocalPoint } from "@excalidraw/math";
 
 import type { ExcalidrawTextElement, FileId } from "@excalidraw/element/types";
 
@@ -91,6 +96,14 @@ const sleep = (ms: number) => {
 
 beforeEach(async () => {
   unmountComponent();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
 
   localStorage.clear();
 
@@ -107,6 +120,8 @@ beforeEach(async () => {
     elementFromPoint: () => GlobalTestState.canvas,
   });
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("general paste behavior", () => {
   it("pastes editable elements when the clipboard also contains their PNG preview", async () => {
@@ -238,7 +253,10 @@ describe("original element paste position", () => {
     expect(h.elements[0].id).not.toBe(rectangle.id);
     pasteWithCtrlCmdV(clipboardJSON);
     await waitFor(() => expect(h.elements).toHaveLength(2));
-    expect(h.elements[1]).toMatchObject({ x: rectangle.x, y: rectangle.y });
+    expect(h.elements[1]).toMatchObject({
+      x: rectangle.x + rectangle.width + 24 / viewport.zoom,
+      y: rectangle.y,
+    });
     expect(h.elements[1].id).not.toBe(h.elements[0].id);
   });
 
@@ -256,12 +274,365 @@ describe("original element paste position", () => {
       act(() => h.app.actionManager.executeAction(actionPaste, "contextMenu"));
       await waitFor(() => expect(h.elements).toHaveLength(1));
       expect(h.elements[0]).toMatchObject({ x: rectangle.x, y: rectangle.y });
+      act(() => h.app.actionManager.executeAction(actionPaste, "contextMenu"));
+      await waitFor(() => expect(h.elements).toHaveLength(2));
+      expect(h.elements[1].x).toBe(rectangle.x + rectangle.width + 24);
     } finally {
       read.mockRestore();
     }
   });
 
-  it("only bypasses canvas targeting for host-forwarded clipboard data", async () => {
+  it.each(["rectangle", "text"] as const)(
+    "places three same-page %s copies beside each other and selects each new copy",
+    async (type) => {
+      await enableOriginalPosition();
+      const element = API.createElement({
+        type,
+        x: 113,
+        y: 79,
+        width: 91,
+        height: 63,
+      });
+      API.setElements([element]);
+      API.setSelectedElements([element]);
+      const json = serializeAsClipboardJSON({
+        elements: [element],
+        files: null,
+      });
+      for (let index = 1; index <= 3; index++) {
+        pasteWithCtrlCmdV(json);
+        await waitFor(() => expect(h.elements).toHaveLength(index + 1));
+        expect(h.elements[index].x).toBe(
+          element.x + index * (element.width + 24),
+        );
+        expect(h.elements[index].y).toBe(element.y);
+        await waitFor(() =>
+          expect(h.state.selectedElementIds).toEqual({
+            [h.elements[index].id]: true,
+          }),
+        );
+      }
+    },
+  );
+
+  it("ignores a large background surrounding the copied text", async () => {
+    await enableOriginalPosition();
+    const background = API.createElement({
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 2000,
+      height: 1000,
+    });
+    const text = API.createElement({ type: "text", x: 113, y: 79 });
+    API.setElements([background, text]);
+    pasteWithCtrlCmdV(
+      serializeAsClipboardJSON({ elements: [text], files: null }),
+    );
+    await waitFor(() => expect(h.elements).toHaveLength(3));
+    expect(h.elements[2].x).toBe(text.x + text.width + 24);
+    expect(h.elements[2].y).toBe(text.y);
+  });
+
+  it("uses current nondeleted elements after cutting or deleting the source", async () => {
+    await enableOriginalPosition();
+    const rectangle = source();
+    API.setElements([rectangle]);
+    API.setSelectedElements([rectangle]);
+    const json = serializeAsClipboardJSON({
+      elements: [rectangle],
+      files: null,
+    });
+    document.dispatchEvent(
+      Object.assign(new Event("cut", { bubbles: true, cancelable: true }), {
+        clipboardData: new DataTransfer(),
+      }),
+    );
+    await waitFor(() => expect(h.elements[0].isDeleted).toBe(true));
+    pasteWithCtrlCmdV(json);
+    await waitFor(() =>
+      expect(h.app.scene.getNonDeletedElements()).toHaveLength(1),
+    );
+    expect(h.app.scene.getNonDeletedElements()[0]).toMatchObject({
+      x: rectangle.x,
+      y: rectangle.y,
+    });
+    API.setElements([]);
+    pasteWithCtrlCmdV(json);
+    await waitFor(() => expect(h.elements).toHaveLength(1));
+    expect(h.elements[0]).toMatchObject({ x: rectangle.x, y: rectangle.y });
+  });
+
+  it.each([0.5, 2])(
+    "separates same-page copies by 24 screen pixels at zoom %s with grid and scroll",
+    async (zoom) => {
+      await enableOriginalPosition();
+      const rectangle = source();
+      API.setElements([rectangle]);
+      API.setAppState({
+        zoom: { value: zoom as NormalizedZoomValue },
+        gridModeEnabled: true,
+        gridSize: 20,
+        scrollX: -400,
+        scrollY: 200,
+        width: 1200,
+        height: 800,
+      });
+      const offsets = vi.spyOn(h.app.viewport, "getOffsets").mockReturnValue({
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: 24,
+      });
+      pasteWithCtrlCmdV(
+        serializeAsClipboardJSON({ elements: [rectangle], files: null }),
+      );
+      await waitFor(() => expect(h.elements).toHaveLength(2));
+      expect(h.elements[1].x).toBe(rectangle.x + rectangle.width + 24 / zoom);
+      expect(h.elements[1].y).toBe(rectangle.y);
+      await waitFor(() => {
+        const [left, top, right, bottom] = getElementBounds(
+          h.elements[1],
+          arrayToMap(h.elements),
+        );
+        expect((left + h.state.scrollX) * zoom).toBeGreaterThanOrEqual(0);
+        expect((top + h.state.scrollY) * zoom).toBeGreaterThanOrEqual(0);
+        expect((right + h.state.scrollX) * zoom).toBeLessThanOrEqual(
+          h.state.width,
+        );
+        expect((bottom + h.state.scrollY) * zoom).toBeLessThanOrEqual(
+          h.state.height,
+        );
+      });
+      offsets.mockRestore();
+    },
+  );
+
+  it("includes a short arrow's long bound label when avoiding existing copies", async () => {
+    await enableOriginalPosition();
+    const arrow = API.createElement({
+      type: "arrow",
+      x: 100,
+      y: 100,
+      width: 20,
+      height: 0,
+      points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(20, 0)],
+      boundElements: [{ id: "long-label", type: "text" }],
+    });
+    const label = API.createElement({
+      type: "text",
+      id: "long-label",
+      x: -40,
+      y: 90,
+      text: "a long label on a short arrow",
+      width: 300,
+      height: 20,
+      containerId: arrow.id,
+    });
+    const json = serializeAsClipboardJSON({
+      elements: [arrow, label],
+      files: null,
+    });
+    API.setElements([arrow, label]);
+    for (let index = 1; index <= 3; index++) {
+      const previousBounds = getCommonBounds(h.elements.slice(-2));
+      pasteWithCtrlCmdV(json);
+      await waitFor(() => expect(h.elements).toHaveLength((index + 1) * 2));
+      const currentBounds = getCommonBounds(h.elements.slice(-2));
+      expect(currentBounds[0] - previousBounds[2]).toBeGreaterThanOrEqual(24);
+    }
+  });
+
+  it("honors a locked viewport when adjacent pasted content falls outside its bounds", async () => {
+    await enableOriginalPosition();
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 700,
+      y: 100,
+      width: 80,
+      height: 80,
+    });
+    API.setElements([rectangle]);
+    API.setAppState({
+      width: 800,
+      height: 600,
+      scrollX: 0,
+      scrollY: 0,
+      scrollConstraints: {
+        x: 0,
+        y: 0,
+        width: 800,
+        height: 600,
+        zoom: 1,
+        lockScroll: true,
+        lockZoom: true,
+        overscroll: 0,
+      },
+    });
+    const offsets = vi.spyOn(h.app.viewport, "getOffsets").mockReturnValue({
+      left: 24,
+      right: 24,
+      top: 24,
+      bottom: 24,
+    });
+    try {
+      pasteWithCtrlCmdV(
+        serializeAsClipboardJSON({ elements: [rectangle], files: null }),
+      );
+      await waitFor(() => expect(h.elements).toHaveLength(2));
+      await waitFor(() =>
+        expect(h.state.selectedElementIds).toEqual({
+          [h.elements[1].id]: true,
+        }),
+      );
+      expect(h.elements[1].x).toBe(rectangle.x + rectangle.width + 24);
+      expect(h.state.scrollX).toBe(0);
+      expect(h.state.scrollY).toBe(0);
+    } finally {
+      offsets.mockRestore();
+    }
+  });
+
+  it("reuses the free adjacent position after undoing a paste", async () => {
+    await enableOriginalPosition();
+    const rectangle = source();
+    const json = serializeAsClipboardJSON({
+      elements: [rectangle],
+      files: null,
+    });
+    pasteWithCtrlCmdV(json);
+    await waitFor(() =>
+      expect(h.app.scene.getNonDeletedElements()).toHaveLength(1),
+    );
+    pasteWithCtrlCmdV(json);
+    await waitFor(() =>
+      expect(h.app.scene.getNonDeletedElements()).toHaveLength(2),
+    );
+    const copyPosition = h.app.scene.getNonDeletedElements()[1].x;
+    Keyboard.undo();
+    await waitFor(() =>
+      expect(h.app.scene.getNonDeletedElements()).toHaveLength(1),
+    );
+    pasteWithCtrlCmdV(json);
+    await waitFor(() =>
+      expect(h.app.scene.getNonDeletedElements()).toHaveLength(2),
+    );
+    expect(h.app.scene.getNonDeletedElements()[1].x).toBe(copyPosition);
+  });
+
+  it("avoids cursor overlap in an ordinary whiteboard and leaves a distant cursor target intact", async () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 100,
+      y: 100,
+      width: 100,
+      height: 80,
+    });
+    API.setElements([rectangle]);
+    const json = serializeAsClipboardJSON({
+      elements: [rectangle],
+      files: null,
+    });
+    mouse.moveTo(150, 140);
+    for (let index = 1; index <= 3; index++) {
+      pasteWithCtrlCmdV(json);
+      await waitFor(() => expect(h.elements).toHaveLength(index + 1));
+      expect(h.elements[index].x).toBe(rectangle.x + index * 124);
+      expect(h.elements[index].y).toBe(rectangle.y);
+    }
+    mouse.moveTo(500, 500);
+    const position = viewportCoordsToSceneCoords(
+      { clientX: 500, clientY: 500 },
+      h.state,
+    );
+    pasteWithCtrlCmdV(json);
+    await waitFor(() => expect(h.elements).toHaveLength(5));
+    expect(h.elements[4].x).toBe(position.x - rectangle.width / 2);
+    expect(h.elements[4].y).toBe(position.y - rectangle.height / 2);
+  });
+
+  it("translates a bound, grouped selection as a whole and keeps its bindings", async () => {
+    await enableOriginalPosition();
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 100,
+      y: 100,
+      width: 100,
+      height: 80,
+      groupIds: ["source-group"],
+      boundElements: [
+        { id: "bound-label", type: "text" },
+        { id: "bound-arrow", type: "arrow" },
+      ],
+    });
+    const label = API.createElement({
+      type: "text",
+      id: "bound-label",
+      x: 110,
+      y: 120,
+      text: "label",
+      containerId: rectangle.id,
+      groupIds: ["source-group"],
+    });
+    const sibling = API.createElement({
+      type: "ellipse",
+      x: 220,
+      y: 130,
+      width: 90,
+      height: 50,
+      groupIds: ["source-group"],
+      boundElements: [{ id: "bound-arrow", type: "arrow" }],
+    });
+    const arrow = API.createElement({
+      type: "arrow",
+      id: "bound-arrow",
+      x: 200,
+      y: 140,
+      width: 20,
+      height: 15,
+      points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(20, 15)],
+      groupIds: ["source-group"],
+      startBinding: {
+        elementId: rectangle.id,
+        fixedPoint: [1, 0.5],
+        mode: "orbit",
+      },
+      endBinding: {
+        elementId: sibling.id,
+        fixedPoint: [0, 0.5],
+        mode: "orbit",
+      },
+    });
+    API.setElements([rectangle, label, sibling, arrow]);
+    const json = serializeAsClipboardJSON({
+      elements: [rectangle, label, sibling, arrow],
+      files: null,
+    });
+    for (let index = 1; index <= 3; index++) {
+      pasteWithCtrlCmdV(json);
+      await waitFor(() => expect(h.elements).toHaveLength((index + 1) * 4));
+      const [box, text, ellipse, connector] = h.elements.slice(index * 4);
+      expect(box.x).toBe(rectangle.x + index * (210 + 24));
+      expect(ellipse.x - box.x).toBe(sibling.x - rectangle.x);
+      expect(ellipse.y - box.y).toBe(sibling.y - rectangle.y);
+      expect(box.groupIds).toEqual(ellipse.groupIds);
+      expect(box.groupIds).not.toEqual(rectangle.groupIds);
+      expect(box.boundElements).toEqual([
+        { id: text.id, type: "text" },
+        { id: connector.id, type: "arrow" },
+      ]);
+      expect((text as ExcalidrawTextElement).containerId).toBe(box.id);
+      expect(connector).toMatchObject({
+        x: box.x + arrow.x - rectangle.x,
+        y: arrow.y,
+        points: arrow.points,
+        startBinding: { elementId: box.id },
+        endBinding: { elementId: ellipse.id },
+      });
+    }
+  });
+
+  it("requires focus in the canvas unless clipboard data is forwarded by the host", async () => {
     await enableOriginalPosition();
     const rectangle = source();
     const button = h.app.ownerDocument.createElement("button");
@@ -291,6 +662,73 @@ describe("original element paste position", () => {
     } finally {
       button.remove();
       h.app.ownerDocument.elementFromPoint = elementFromPoint;
+    }
+  });
+
+  it.each([true, false])(
+    "accepts focused native paste outside the canvas only for original page positioning: %s",
+    async (originalPosition) => {
+      if (originalPosition) {
+        await enableOriginalPosition();
+      }
+      const rectangle = source();
+      const button = h.app.ownerDocument.createElement("button");
+      h.app.ownerDocument.body.append(button);
+      const elementFromPoint = h.app.ownerDocument.elementFromPoint;
+      h.app.ownerDocument.elementFromPoint = () => button;
+      const json = serializeAsClipboardJSON({
+        elements: [rectangle],
+        files: null,
+      });
+      try {
+        h.app.focusContainer();
+        for (let index = 1; index <= 2; index++) {
+          await act(async () => {
+            await h.app.clipboard.pasteFromClipboard(
+              createPasteEvent({
+                types: { [MIME_TYPES.excalidrawClipboard]: json },
+              }),
+            );
+          });
+          expect(h.elements).toHaveLength(originalPosition ? index : 0);
+        }
+        if (originalPosition) {
+          expect(h.elements[0]).toMatchObject({
+            x: rectangle.x,
+            y: rectangle.y,
+          });
+          expect(h.elements[1].x).toBe(rectangle.x + rectangle.width + 24);
+        }
+      } finally {
+        button.remove();
+        h.app.ownerDocument.elementFromPoint = elementFromPoint;
+      }
+    },
+  );
+
+  it("keeps original-position paste in a focused input instead of the page", async () => {
+    await enableOriginalPosition();
+    h.app.focusContainer();
+    const input = h.app.ownerDocument.createElement("input");
+    h.app.ownerDocument.activeElement!.append(input);
+    try {
+      input.focus();
+      await act(async () => {
+        await h.app.clipboard.pasteFromClipboard(
+          createPasteEvent({
+            types: {
+              [MIME_TYPES.excalidrawClipboard]: serializeAsClipboardJSON({
+                elements: [source()],
+                files: null,
+              }),
+            },
+          }),
+        );
+      });
+      expect(h.elements).toHaveLength(0);
+      expect(input).toHaveFocus();
+    } finally {
+      input.remove();
     }
   });
 

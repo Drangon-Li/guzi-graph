@@ -52,6 +52,30 @@
     }
   }
 
+  .color-picker__compact-top-picks {
+    padding: 0.5rem;
+    border-bottom: 1px solid var(--default-border-color);
+    margin-bottom: 0.5rem;
+  }
+
+  .color-picker__expand-indicator {
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    color: var(--text-primary-color);
+    background: var(--island-bg-color);
+    font-size: 12px;
+    line-height: 1;
+    pointer-events: none;
+  }
+
   .color-picker__top-picks {
     display: flex;
     justify-content: space-between;

@@ -243,6 +243,9 @@ it("changes canvas defaults separately from background shortcuts", async () => {
       onChange={onChange}
     />,
   );
+  fireEvent.click(
+    screen.getByRole("button", { name: "默认画布背景 — 常用颜色" }),
+  );
   fireEvent.change(screen.getByLabelText("默认画布背景"), {
     target: { value: "#ddeeff" },
   });
@@ -270,6 +273,9 @@ it.each(["elementStroke", "elementBackground"] as const)(
       />,
     );
     const colorLabel = section === "elementStroke" ? "描边" : "填充";
+    fireEvent.click(
+      screen.getByRole("button", { name: `默认${colorLabel}颜色 — 常用颜色` }),
+    );
     fireEvent.change(screen.getByLabelText(`默认${colorLabel}颜色`), {
       target: { value: "#123456" },
     });
@@ -282,6 +288,7 @@ it.each(["elementStroke", "elementBackground"] as const)(
         }),
       ),
     );
+    fireEvent.click(screen.getByRole("button", { name: "关闭色板" }));
     fireEvent.click(screen.getByLabelText("默认使用透明色"));
     await waitFor(() =>
       expect(onChange).toHaveBeenLastCalledWith(
@@ -291,6 +298,9 @@ it.each(["elementStroke", "elementBackground"] as const)(
             : "defaultElementBackground"]: "transparent",
         }),
       ),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: `${colorLabel}快捷项 1 — 常用颜色` }),
     );
     fireEvent.change(screen.getByLabelText(`${colorLabel}快捷项 1`), {
       target: { value: "#abcdef" },
@@ -349,6 +359,121 @@ it("validates four increasing font sizes and persists them together", async () =
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         fontSizePresets: { sm: 12, md: 18, lg: 24, xl: 40 },
+      }),
+    ),
+  );
+});
+
+it("offers common colors and shades for defaults and new shortcuts without transparent canvas backgrounds", async () => {
+  const onChange = vi.fn();
+  render(
+    <PreferencePanel
+      root={document.body}
+      section="background"
+      language="zh-CN"
+      onChange={onChange}
+    />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "默认画布背景 — 常用颜色" }),
+  );
+  expect(screen.queryByRole("button", { name: "透明 transparent" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "蓝色 #a5d8ff" }));
+  await waitFor(() =>
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ defaultBackground: "#a5d8ff" }),
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "蓝色 深浅 4 #228be6" }));
+  await waitFor(() =>
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ defaultBackground: "#228be6" }),
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "关闭色板" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "新颜色快捷项 — 常用颜色" }),
+  );
+  expect(screen.queryByRole("button", { name: "透明 transparent" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "红色 #ffc9c9" }));
+  fireEvent.click(screen.getByRole("button", { name: "关闭色板" }));
+  expect(screen.getByRole("button", { name: "添加快捷项" })).toBeDisabled();
+});
+
+it("saves a chosen common color as a new shortcut and keeps the existing picks", async () => {
+  const onChange = vi.fn();
+  render(
+    <PreferencePanel
+      root={document.body}
+      section="elementBackground"
+      language="en"
+      preferences={{
+        ...DEFAULT_EDITOR_PREFERENCES,
+        elementBackgroundTopPicks: ["transparent"],
+      }}
+      onChange={onChange}
+    />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "New color shortcut — Common colors" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Green #b2f2bb" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close color palette" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add shortcut" }));
+  await waitFor(() =>
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        elementBackgroundTopPicks: ["transparent", "#b2f2bb"],
+      }),
+    ),
+  );
+});
+
+it("keeps a shortcut palette open after a family change so its shade can be adjusted", async () => {
+  const onChange = vi.fn();
+  render(
+    <PreferencePanel
+      root={document.body}
+      section="elementStroke"
+      language="en"
+      onChange={onChange}
+    />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Stroke shortcut 1 — Common colors" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Blue #1971c2" }));
+  await waitFor(() =>
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        elementStrokeTopPicks: [
+          "#1971c2",
+          ...DEFAULT_EDITOR_PREFERENCES.elementStrokeTopPicks.slice(1),
+        ],
+      }),
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Blue shade 2 #a5d8ff" }));
+  await waitFor(() =>
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        elementStrokeTopPicks: [
+          "#a5d8ff",
+          ...DEFAULT_EDITOR_PREFERENCES.elementStrokeTopPicks.slice(1),
+        ],
+      }),
+    ),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Transparent transparent" }),
+  );
+  await waitFor(() =>
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        elementStrokeTopPicks: [
+          "transparent",
+          ...DEFAULT_EDITOR_PREFERENCES.elementStrokeTopPicks.slice(1),
+        ],
       }),
     ),
   );

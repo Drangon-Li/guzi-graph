@@ -89,7 +89,11 @@ const Modal = ({
       initial?.focus();
     });
     const onKeyDown = (event: KeyboardEvent) => {
-      if (root.querySelector(".desktop-select-content[data-state='open']")) {
+      if (
+        root.querySelector(
+          ".desktop-select-content[data-state='open'], .desktop-preference-color-picker[data-state='open']",
+        )
+      ) {
         return;
       }
       if (event.key === "Escape") {

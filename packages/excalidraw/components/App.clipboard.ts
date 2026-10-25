@@ -273,6 +273,9 @@ export class AppClipboard {
             : "center",
         retainSeed: isPlainPaste,
         preserveFrameChildrenOrder: true,
+        avoidClipboardOverlap:
+          !data.programmaticAPI &&
+          this.app.editorInterface.formFactor === "desktop",
       });
       return;
     }
@@ -429,12 +432,18 @@ export class AppClipboard {
           this.app.viewport.lastPosition.x,
           this.app.viewport.lastPosition.y,
         );
+        const pasteIntoFocusedPage =
+          this.app.props.desktopIntegration?.elementPastePosition ===
+          "original";
         if (
           event &&
-          (!(
-            elementUnderCursor instanceof this.app.ownerWindow.HTMLCanvasElement
-          ) ||
-            isWritableElement(target))
+          ((!pasteIntoFocusedPage &&
+            !(
+              elementUnderCursor instanceof
+              this.app.ownerWindow.HTMLCanvasElement
+            )) ||
+            isWritableElement(target) ||
+            isWritableElement(event.target))
         ) {
           return;
         }

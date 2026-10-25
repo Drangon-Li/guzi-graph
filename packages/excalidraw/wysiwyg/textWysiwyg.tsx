@@ -81,6 +81,7 @@ import {
 import {
   executeRichTextCommand,
   registerRichTextEditor,
+  publishRichTextSelectionState,
 } from "../features/rich-text/editorBridge";
 import { richTextWysiwyg } from "../features/rich-text/editor";
 
@@ -302,8 +303,7 @@ export const textWysiwyg = ({
       initialSelection,
     });
   }
-  const ownerDocument = excalidrawContainer?.ownerDocument ?? document;
-  const ownerWindow = ownerDocument.defaultView ?? window;
+  const { ownerDocument, ownerWindow } = app;
   // the editor's box: the part of the canvas a caret is revealed into (see
   // onEditorBoxScroll)
   const editorBox =
@@ -1156,7 +1156,7 @@ export const textWysiwyg = ({
     handleSubmit();
   };
 
-  const cleanup = () => {
+  const cleanup = (preserveSelection = false) => {
     // remove events to ensure they don't late-fire
     editable.onblur = null;
     editable.oninput = null;
@@ -1174,7 +1174,8 @@ export const textWysiwyg = ({
     ownerWindow.removeEventListener("pointerup", bindBlurEvent);
     ownerWindow.removeEventListener("blur", handleSubmit);
     ownerWindow.removeEventListener("beforeunload", handleSubmit);
-    unbindRichEditor();
+    cleanupSelection();
+    unbindRichEditor(preserveSelection);
     unbindUpdate();
     unsubOnChange();
     unbindOnScroll();
@@ -1210,7 +1211,13 @@ export const textWysiwyg = ({
     ownerWindow.setTimeout(() => {
       // If we interacted within shape actions menu or its popovers/triggers,
       // keep submit disabled and don't steal focus back to textarea.
-      if (inShapeActionsMenu || isPropertiesTrigger || isPropertiesContent) {
+      if (
+        inShapeActionsMenu ||
+        isPropertiesTrigger ||
+        isPropertiesContent ||
+        (target instanceof ownerWindow.Element &&
+          !!target.closest(".selection-toolbar"))
+      ) {
         return;
       }
 
@@ -1311,13 +1318,98 @@ export const textWysiwyg = ({
     }
   };
 
+  let composing = false;
+  const publishSelection = () => {
+    if (isDestroyed || !editable.isConnected) {
+      return;
+    }
+    const { selectionStart: start, selectionEnd: end } = editable;
+    let rect: DOMRect | null = null;
+    if (start !== end && !composing) {
+      // A sibling mirror shares the textarea's wrapping, transform and zoom.
+      const mirror = ownerDocument.createElement("div");
+      mirror.style.cssText = editable.style.cssText;
+      Object.assign(mirror.style, {
+        visibility: "hidden",
+        pointerEvents: "none",
+        overflow: "visible",
+      });
+      mirror.dir = editable.dir;
+      const text = ownerDocument.createTextNode(editable.value);
+      mirror.append(text);
+      editable.parentElement?.append(mirror);
+      try {
+        const range = ownerDocument.createRange();
+        range.setStart(text, start);
+        range.setEnd(text, end);
+        if (typeof range.getBoundingClientRect === "function") {
+          rect = range.getBoundingClientRect();
+        }
+      } finally {
+        mirror.remove();
+      }
+    }
+    publishRichTextSelectionState(ownerDocument, {
+      elementId: element.id,
+      background: null,
+      color:
+        app.scene.getElement<ExcalidrawTextElement>(element.id)?.strokeColor ??
+        element.strokeColor,
+      list: "none",
+      hasSelection: start !== end,
+      bold: false,
+      italic: false,
+      underline: false,
+      composing,
+      selectionKey: `${start}:${end}`,
+      rect: rect
+        ? {
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+          }
+        : null,
+    });
+  };
+  const onCompositionStart = () => {
+    composing = true;
+    publishSelection();
+  };
+  const onCompositionEnd = () => {
+    composing = false;
+    publishSelection();
+  };
+  const selectionEvents = ["select", "keyup", "pointerup", "input"] as const;
+  selectionEvents.forEach((name) =>
+    editable.addEventListener(name, publishSelection),
+  );
+  editable.addEventListener("compositionstart", onCompositionStart);
+  editable.addEventListener("compositionend", onCompositionEnd);
+  ownerDocument.addEventListener("selectionchange", publishSelection);
+  ownerWindow.addEventListener("resize", publishSelection);
+  const cleanupSelection = () => {
+    selectionEvents.forEach((name) =>
+      editable.removeEventListener(name, publishSelection),
+    );
+    editable.removeEventListener("compositionstart", onCompositionStart);
+    editable.removeEventListener("compositionend", onCompositionEnd);
+    ownerDocument.removeEventListener("selectionchange", publishSelection);
+    ownerWindow.removeEventListener("resize", publishSelection);
+  };
   const unbindRichEditor = registerRichTextEditor(ownerDocument, {
     elementId: element.id,
     hasTextSelection: () => editable.selectionStart !== editable.selectionEnd,
+    focus: () => editable.focus({ preventScroll: true }),
     execute: (command) => {
       if (isDestroyed) {
         return;
       }
+      const focusedColorInput =
+        ownerDocument.activeElement instanceof ownerWindow.HTMLInputElement &&
+        ownerDocument.activeElement.matches(".color-picker-input")
+          ? ownerDocument.activeElement
+          : null;
       const selection = {
         start: editable.selectionStart,
         end: editable.selectionEnd,
@@ -1330,16 +1422,18 @@ export const textWysiwyg = ({
         richText: richTextFromPlainText(editable.value),
       });
       isDestroyed = true;
-      cleanup();
+      cleanup(true);
       queueMicrotask(() => {
         const latest = app.scene.getNonDeletedElement(element.id);
         if (!latest || !isTextElement(latest)) {
+          publishRichTextSelectionState(ownerDocument, null);
           return;
         }
         app.text.handleTextWysiwyg(latest, {
           isExistingElement: true,
           initialSelection: selection,
         });
+        focusedColorInput?.focus({ preventScroll: true });
         executeRichTextCommand(ownerDocument, command);
       });
     },
@@ -1355,6 +1449,7 @@ export const textWysiwyg = ({
   // handle updates of textElement properties of editing element
   const unbindUpdate = app.scene.onUpdate(() => {
     updateWysiwygStyle();
+    publishSelection();
     const isPopupOpened = !!ownerDocument.activeElement?.closest(
       ".properties-content",
     );
@@ -1365,6 +1460,7 @@ export const textWysiwyg = ({
 
   const unbindOnScroll = app.onScrollChangeEmitter.on(() => {
     updateWysiwygStyle();
+    publishSelection();
   });
 
   // The browser reveals an out-of-view caret by scrolling the nearest scroll
@@ -1415,6 +1511,7 @@ export const textWysiwyg = ({
   if (canvas && "ResizeObserver" in ownerWindow) {
     observer = new ownerWindow.ResizeObserver(() => {
       updateWysiwygStyle();
+      publishSelection();
     });
     observer.observe(canvas);
   } else {
@@ -1432,6 +1529,7 @@ export const textWysiwyg = ({
   });
   ownerWindow.addEventListener("beforeunload", handleSubmit);
   editorBox!.appendChild(editable);
+  publishSelection();
 
   return handleSubmit;
 };

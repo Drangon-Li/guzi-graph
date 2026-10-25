@@ -12,6 +12,12 @@ export type RichTextSelectionState = {
   color: string | null;
   hasSelection: boolean;
   list: "none" | "ordered" | "bullet" | null;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  composing?: boolean;
+  selectionKey?: string;
+  rect?: { left: number; top: number; right: number; bottom: number } | null;
 };
 
 const selectionStates = new WeakMap<Document, RichTextSelectionState>();
@@ -44,7 +50,16 @@ export const publishRichTextSelectionState = (
         previous.background === state.background &&
         previous.color === state.color &&
         previous.hasSelection === state.hasSelection &&
-        previous.list === state.list
+        previous.list === state.list &&
+        previous.bold === state.bold &&
+        previous.italic === state.italic &&
+        previous.underline === state.underline &&
+        previous.composing === state.composing &&
+        previous.selectionKey === state.selectionKey &&
+        previous.rect?.left === state.rect?.left &&
+        previous.rect?.right === state.rect?.right &&
+        previous.rect?.top === state.rect?.top &&
+        previous.rect?.bottom === state.rect?.bottom
       : !previous
   ) {
     return;
@@ -61,6 +76,7 @@ type ActiveEditor = {
   elementId: string;
   hasTextSelection: () => boolean;
   execute: (command: RichTextCommand) => void;
+  focus?: () => void;
 };
 const editors = new WeakMap<Document, ActiveEditor>();
 
@@ -69,10 +85,12 @@ export const registerRichTextEditor = (
   editor: ActiveEditor,
 ) => {
   editors.set(ownerDocument, editor);
-  return () => {
+  return (preserveSelection = false) => {
     if (editors.get(ownerDocument) === editor) {
       editors.delete(ownerDocument);
-      publishRichTextSelectionState(ownerDocument, null);
+      if (!preserveSelection) {
+        publishRichTextSelectionState(ownerDocument, null);
+      }
     }
   };
 };
@@ -93,4 +111,8 @@ export const executeRichTextCommand = (
   }
   editor.execute(command);
   return true;
+};
+
+export const focusRichTextEditor = (ownerDocument: Document) => {
+  editors.get(ownerDocument)?.focus?.();
 };

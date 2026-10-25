@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { MIME_TYPES } from "@excalidraw/common";
 import {
@@ -7,7 +13,11 @@ import {
   readSystemClipboard,
 } from "@excalidraw/excalidraw/clipboard";
 
-import type { AppState, ExcalidrawProps } from "@excalidraw/excalidraw/types";
+import type {
+  AppState,
+  ExcalidrawImperativeAPI,
+  ExcalidrawProps,
+} from "@excalidraw/excalidraw/types";
 
 import { SubcanvasEditor } from "../editor/SubcanvasEditor";
 
@@ -17,9 +27,55 @@ import { getSlideBounds } from "./model";
 
 import "./PresentationEditor.scss";
 
+import type { ReactNode } from "react";
 import type { CanvasDocument, Workspace } from "../workspace/workspace";
 
 type PendingPaste = { slideId: string; event?: ClipboardEvent };
+
+const SlideCanvas = ({ children }: { children: ReactNode }) => {
+  const content = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const node = content.current!;
+    const overlay = node.parentElement!.querySelector<HTMLDivElement>(
+      ".desktop-presentation-slide-transition",
+    )!;
+    return () => {
+      const canvas = node.querySelector<HTMLCanvasElement>(
+        ".desktop-root-canvas canvas.static",
+      );
+      if (
+        overlay.childElementCount ||
+        !canvas ||
+        !canvas.width ||
+        !canvas.height
+      ) {
+        return;
+      }
+      // Capture before the old editor destroys its canvas on unmount.
+      const copy = node.ownerDocument.createElement("canvas");
+      copy.width = canvas.width;
+      copy.height = canvas.height;
+      copy.style.width = canvas.style.width;
+      copy.style.height = canvas.style.height;
+      copy.getContext("2d")!.drawImage(canvas, 0, 0);
+      overlay.replaceChildren(copy);
+      const boundary = node.querySelector(
+        ".desktop-presentation-page-boundary",
+      );
+      if (boundary) {
+        overlay.append(boundary.cloneNode(true));
+      }
+      overlay.hidden = false;
+    };
+  }, []);
+
+  return (
+    <div className="desktop-presentation-slide-canvas" ref={content}>
+      {children}
+    </div>
+  );
+};
 
 export const PresentationEditor = ({
   document,
@@ -33,6 +89,11 @@ export const PresentationEditor = ({
   const [presenting, setPresenting] = useState(false);
   const boundary = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
+  const transition = useRef<HTMLDivElement>(null);
+  const [initialized, setInitialized] = useState<{
+    slideId: string;
+    api: ExcalidrawImperativeAPI;
+  } | null>(null);
   const pendingPastes = useRef<PendingPaste[]>([]);
   const pasteEnabled = useRef(true);
   pasteEnabled.current = props.interaction !== false && !presenting;
@@ -67,6 +128,39 @@ export const PresentationEditor = ({
       positionBoundary(api.getAppState());
     }
   };
+
+  useEffect(() => {
+    if (!initialized || initialized.slideId !== slideId) {
+      return;
+    }
+    const node = container.current!;
+    const ownerWindow = node.ownerDocument.defaultView!;
+    let frame = 0;
+    const reveal = () => {
+      ownerWindow.cancelAnimationFrame(frame);
+      // StaticCanvas queues its draw from a passive effect. Leave a full frame
+      // after that queue (and any resize) before exposing the new canvas.
+      frame = ownerWindow.requestAnimationFrame(() => {
+        frame = ownerWindow.requestAnimationFrame(() => {
+          if (
+            document.activeSlideId === slideId &&
+            document.api === initialized.api &&
+            !initialized.api.isDestroyed
+          ) {
+            transition.current!.hidden = true;
+            transition.current!.replaceChildren();
+          }
+        });
+      });
+    };
+    const observer = new ownerWindow.ResizeObserver(reveal);
+    observer.observe(node);
+    reveal();
+    return () => {
+      observer.disconnect();
+      ownerWindow.cancelAnimationFrame(frame);
+    };
+  }, [document, initialized, slideId]);
 
   const flushPendingPastes = useCallback(() => {
     const api = document.api;
@@ -176,71 +270,94 @@ export const PresentationEditor = ({
       }}
     >
       <div className="desktop-presentation-canvas" ref={container}>
-        <SubcanvasEditor
-          {...props}
-          key={slideId}
-          autoFocus={false}
-          document={document}
-          historyCache={runtime.children}
-          viewModeEnabled={false}
-          initialData={{ ...document.initialData, scrollToContent: false }}
-          interaction={props.interaction !== false && !presenting}
-          handleKeyboardGlobally={!!props.handleKeyboardGlobally && !presenting}
-          desktopIntegration={
-            props.desktopIntegration && {
-              ...props.desktopIntegration,
-              history: {
-                undoAvailable:
-                  !!document.presentationHistory?.undo.length &&
-                  !document.presentationHistory.pending,
-                redoAvailable:
-                  !!document.presentationHistory?.redo.length &&
-                  !document.presentationHistory.pending,
-                perform: (direction) =>
-                  workspace.performPresentationHistory(document, direction),
-              },
+        <SlideCanvas key={slideId}>
+          <SubcanvasEditor
+            {...props}
+            autoFocus={false}
+            document={document}
+            historyCache={runtime.children}
+            viewModeEnabled={false}
+            initialData={{ ...document.initialData, scrollToContent: false }}
+            initialState={
+              runtime.snapshot
+                ? undefined
+                : {
+                    viewport: {
+                      target: bounds,
+                      fit: "contain",
+                      offsets: {
+                        top: 84,
+                        bottom: 64,
+                        left: 56,
+                        right: 56,
+                        ui: true,
+                      },
+                    },
+                  }
             }
-          }
-          onExcalidrawAPI={(api) => {
-            if (document.activeSlideId === slideId) {
-              props.onExcalidrawAPI?.(api);
-              api?.onIncrement((increment) => {
-                if (
-                  document.activeSlideId === slideId &&
-                  document.api === api
-                ) {
-                  workspace.recordPresentationIncrement(document, increment);
-                }
-              });
+            interaction={props.interaction !== false && !presenting}
+            handleKeyboardGlobally={
+              !!props.handleKeyboardGlobally && !presenting
             }
-          }}
-          onInitialize={(api) => {
-            if (document.activeSlideId !== slideId) {
-              return;
+            desktopIntegration={
+              props.desktopIntegration && {
+                ...props.desktopIntegration,
+                history: {
+                  undoAvailable:
+                    !!document.presentationHistory?.undo.length &&
+                    !document.presentationHistory.pending,
+                  redoAvailable:
+                    !!document.presentationHistory?.redo.length &&
+                    !document.presentationHistory.pending,
+                  perform: (direction) =>
+                    workspace.performPresentationHistory(document, direction),
+                },
+              }
             }
-            if (runtime.history) {
-              api.history.restoreCheckpoint?.(runtime.history);
-            }
-            props.onInitialize?.(api);
-            workspace.resumePresentationHistory(document, api);
-            flushPendingPastes();
-            if (runtime.snapshot) {
+            onExcalidrawAPI={(api) => {
+              if (document.activeSlideId === slideId) {
+                props.onExcalidrawAPI?.(api);
+                api?.onIncrement((increment) => {
+                  if (
+                    document.activeSlideId === slideId &&
+                    document.api === api
+                  ) {
+                    workspace.recordPresentationIncrement(document, increment);
+                  }
+                });
+              }
+            }}
+            onInitialize={(api) => {
+              if (document.activeSlideId !== slideId) {
+                return;
+              }
+              if (runtime.history) {
+                api.history.restoreCheckpoint?.(runtime.history);
+              }
+              props.onInitialize?.(api);
+              workspace.resumePresentationHistory(document, api);
+              flushPendingPastes();
               positionBoundary(api.getAppState());
-            } else {
-              fit();
-            }
-          }}
-          onChange={(elements, state, files) => {
-            if (document.activeSlideId === slideId) {
-              positionBoundary(state);
-              props.onChange?.(elements, state, files);
-            }
-          }}
-        />
+              setInitialized({ slideId, api });
+            }}
+            onChange={(elements, state, files) => {
+              if (document.activeSlideId === slideId) {
+                positionBoundary(state);
+                props.onChange?.(elements, state, files);
+              }
+            }}
+          />
+          <div
+            className="desktop-presentation-page-boundary"
+            ref={boundary}
+            aria-hidden="true"
+          />
+        </SlideCanvas>
         <div
-          className="desktop-presentation-page-boundary"
-          ref={boundary}
+          className="desktop-presentation-slide-transition"
+          ref={transition}
           aria-hidden="true"
+          hidden
         />
       </div>
     </PresentationLayout>

@@ -1027,6 +1027,37 @@ export const PresentationLayout = (props: Props) => {
                     if (
                       !disabled &&
                       !renaming &&
+                      !contextMenu &&
+                      !dragging.current &&
+                      !event.defaultPrevented &&
+                      !event.nativeEvent.isComposing &&
+                      !isInputLike(event.target) &&
+                      !event.altKey &&
+                      !event.ctrlKey &&
+                      !event.metaKey &&
+                      !event.shiftKey &&
+                      (event.key === "ArrowLeft" || event.key === "ArrowRight")
+                    ) {
+                      event.preventDefault();
+                      setKeyboardFocus(true);
+                      const nextIndex =
+                        index + (event.key === "ArrowRight" ? 1 : -1);
+                      const nextSlide = presentation.slides[nextIndex];
+                      if (nextSlide) {
+                        props.onSelect(nextSlide.id);
+                        slideList
+                          .current!.children[
+                            nextIndex
+                          ].querySelector<HTMLButtonElement>(
+                            ".desktop-slide-select",
+                          )!
+                          .focus({ preventScroll: true });
+                      }
+                      return;
+                    }
+                    if (
+                      !disabled &&
+                      !renaming &&
                       !event.nativeEvent.isComposing &&
                       (event.key === "Delete" || event.key === "Backspace")
                     ) {
@@ -1044,9 +1075,10 @@ export const PresentationLayout = (props: Props) => {
                       slide.id === activeSlideId ? "page" : undefined
                     }
                     disabled={disabled}
+                    aria-keyshortcuts="ArrowLeft ArrowRight"
                     title={t(
-                      "拖拽排序 · 右键操作",
-                      "Drag to reorder · Right-click for actions",
+                      "← → 切换页面 · 拖拽排序 · 右键操作",
+                      "← → Switch slides · Drag to reorder · Right-click for actions",
                     )}
                     onClick={(event) =>
                       selectSlide(slide.id, event.currentTarget)

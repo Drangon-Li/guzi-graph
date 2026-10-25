@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { Children, isValidElement } from "react";
 
@@ -673,4 +674,61 @@ describe("desktop inline tab rename interaction", () => {
     ).toBeInTheDocument();
     expect(workspace.documents[0]).toBe(canvas);
   });
+
+  it.each(["settings", "toolbar", "presets"] as const)(
+    "keeps the %s color popover inside its modal layer and owns Escape and Tab",
+    async (source) => {
+      if (source !== "toolbar") {
+        showProject();
+      }
+      const view = render(<App root={root} />, { container: root });
+      if (source !== "toolbar") {
+        fireEvent.click(view.getByRole("button", { name: "设置" }));
+        if (source === "presets") {
+          fireEvent.click(view.getByRole("tab", { name: "快捷键" }));
+        } else {
+          fireEvent.click(view.getByRole("tab", { name: "字体与颜色" }));
+          fireEvent.click(view.getByRole("radio", { name: "描边" }));
+        }
+      } else {
+        act(() =>
+          vi.mocked(Excalidraw).mock.lastCall![0].desktopIntegration!
+            .onConfigurePreferences!("elementStroke"),
+        );
+      }
+      const dialog = view.getByRole("dialog", {
+        name: source === "toolbar" ? "描边颜色" : "桌面设置",
+      });
+      await waitFor(() =>
+        expect(dialog).toContainElement(
+          root.ownerDocument.activeElement as HTMLElement,
+        ),
+      );
+      const label = source === "presets" ? "颜色 实线箭头" : "默认描边颜色";
+      const trigger = view.getByRole("button", {
+        name: `${label} — 常用颜色`,
+      });
+      fireEvent.click(trigger);
+      const palette = view.getByRole("dialog", {
+        name: `${label} — 常用颜色`,
+      });
+      expect(palette.closest(".desktop-modal-backdrop")).toBe(
+        dialog.closest(".desktop-modal-backdrop"),
+      );
+      expect(dialog).not.toContainElement(palette);
+      const first = within(palette).getByRole("button", { name: "关闭色板" });
+      const last = within(palette).getByLabelText(label);
+      last.focus();
+      fireEvent.keyDown(last, { key: "Tab" });
+      expect(first).toHaveFocus();
+      fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
+      expect(last).toHaveFocus();
+      fireEvent.keyDown(last, { key: "Escape" });
+      await waitFor(() => expect(palette).not.toBeInTheDocument());
+      expect(dialog).toBeInTheDocument();
+      await waitFor(() => expect(trigger).toHaveFocus());
+      fireEvent.keyDown(trigger, { key: "Escape" });
+      expect(dialog).not.toBeInTheDocument();
+    },
+  );
 });

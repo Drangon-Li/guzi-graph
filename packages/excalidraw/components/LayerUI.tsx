@@ -63,6 +63,7 @@ import { LaserPointerButton } from "./LaserPointerButton";
 import { Toast } from "./Toast";
 import { Toolbar } from "./Toolbar";
 import { SelectionToolbar } from "./SelectionToolbar";
+import { TextSelectionToolbar } from "./TextSelectionToolbar";
 import { SceneFontPicker } from "./SceneFontPicker";
 import { getToolPanelDock, getToolPanelWidth, ToolPanel } from "./ToolPanel";
 import { useSidebarDockContainer } from "./CanvasLayout";
@@ -791,6 +792,26 @@ const LayerUI = ({
                 appState={appState}
                 elements={elements}
                 actionManager={actionManager}
+                leftInset={
+                  toolPanelDock === "left" && !toolPanelCollapsed
+                    ? panelWidth + 32
+                    : 16
+                }
+                rightInset={
+                  toolPanelDock === "right" &&
+                  !toolPanelCollapsed &&
+                  !appState.openSidebar
+                    ? panelWidth + 32
+                    : 16
+                }
+              />
+            )}
+          {defaultUIEnabled &&
+            appProps.desktopIntegration &&
+            appProps.desktopIntegration.selectionToolbar !== false && (
+              <TextSelectionToolbar
+                app={app}
+                appState={appState}
                 leftInset={
                   toolPanelDock === "left" && !toolPanelCollapsed
                     ? panelWidth + 32

@@ -19,6 +19,8 @@ import {
   resolveEditorPreferences,
 } from "../../shared/config/editorPreferences";
 
+import { PreferenceColorPicker } from "./PreferenceColorPicker";
+
 import "./PreferencePanel.scss";
 
 import type { EditorPreferences } from "../../../shared/desktop-api";
@@ -32,30 +34,6 @@ export {
 type LocalFontsWindow = Window & {
   queryLocalFonts?: () => Promise<{ family: string; fullName: string }[]>;
 };
-
-const PreferenceColorInput = ({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) => (
-  <span
-    className={`desktop-preference-panel__color-tile${
-      value === "transparent" ? " is-transparent" : ""
-    }`}
-    style={{ backgroundColor: value }}
-  >
-    <input
-      type="color"
-      aria-label={label}
-      value={value === "transparent" ? "#ffffff" : value}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  </span>
-);
 
 export const PreferencePanel = ({
   root,
@@ -497,7 +475,11 @@ export const PreferencePanel = ({
               <span className="desktop-preference-panel__label">
                 {colorSection.defaultLabel}
               </span>
-              <PreferenceColorInput
+              <PreferenceColorPicker
+                root={root}
+                language={language}
+                allowTransparent={allowTransparent}
+                defaultShade={section === "elementStroke" ? 4 : 1}
                 label={colorSection.defaultLabel}
                 value={draft[colorSection.defaultKey]}
                 onChange={(value) =>
@@ -532,8 +514,12 @@ export const PreferencePanel = ({
             }`}</legend>
             <div className="desktop-preference-panel__colors">
               {picks.map((value, index) => (
-                <div key={`${value}-${index}`}>
-                  <PreferenceColorInput
+                <div key={index}>
+                  <PreferenceColorPicker
+                    root={root}
+                    language={language}
+                    allowTransparent={allowTransparent}
+                    defaultShade={section === "elementStroke" ? 4 : 1}
                     label={`${colorSection.shortcutLabel} ${index + 1}`}
                     value={value}
                     onChange={(nextColor) =>
@@ -583,7 +569,11 @@ export const PreferencePanel = ({
               ))}
             </div>
             <div className="desktop-preference-panel__add-color">
-              <PreferenceColorInput
+              <PreferenceColorPicker
+                root={root}
+                language={language}
+                allowTransparent={allowTransparent}
+                defaultShade={section === "elementStroke" ? 4 : 1}
                 label={en ? "New color shortcut" : "新颜色快捷项"}
                 value={color}
                 onChange={setColor}

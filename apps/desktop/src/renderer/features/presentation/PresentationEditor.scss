@@ -5,6 +5,23 @@
   overflow: hidden;
 }
 
+.desktop-presentation-slide-canvas {
+  height: 100%;
+}
+
+.desktop-presentation-slide-transition {
+  position: absolute;
+  inset: 0;
+  // Keep the old pixels above the canvases, without covering editing controls.
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+
+  > canvas {
+    display: block;
+  }
+}
+
 .desktop-presentation-page-boundary {
   position: absolute;
   z-index: 1;

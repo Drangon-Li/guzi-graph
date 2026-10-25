@@ -17,6 +17,7 @@ import {
   createEditor,
   HISTORY_PUSH_TAG,
   HISTORY_MERGE_TAG,
+  SKIP_DOM_SELECTION_TAG,
 } from "lexical";
 import { registerRichText } from "@lexical/rich-text";
 import {
@@ -34,6 +35,7 @@ import {
 import { createEmptyHistoryState, registerHistory } from "@lexical/history";
 import {
   $patchStyleText,
+  createDOMRange,
   $getSelectionStyleValueForProperty,
 } from "@lexical/selection";
 import { applyDarkModeFilter, getFontString, THEME } from "@excalidraw/common";
@@ -489,6 +491,9 @@ export const richTextWysiwyg = ({
   };
   let savedSelection: RangeSelection | null = null;
   const publishSelection = () => {
+    if (destroyed) {
+      return;
+    }
     editor.getEditorState().read(() => {
       const selection = $getSelection();
       if (!$isRangeSelection(selection)) {
@@ -513,7 +518,37 @@ export const richTextWysiwyg = ({
         "background-color",
         "transparent",
       );
+      const nativeSelection = ownerWindow.getSelection();
+      const nativeRange =
+        createDOMRange(
+          editor,
+          selection.anchor.getNode(),
+          selection.anchor.offset,
+          selection.focus.getNode(),
+          selection.focus.offset,
+        ) ??
+        (nativeSelection?.rangeCount ? nativeSelection.getRangeAt(0) : null);
+      const rect =
+        nativeRange &&
+        typeof nativeRange.getBoundingClientRect === "function" &&
+        editable.contains(nativeRange.commonAncestorContainer)
+          ? nativeRange.getBoundingClientRect()
+          : null;
+      const offsets = $getRichTextSelectionOffsets(selection);
       publishRichTextSelectionState(ownerDocument, {
+        bold: selection.hasFormat("bold"),
+        italic: selection.hasFormat("italic"),
+        underline: selection.hasFormat("underline"),
+        composing: editor.isComposing(),
+        selectionKey: offsets ? `${offsets.start}:${offsets.end}` : "",
+        rect: rect
+          ? {
+              left: rect.left,
+              top: rect.top,
+              right: rect.right,
+              bottom: rect.bottom,
+            }
+          : null,
         elementId: element.id,
         background: background || null,
         color:
@@ -593,7 +628,12 @@ export const richTextWysiwyg = ({
     if (command.type === "layout") {
       return;
     }
-    editable.focus({ preventScroll: true });
+    const inputHasFocus = !!ownerDocument.activeElement?.closest(
+      ".properties-content input, .color-picker-input",
+    );
+    if (!inputHasFocus) {
+      editable.focus({ preventScroll: true });
+    }
     editor.update(
       () => {
         if (!$isRangeSelection($getSelection()) && savedSelection) {
@@ -601,7 +641,11 @@ export const richTextWysiwyg = ({
         }
         applyRichTextEditorCommand(editor, command);
       },
-      { tag: HISTORY_PUSH_TAG },
+      {
+        tag: inputHasFocus
+          ? [HISTORY_PUSH_TAG, SKIP_DOM_SELECTION_TAG]
+          : HISTORY_PUSH_TAG,
+      },
     );
   };
   disposers.push(
@@ -609,6 +653,13 @@ export const richTextWysiwyg = ({
       elementId: element.id,
       hasTextSelection: () => !!savedSelection && !savedSelection.isCollapsed(),
       execute,
+      focus: () => {
+        editable.focus({ preventScroll: true });
+        const selection = savedSelection;
+        if (selection) {
+          editor.update(() => $setSelection(selection.clone()));
+        }
+      },
     }),
   );
   disposers.push(
@@ -683,7 +734,23 @@ export const richTextWysiwyg = ({
   editable.addEventListener("keydown", onKeyDown, true);
   // Lexical's bubble listener must receive editing keys before the canvas is isolated.
   editable.addEventListener("keydown", stopKeyPropagation);
-  editable.addEventListener("compositionend", synchronize);
+  const onCompositionStart = () => {
+    ownerWindow.requestAnimationFrame(publishSelection);
+  };
+  const onCompositionEnd = () => {
+    synchronize();
+    ownerWindow.requestAnimationFrame(publishSelection);
+  };
+  const onSelectionGeometryChange = () => {
+    if (!destroyed) {
+      publishSelection();
+    }
+  };
+  editable.addEventListener("compositionstart", onCompositionStart);
+  editable.addEventListener("compositionend", onCompositionEnd);
+  ownerDocument.addEventListener("selectionchange", onSelectionGeometryChange);
+  ownerWindow.addEventListener("resize", onSelectionGeometryChange);
+  ownerWindow.addEventListener("scroll", onSelectionGeometryChange, true);
   const onPointerDown = (event: PointerEvent) => {
     const target = event.target;
     if (!(target instanceof ownerWindow.Element) || editable.contains(target)) {
@@ -721,7 +788,14 @@ export const richTextWysiwyg = ({
   disposers.push(() => {
     editable.removeEventListener("keydown", onKeyDown, true);
     editable.removeEventListener("keydown", stopKeyPropagation);
-    editable.removeEventListener("compositionend", synchronize);
+    editable.removeEventListener("compositionstart", onCompositionStart);
+    editable.removeEventListener("compositionend", onCompositionEnd);
+    ownerDocument.removeEventListener(
+      "selectionchange",
+      onSelectionGeometryChange,
+    );
+    ownerWindow.removeEventListener("resize", onSelectionGeometryChange);
+    ownerWindow.removeEventListener("scroll", onSelectionGeometryChange, true);
     editable.removeEventListener("blur", onBlur);
     ownerWindow.removeEventListener("pointerdown", onPointerDown, true);
     ownerWindow.removeEventListener("blur", onWindowBlur);
@@ -751,8 +825,18 @@ export const richTextWysiwyg = ({
       }
     }),
   );
-  disposers.push(app.onScrollChangeEmitter.on(updateStyle));
-  disposers.push(app.onChangeEmitter.on(updateStyle));
+  disposers.push(
+    app.onScrollChangeEmitter.on(() => {
+      updateStyle();
+      publishSelection();
+    }),
+  );
+  disposers.push(
+    app.onChangeEmitter.on(() => {
+      updateStyle();
+      publishSelection();
+    }),
+  );
   const onBoxScroll = () => {
     const x = box.scrollLeft;
     const y = box.scrollTop;
@@ -769,10 +853,18 @@ export const richTextWysiwyg = ({
   disposers.push(() => box.removeEventListener("scroll", onBoxScroll));
   const observer =
     "ResizeObserver" in ownerWindow
-      ? new ownerWindow.ResizeObserver(updateStyle)
+      ? new ownerWindow.ResizeObserver(() => {
+          updateStyle();
+          publishSelection();
+        })
       : null;
   observer?.observe(canvas);
   editable.focus({ preventScroll: true });
+  ownerWindow.requestAnimationFrame(() => {
+    if (!destroyed) {
+      publishSelection();
+    }
+  });
   if (initialCaretSceneCoords && !initialSelection) {
     const [x, y] = getViewportCoords(
       initialCaretSceneCoords.x,

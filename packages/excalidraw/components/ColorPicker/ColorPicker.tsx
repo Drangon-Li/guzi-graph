@@ -95,6 +95,7 @@ const ColorPickerPopupContent = ({
   appState,
   excludedColors,
   onResetTopPicks,
+  topPicks,
 }: Pick<
   ColorPickerProps,
   | "type"
@@ -106,6 +107,7 @@ const ColorPickerPopupContent = ({
   | "updateData"
   | "appState"
   | "excludedColors"
+  | "topPicks"
 > & {
   getOpenPopup: () => AppState["openPopup"];
   ownsPopup: () => boolean;
@@ -139,12 +141,23 @@ const ColorPickerPopupContent = ({
 
   const colorPickerContentRef = useRef<HTMLDivElement>(null);
 
+  const changeColor = (changedColor: string) => {
+    const savedSelection = appState.editingTextElement
+      ? saveCaretPosition(app.ownerDocument)
+      : null;
+    onChange(changedColor);
+    if (appState.editingTextElement && savedSelection) {
+      restoreCaretPosition(savedSelection, app.ownerDocument);
+    }
+  };
+
   const focusPickerContent = () => {
     colorPickerContentRef.current?.focus();
   };
 
   return (
     <PropertiesPopover
+      className="properties-content"
       container={container}
       style={{ maxWidth: "13rem" }}
       // Improve focus handling for text editing scenarios
@@ -212,6 +225,17 @@ const ColorPickerPopupContent = ({
         }
       }}
     >
+      {isCompactMode && !!topPicks?.length && (
+        <div className="color-picker__compact-top-picks">
+          <TopPicks
+            theme={appState.theme}
+            activeColor={color}
+            onChange={changeColor}
+            type={type}
+            topPicks={topPicks}
+          />
+        </div>
+      )}
       {palette ? (
         <Picker
           ref={colorPickerContentRef}
@@ -220,19 +244,7 @@ const ColorPickerPopupContent = ({
           onResetTopPicks={onResetTopPicks}
           color={color}
           theme={appState.theme}
-          onChange={(changedColor) => {
-            // Save caret position before color change if editing text
-            const savedSelection = appState.editingTextElement
-              ? saveCaretPosition(app.ownerDocument)
-              : null;
-
-            onChange(changedColor);
-
-            // Restore caret position after color change if editing text
-            if (appState.editingTextElement && savedSelection) {
-              restoreCaretPosition(savedSelection, app.ownerDocument);
-            }
-          }}
+          onChange={changeColor}
           onEyeDropperToggle={(force) => {
             setEyeDropperState((state) => {
               if (force) {
@@ -350,6 +362,11 @@ const ColorPickerTrigger = ({
       }
     >
       <div className="color-picker__button-outline">{!color && slashIcon}</div>
+      {isCompactMode && (
+        <span className="color-picker__expand-indicator" aria-hidden="true">
+          ⌄
+        </span>
+      )}
       {isCompactMode && color && mode === "stroke" && (
         <div className="color-picker__button-background">
           <span
@@ -429,10 +446,9 @@ const ColorPickerComponent = ({
   const isTopPicksCustomizable = !!customizableTopPicks && !isCompactMode;
 
   // user-pinned picks trump the (host-provided or default) baseline
-  const customTopPicks =
-    isTopPicksCustomizable && customizableTopPicks
-      ? appState.colorTopPicks?.[customizableTopPicks]
-      : null;
+  const customTopPicks = customizableTopPicks
+    ? appState.colorTopPicks?.[customizableTopPicks]
+    : null;
 
   // fully-resolved picks currently displayed in the strip — the baseline the
   // drag & drop customization starts from
@@ -571,6 +587,9 @@ const ColorPickerComponent = ({
               elements={elements}
               palette={palette}
               excludedColors={excludedColors}
+              topPicks={effectiveTopPicks.filter(
+                (pick) => !excludedColors?.includes(pick),
+              )}
               updateData={updateData}
               getOpenPopup={() => app.state.openPopup}
               ownsPopup={() =>
