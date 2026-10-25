@@ -20,6 +20,7 @@ import type { LibraryPersistenceAdapter } from "@excalidraw/excalidraw/data/libr
 import { fileTitle } from "../shared/model/document";
 import { translate } from "../shared/i18n/i18n";
 import { DesktopSelect } from "../shared/ui/DesktopControls";
+import { desktopShortcut } from "../shared/ui/desktopShortcut";
 import { StructuredExportDialog } from "../features/export/StructuredExportDialog";
 import { exportCanvasPdf } from "../features/export/structuredExport";
 import { InlineTabTitle } from "../features/editor/InlineTabTitle";
@@ -289,6 +290,7 @@ const Editor = ({
   const EditorView = document.presentation
     ? PresentationEditor
     : SubcanvasEditor;
+  const platform = root.ownerDocument.defaultView!.desktop.platform;
   return (
     <section
       className={`desktop-editor-pane${active ? " is-active" : ""}`}
@@ -369,7 +371,7 @@ const Editor = ({
         <MainMenu>
           <MainMenu.Item
             icon={PlusIcon}
-            shortcut="⌘N"
+            shortcut={desktopShortcut(platform, "N")}
             onSelect={workspace.newDocument}
           >
             {t("新建画布")}
@@ -390,7 +392,7 @@ const Editor = ({
           )}
           <MainMenu.Item
             icon={LoadIcon}
-            shortcut="⌘O"
+            shortcut={desktopShortcut(platform, "O")}
             onSelect={() => void workspace.openFiles()}
           >
             {t("打开文件…")}
@@ -398,7 +400,7 @@ const Editor = ({
           <MainMenu.DefaultItems.SaveToActiveFile />
           <MainMenu.Item
             icon={saveAs}
-            shortcut="⌘⇧S"
+            shortcut={desktopShortcut(platform, "S", true)}
             onSelect={() => void workspace.requestSave(document, true)}
           >
             {t("另存为…")}
@@ -537,6 +539,7 @@ const RemoveConfirmation = ({
 };
 
 export const App = ({ root }: { root: HTMLElement }) => {
+  const platform = root.ownerDocument.defaultView!.desktop.platform;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] =
     useState<PreferenceSection | null>(null);
@@ -645,14 +648,23 @@ export const App = ({ root }: { root: HTMLElement }) => {
       return;
     }
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.metaKey && event.key.toLowerCase() === "o") {
+      if (
+        (platform === "darwin"
+          ? event.metaKey && !event.ctrlKey
+          : event.ctrlKey && !event.metaKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        !event.repeat &&
+        !event.isComposing &&
+        event.key.toLowerCase() === "o"
+      ) {
         event.preventDefault();
         void openFiles();
       }
     };
     root.ownerDocument.addEventListener("keydown", onKeyDown);
     return () => root.ownerDocument.removeEventListener("keydown", onKeyDown);
-  }, [root, projectsVisible, modalOpen, closing, openFiles]);
+  }, [root, platform, projectsVisible, modalOpen, closing, openFiles]);
 
   useEffect(() => {
     if (projectsVisible || modalOpen || closing || !active) {
@@ -704,6 +716,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
       className={`excalidraw desktop-shell${
         theme === "dark" ? " theme--dark" : ""
       }`}
+      data-platform={platform}
     >
       <header
         className="desktop-titlebar"
@@ -714,7 +727,9 @@ export const App = ({ root }: { root: HTMLElement }) => {
             workspace.projectsVisible ? " selected" : ""
           }`}
           onSelect={workspace.showProjects}
-          title={t("项目页 · ⌘⇧P")}
+          title={t("项目页 · {shortcut}", {
+            shortcut: desktopShortcut(platform, "P", true),
+          })}
           aria-label={t("返回项目页")}
         >
           {ExcalLogo}
@@ -759,7 +774,9 @@ export const App = ({ root }: { root: HTMLElement }) => {
           className="desktop-titlebar-new"
           onSelect={workspace.newDocument}
           aria-label={t("新建画布")}
-          title={t("新建画布 · ⌘N")}
+          title={t("新建画布 · {shortcut}", {
+            shortcut: desktopShortcut(platform, "N"),
+          })}
         >
           {PlusIcon}
         </Button>

@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const os = require("node:os");
 const { randomUUID } = require("node:crypto");
+const vm = require("node:vm");
 
 const {
   DesktopStorage,
@@ -861,9 +862,9 @@ test("rename and move update persisted history without changing opening time", a
   const original = await create("original.excalidraw");
   await storage.recordOpenedFile(original.path);
   const lastOpenedAt = (await storage.listProjects()).history[0].lastOpenedAt;
-  await storage.createFolder("category");
+  await storage.createFolder("parent/child");
   const renamed = await storage.renameFile(original.path, "renamed");
-  const moved = await storage.moveFile(renamed.path, "category");
+  const moved = await storage.moveFile(renamed.path, "parent/child");
   const reopened = await new DesktopStorage(
     path.join(base, "userData"),
   ).initialize();
@@ -871,12 +872,120 @@ test("rename and move update persisted history without changing opening time", a
   assert.equal(history.length, 1);
   assert.equal(
     history[0].path,
-    path.join(root, "category", "renamed.excalidraw"),
+    path.join(root, "parent", "child", "renamed.excalidraw"),
   );
-  assert.equal(history[0].category, "category");
-  assert.equal(history[0].relativePath, "category/renamed.excalidraw");
+  assert.equal(history[0].category, "parent/child");
+  assert.equal(history[0].relativePath, "parent/child/renamed.excalidraw");
   assert.equal(history[0].lastOpenedAt, lastOpenedAt);
+  assert.equal(
+    (await reopened.moveFile(history[0].path, history[0].category)).path,
+    moved.path,
+  );
   assert.equal((await reopened.readFile(moved.path)).content, original.content);
+});
+
+test("history paths match project categories under Windows and POSIX path semantics", async (t) => {
+  const source = await fs.readFile(require.resolve("./storage.cjs"), "utf8");
+  for (const platform of ["win32", "posix"]) {
+    await t.test(platform, async () => {
+      const nativePath = path[platform];
+      const base = platform === "win32" ? "C:\\workspace" : "/workspace";
+      const root = nativePath.join(base, "projects");
+      const nested = nativePath.join(
+        root,
+        "parent",
+        "child",
+        "nested.excalidraw",
+      );
+      const rootFile = nativePath.join(root, "root.excalidraw");
+      const external = nativePath.join(base, "external.excalidraw");
+      const directories = new Map([
+        [base, ["projects", "external.excalidraw"]],
+        [root, ["parent", "root.excalidraw"]],
+        [nativePath.join(root, "parent"), ["child"]],
+        [nativePath.join(root, "parent", "child"), ["nested.excalidraw"]],
+      ]);
+      const files = new Set([nested, rootFile, external]);
+      const stat = async (candidate) => {
+        assert.ok(directories.has(candidate) || files.has(candidate));
+        return {
+          isFile: () => files.has(candidate),
+          isDirectory: () => directories.has(candidate),
+          mtimeMs: 1000,
+          size: 7,
+        };
+      };
+      const nativeFs = {
+        realpath: async (candidate) => {
+          await stat(candidate);
+          return candidate;
+        },
+        stat,
+        readdir: async (directory) =>
+          directories.get(directory).map((name) => ({
+            name,
+            isSymbolicLink: () => false,
+            isDirectory: () =>
+              directories.has(nativePath.join(directory, name)),
+            isFile: () => files.has(nativePath.join(directory, name)),
+          })),
+        open: async (candidate) => ({
+          stat: () => stat(candidate),
+          readFile: async () => "drawing",
+          close: async () => {},
+        }),
+      };
+      const module = { exports: {} };
+      vm.runInNewContext(source, {
+        module,
+        setTimeout,
+        clearTimeout,
+        require: (id) =>
+          id === "node:path"
+            ? nativePath
+            : id === "node:fs/promises"
+            ? nativeFs
+            : require(id),
+      });
+      const storage = new module.exports.DesktopStorage(
+        nativePath.join(base, "userData"),
+      );
+      storage.settings.rootDirectory = root;
+      storage.authorized.add(external);
+      for (const candidate of files) {
+        storage.recentFiles.set(candidate, 1000);
+      }
+      const index = await storage.listProjects();
+      for (const file of index.files) {
+        const history = index.history.find((entry) => entry.path === file.path);
+        assert.equal(history.relativePath, file.relativePath);
+        assert.equal(history.category, file.category);
+        assert.equal(
+          (await storage.moveFile(history.path, history.category)).path,
+          file.path,
+        );
+      }
+      const nestedHistory = index.history.find(
+        (entry) => entry.path === nested,
+      );
+      assert.equal(nestedHistory.path, nested);
+      assert.equal(
+        nestedHistory.relativePath,
+        "parent/child/nested.excalidraw",
+      );
+      assert.equal(nestedHistory.category, "parent/child");
+      assert.ok(index.folders.includes(nestedHistory.category));
+      const externalHistory = index.history.find(
+        (entry) => entry.path === external,
+      );
+      assert.equal(externalHistory.path, external);
+      assert.equal(externalHistory.relativePath, external);
+      assert.equal(externalHistory.category, "");
+      assert.throws(() => module.exports.categoryParts("parent\\child"), {
+        code: "INVALID_PATH",
+      });
+    });
+  }
 });
 
 test("saving new and Save As drawings records both paths while failed saves do not", async (t) => {

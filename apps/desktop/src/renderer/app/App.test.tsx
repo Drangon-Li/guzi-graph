@@ -19,6 +19,7 @@ import type {
   CanvasDocument,
   Workspace,
 } from "../features/workspace/workspace";
+import type { DesktopAPI } from "../../shared/desktop-api";
 
 vi.mock("../features/projects/FilePreview", () => ({
   FilePreview: () => <div />,
@@ -41,6 +42,9 @@ describe("desktop inline tab rename interaction", () => {
   beforeEach(() => {
     root = document.createElement("div");
     document.body.append(root);
+    root.ownerDocument.defaultView!.desktop = {
+      platform: "darwin",
+    } as DesktopAPI;
     canvas = {
       id: "canvas-id",
       title: "原名称",
@@ -76,6 +80,7 @@ describe("desktop inline tab rename interaction", () => {
       closePrompt: null,
       activate: vi.fn(),
       newDocument: vi.fn(),
+      openFiles: vi.fn(),
       closeDocument: vi.fn(),
       removeFile: vi.fn().mockResolvedValue(true),
       updateSettings: vi.fn().mockResolvedValue(null),
@@ -330,6 +335,73 @@ describe("desktop inline tab rename interaction", () => {
     workspace.index.files = [file];
     return file;
   };
+
+  it.each([
+    { platform: "darwin", modifier: "metaKey", shortcut: "⌘" },
+    { platform: "win32", modifier: "ctrlKey", shortcut: "Ctrl+" },
+  ])(
+    "uses the $platform platform for project shortcuts and labels",
+    ({ platform, modifier, shortcut }) => {
+      root.ownerDocument.defaultView!.desktop = { platform } as DesktopAPI;
+      showProject();
+      const view = render(<App root={root} />);
+      expect(view.container.querySelector(".desktop-shell")).toHaveAttribute(
+        "data-platform",
+        platform,
+      );
+      expect(view.getByTitle(`新建画布 · ${shortcut}N`)).toBeInTheDocument();
+      expect(
+        view.getByTitle(
+          `项目页 · ${platform === "darwin" ? "⌘⇧P" : "Ctrl+Shift+P"}`,
+        ),
+      ).toBeInTheDocument();
+      expect(view.getByText(`${shortcut}O`, { selector: "kbd" })).toBeVisible();
+      const ownerDocument = root.ownerDocument;
+      const valid = { key: "o", [modifier]: true };
+      fireEvent.keyDown(ownerDocument, valid);
+      expect(workspace.openFiles).toHaveBeenCalledTimes(1);
+      vi.mocked(workspace.openFiles).mockClear();
+      for (const invalid of [
+        { key: "o" },
+        { key: "o", [platform === "darwin" ? "ctrlKey" : "metaKey"]: true },
+        { ...valid, metaKey: true, ctrlKey: true },
+        { ...valid, altKey: true },
+        { ...valid, shiftKey: true },
+        { ...valid, repeat: true },
+        { ...valid, isComposing: true },
+      ]) {
+        fireEvent.keyDown(ownerDocument, invalid);
+      }
+      expect(workspace.openFiles).not.toHaveBeenCalled();
+      fireEvent.keyDown(ownerDocument, { ...valid, key: "O" });
+      expect(workspace.openFiles).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("keeps Windows project opening blocked by modals, closing and the editor", () => {
+    root.ownerDocument.defaultView!.desktop = {
+      platform: "win32",
+    } as DesktopAPI;
+    showProject();
+    const view = render(<App root={root} />);
+    fireEvent.click(view.getByRole("button", { name: "设置" }));
+    fireEvent.keyDown(root.ownerDocument, { key: "o", ctrlKey: true });
+    expect(workspace.openFiles).not.toHaveBeenCalled();
+    fireEvent.click(view.getByRole("button", { name: "完成" }));
+    workspace.closing = true;
+    view.rerender(<App root={root} />);
+    fireEvent.keyDown(root.ownerDocument, { key: "o", ctrlKey: true });
+    expect(workspace.openFiles).not.toHaveBeenCalled();
+    workspace.closing = false;
+    workspace.projectsVisible = false;
+    view.rerender(<App root={root} />);
+    fireEvent.keyDown(root.ownerDocument, { key: "o", ctrlKey: true });
+    expect(workspace.openFiles).not.toHaveBeenCalled();
+    workspace.projectsVisible = true;
+    view.rerender(<App root={root} />);
+    fireEvent.keyDown(root.ownerDocument, { key: "o", ctrlKey: true });
+    expect(workspace.openFiles).toHaveBeenCalledTimes(1);
+  });
 
   it.each(["remove", "trash"] as const)(
     "explains %s and cancels without persisting a checked skip option",

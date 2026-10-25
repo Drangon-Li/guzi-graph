@@ -719,7 +719,7 @@ class DesktopStorage {
         }
         const relativePath =
           rootDirectory && inside(rootDirectory, target)
-            ? path.relative(rootDirectory, target)
+            ? path.relative(rootDirectory, target).split(path.sep).join("/")
             : target;
         history.push({
           path: target,
@@ -727,9 +727,9 @@ class DesktopStorage {
           name: path.basename(target),
           category:
             rootDirectory && inside(rootDirectory, target)
-              ? path.dirname(relativePath) === "."
+              ? path.posix.dirname(relativePath) === "."
                 ? ""
-                : path.dirname(relativePath)
+                : path.posix.dirname(relativePath)
               : "",
           modifiedAt: stat.mtimeMs,
           size: stat.size,

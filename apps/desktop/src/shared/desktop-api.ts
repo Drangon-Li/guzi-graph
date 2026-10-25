@@ -118,6 +118,7 @@ export type DesktopCommand =
   | "close-window";
 
 export interface DesktopAPI {
+  readonly platform: string;
   getUserPlugins(): Promise<UserPluginState[]>;
   installUserPlugin(
     plugin: UserPluginPackage,

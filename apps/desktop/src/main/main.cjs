@@ -10,6 +10,7 @@ const {
   dialog,
   ipcMain,
   Menu,
+  nativeTheme,
   net,
   protocol,
   session,
@@ -382,6 +383,7 @@ function installIPC() {
   handle("update-settings", async (settings) => {
     const updated = await storage.updateSettings(settings);
     installMenu();
+    updateWindowControls();
     return updated;
   });
   handle("choose-directory", async () => {
@@ -669,6 +671,23 @@ function secureSession() {
   });
 }
 
+function windowControlsOverlay() {
+  const theme = storage.getSettings().theme;
+  const dark =
+    theme === "dark" || (theme === "system" && nativeTheme.shouldUseDarkColors);
+  return {
+    height: 48,
+    color: dark ? "#18181b" : "#f6f6f9",
+    symbolColor: dark ? "#e3e3e8" : "#1b1b1f",
+  };
+}
+
+function updateWindowControls() {
+  if (process.platform === "win32" && window && !window.isDestroyed()) {
+    window.setTitleBarOverlay(windowControlsOverlay());
+  }
+}
+
 function createWindow() {
   closePending = false;
   closeApproved = false;
@@ -682,7 +701,11 @@ function createWindow() {
     show: false,
     title: "Excalidraw",
     titleBarStyle: "hidden",
-    trafficLightPosition: { x: 14, y: 16 },
+    ...(process.platform === "darwin"
+      ? { trafficLightPosition: { x: 14, y: 16 } }
+      : process.platform === "win32"
+      ? { titleBarOverlay: windowControlsOverlay() }
+      : {}),
     backgroundColor: "#ffffff",
     webPreferences: {
       preload: path.join(__dirname, "..", "preload", "index.cjs"),
@@ -910,6 +933,9 @@ if (!hasLock) {
       installMenu();
       await receiveFiles(process.argv);
       createWindow();
+      if (process.platform === "win32") {
+        nativeTheme.on("updated", updateWindowControls);
+      }
       app.on("activate", () => {
         if (!window) {
           createWindow();

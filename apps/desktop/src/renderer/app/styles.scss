@@ -103,6 +103,13 @@ body,
     }
   }
 
+  &[data-platform="win32"] .desktop-titlebar {
+    padding-left: calc(env(titlebar-area-x, 0px) + 12px);
+    padding-right: calc(
+      100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%) + 12px
+    );
+  }
+
   .desktop-home-button {
     border-color: transparent;
     background: transparent;

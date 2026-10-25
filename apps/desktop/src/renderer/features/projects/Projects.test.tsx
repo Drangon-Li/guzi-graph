@@ -38,6 +38,8 @@ const roots: HTMLElement[] = [];
 const mount = (
   rootDirectory: string | null = "/drawings",
   ownerDocument = document,
+  platform = "darwin",
+  projectFiles = files,
 ) => {
   const root = ownerDocument.createElement("div");
   root.className = "excalidraw desktop-shell theme--dark";
@@ -45,10 +47,16 @@ const mount = (
   roots.push(root);
   const revealFile = vi.fn().mockResolvedValue(undefined);
   root.ownerDocument.defaultView!.desktop = {
+    platform,
     revealFile,
   } as unknown as DesktopAPI;
   const workspace = {
-    index: { rootDirectory, folders: [], files, history: files },
+    index: {
+      rootDirectory,
+      folders: [],
+      files: projectFiles,
+      history: projectFiles,
+    },
     settings: { rootDirectory },
     drafts: [],
     projectsVisible: true,
@@ -70,7 +78,7 @@ const mount = (
   };
   const view = render(<Projects {...props} />, { container: root });
   const trigger = (index = 0) =>
-    view.getByRole("button", { name: `${files[index].name} 的操作` });
+    view.getByRole("button", { name: `${projectFiles[index].name} 的操作` });
   const card = (index = 0) =>
     root.querySelectorAll<HTMLElement>(".desktop-file-card")[index];
   return { ...view, root, props, workspace, revealFile, trigger, card };
@@ -83,6 +91,62 @@ afterEach(() => {
 });
 
 describe("desktop project menus", () => {
+  it("recognizes nested Windows history files as movable categories", () => {
+    const nestedFile = {
+      ...files[0],
+      path: "C:\\Drawings\\work\\nested\\first.excalidraw",
+      relativePath: "work/nested/first.excalidraw",
+      category: "work/nested",
+    };
+    const outsideFile = {
+      ...files[1],
+      path: "C:\\Drawings-other\\nested\\second.excalidraw",
+    };
+    const view = mount("c:\\drawings\\", document, "win32", [
+      nestedFile,
+      outsideFile,
+    ]);
+    expect(view.getByText("Ctrl+O", { selector: "kbd" })).toBeVisible();
+    expect(
+      view.card().querySelector(".desktop-file-category"),
+    ).toHaveTextContent("work/nested");
+    expect(
+      view.card(1).querySelector(".desktop-file-category"),
+    ).toHaveTextContent("C:\\Drawings-other\\nested");
+    fireEvent.click(view.trigger());
+    const move = view.getByRole("menuitem", { name: "移动到分类" });
+    expect(move).toBeEnabled();
+    fireEvent.click(move);
+    expect(view.props.onEdit).toHaveBeenCalledWith({
+      kind: "move",
+      file: nestedFile,
+    });
+    fireEvent.click(view.trigger(1));
+    expect(
+      view.getByRole("menuitem", { name: "移入默认文件夹分类" }),
+    ).toBeEnabled();
+    fireEvent.change(view.getByRole("searchbox"), {
+      target: { value: "Drawings-other\\nested" },
+    });
+    expect(view.root.querySelectorAll(".desktop-file-card")).toHaveLength(1);
+  });
+
+  it("preserves backslashes in POSIX file names when classifying history", () => {
+    const outsideFile = {
+      ...files[0],
+      path: "/drawings\\nested/first.excalidraw",
+    };
+    const view = mount("/drawings", document, "darwin", [outsideFile]);
+    expect(view.getByText("⌘O", { selector: "kbd" })).toBeVisible();
+    expect(
+      view.card().querySelector(".desktop-file-category"),
+    ).toHaveTextContent("/drawings\\nested");
+    fireEvent.click(view.trigger());
+    expect(
+      view.getByRole("menuitem", { name: "移入默认文件夹分类" }),
+    ).toBeEnabled();
+  });
+
   it("closes on outside pointer, Escape and repeated trigger, preserving focus", () => {
     const view = mount();
     fireEvent.click(view.trigger());
@@ -128,7 +192,7 @@ describe("desktop project menus", () => {
     expect(view.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it("shares open, rename, move and Finder actions between right-click and trigger", () => {
+  it("shares open, rename, move and file manager actions between right-click and trigger", () => {
     const view = mount();
     fireEvent.contextMenu(view.card());
     const contextLabels = within(view.getByRole("menu"))
@@ -158,7 +222,7 @@ describe("desktop project menus", () => {
     expect(
       view.getByRole("menuitem", { name: "移入默认文件夹分类" }),
     ).toBeEnabled();
-    fireEvent.click(view.getByRole("menuitem", { name: "在 Finder 中显示" }));
+    fireEvent.click(view.getByRole("menuitem", { name: "在文件管理器中显示" }));
     expect(view.revealFile).toHaveBeenCalledWith(files[1].path);
   });
 
@@ -177,7 +241,7 @@ describe("desktop project menus", () => {
     expect(view.getByRole("menuitem", { name: "重命名" })).toHaveFocus();
     fireEvent.keyDown(menu, { key: "ArrowDown" });
     expect(
-      view.getByRole("menuitem", { name: "在 Finder 中显示" }),
+      view.getByRole("menuitem", { name: "在文件管理器中显示" }),
     ).toHaveFocus();
     fireEvent.keyDown(menu, { key: "ArrowDown" });
     expect(view.getByRole("menuitem", { name: "删除" })).toHaveFocus();
