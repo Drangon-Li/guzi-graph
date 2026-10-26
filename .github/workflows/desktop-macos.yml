@@ -37,7 +37,7 @@ jobs:
           cache: ${{ steps.scope.outputs.full == 'true' && 'yarn' || '' }}
           cache-dependency-path: yarn.lock
       - name: Test desktop CI scope selection
-        run: node --test tooling/scripts/desktop-ci-scope.test.cjs
+        run: node --test tooling/scripts/desktop-ci-scope.node-test.cjs
       - name: Check published update validation scripts
         if: steps.scope.outputs.full == 'false'
         run: |
