@@ -32,46 +32,75 @@ jobs:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 2
+      - name: Determine desktop CI scope
+        id: scope
+        run: node tooling/scripts/desktop-ci-scope.cjs
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.x
+          cache: ${{ steps.scope.outputs.full == 'true' && 'yarn' || '' }}
+          cache-dependency-path: yarn.lock
+      - name: Test desktop CI scope selection
+        run: node --test tooling/scripts/desktop-ci-scope.test.cjs
+      - name: Check published update validation scripts
+        if: steps.scope.outputs.full == 'false'
+        run: |
+          node --check apps/desktop/scripts/release-update-windows.cjs
+          node --check apps/desktop/scripts/release-update-mac.cjs
       - name: Enable Corepack
+        if: steps.scope.outputs.full == 'true'
         run: corepack enable
       - name: Select Yarn 1.22.22
+        if: steps.scope.outputs.full == 'true'
         run: corepack prepare yarn@1.22.22 --activate
       - name: Install locked dependencies
+        if: steps.scope.outputs.full == 'true'
         run: yarn install --frozen-lockfile
       - name: Desktop typecheck
+        if: steps.scope.outputs.full == 'true'
         run: yarn desktop:typecheck
       - name: Core and web typecheck
+        if: steps.scope.outputs.full == 'true'
         run: yarn test:typecheck
       - name: Main and preload tests
+        if: steps.scope.outputs.full == 'true'
         working-directory: apps/desktop
         run: yarn test:main
       - name: Packaging tests
+        if: steps.scope.outputs.full == 'true'
         working-directory: apps/desktop
         run: yarn test:packaging
       - name: Full Vitest suite including desktop, export, host and render environment
+        if: steps.scope.outputs.full == 'true'
         timeout-minutes: 15
-        run: yarn test:app run --reporter=dot --maxWorkers=2 --minWorkers=1
+        run: yarn test:app run --reporter=dot --maxWorkers=3 --minWorkers=1
       - name: Build desktop renderer
+        if: steps.scope.outputs.full == 'true'
         run: yarn desktop:build
       - name: Package Windows x64 unpacked application
+        if: steps.scope.outputs.full == 'true'
         working-directory: apps/desktop
         run: yarn electron-builder --win --x64 --dir --publish never
       - name: Packaged launch, save and reopen smoke
+        if: steps.scope.outputs.full == 'true'
         timeout-minutes: 5
         run: yarn desktop:test:smoke --executable "apps/desktop/release/win-unpacked/Excalidraw-Guzi.exe"
       - name: Package Windows x64 NSIS installer
+        if: steps.scope.outputs.full == 'true'
         working-directory: apps/desktop
         run: yarn electron-builder --win nsis --x64 --publish never
       - name: Verify real NSIS cross-version update
+        if: steps.scope.outputs.full == 'true'
         timeout-minutes: 10
         run: node apps/desktop/scripts/update-windows-e2e.cjs --app-dir apps/desktop/release/win-unpacked
       - name: Verify Windows update metadata and archive portable files
+        if: steps.scope.outputs.full == 'true'
         run: node apps/desktop/scripts/release-assets.cjs windows-archive
       - name: Upload Windows installer and unpacked application
+        if: steps.scope.outputs.full == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: Excalidraw-Guzi-windows-x64
@@ -82,14 +111,14 @@ jobs:
             apps/desktop/release/latest.yml
           if-no-files-found: error
       - name: Upload smoke diagnostics
-        if: always()
+        if: always() && steps.scope.outputs.full == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: windows-desktop-smoke
           path: output/playwright/desktop-smoke/
           if-no-files-found: ignore
       - name: Upload update diagnostics
-        if: always()
+        if: always() && steps.scope.outputs.full == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: windows-update-diagnostics
