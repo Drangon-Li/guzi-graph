@@ -15,8 +15,11 @@ const LibraryMenuBrowseButton = ({
   theme: UIAppState["theme"];
   id: string;
 }) => {
-  const { desktopIntegration } = useAppProps();
-  if (desktopIntegration?.localOnly) {
+  const { desktopIntegration, UIOptions } = useAppProps();
+  if (
+    desktopIntegration?.localOnly ||
+    UIOptions.libraryRemoteActions === false
+  ) {
     return null;
   }
   const referrer =

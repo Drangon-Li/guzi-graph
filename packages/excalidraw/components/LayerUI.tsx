@@ -807,8 +807,10 @@ const LayerUI = ({
               />
             )}
           {defaultUIEnabled &&
-            appProps.desktopIntegration &&
-            appProps.desktopIntegration.selectionToolbar !== false && (
+            appProps.UIOptions.textSelectionToolbar !== false &&
+            appProps.desktopIntegration?.selectionToolbar !== false &&
+            (appProps.UIOptions.textSelectionToolbar === true ||
+              appProps.desktopIntegration) && (
               <TextSelectionToolbar
                 app={app}
                 appState={appState}

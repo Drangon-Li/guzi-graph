@@ -1,10 +1,22 @@
 # Excalidraw-Guzi
 
-**Excalidraw-Guzi（谷子白板）** 是基于 [Excalidraw](https://github.com/excalidraw/excalidraw) 二次开发的**免费开源本地桌面白板**。用简洁的面板和顺手的快捷键，把想法、论文笔记和流程图整理成自己的图片知识库。保留手绘画布与 `.excalidraw` 文件格式，并加入本地工作区、可编辑表格、富文本、子画布和自定义样式预设。
+**Excalidraw-Guzi（谷子白板）** 是基于 [Excalidraw](https://github.com/excalidraw/excalidraw) 二次开发的**免费开源白板**，提供本地桌面版和免安装的单人在线版。用简洁的面板和顺手的快捷键，把想法、论文笔记和流程图整理成自己的图片知识库。保留手绘画布与 `.excalidraw` 文件格式，并加入可编辑表格、富文本和子画布；桌面版还提供本地工作区、多页演示文稿和自定义样式预设。
 
 本项目使用 [MIT 开源许可](./LICENSE)。感谢 Excalidraw 团队与所有贡献者提供优秀的画布基础。
 
-[下载与版本记录](https://github.com/Drangon-Li/guzi-graph/releases) · [反馈问题](https://github.com/Drangon-Li/guzi-graph/issues) · [上游仓库](https://github.com/excalidraw/excalidraw)
+[在线使用](https://graph.guzilab.com/) · [桌面版下载与版本记录](https://github.com/Drangon-Li/guzi-graph/releases) · [反馈问题](https://github.com/Drangon-Li/guzi-graph/issues) · [上游仓库](https://github.com/excalidraw/excalidraw)
+
+## 在线使用
+
+打开 **[graph.guzilab.com](https://graph.guzilab.com/)** 即可开始绘图，无需安装或注册。在线版供每个人独立使用，支持图形、文字、图片、表格和本地素材库；选中文字后，可通过悬浮工具栏调整粗体、斜体、下划线、文字颜色和底色。
+
+1. 直接在画布上绘图，或从左上角菜单选择「打开」，导入 `.excalidraw` 文件。
+2. 内容会自动保存在当前浏览器中，刷新或再次访问同一网址可继续编辑。
+3. 通过「保存到… → 保存为文件」导出 `.excalidraw` 备份，或通过「导出图片…」保存 PNG / SVG。画布文件也可在谷子白板桌面版中打开。
+
+**内容保存在当前设备的浏览器中，不会跨浏览器或跨设备同步。** 清理网站数据或关闭无痕窗口可能丢失内容，请定期导出文件备份。在线版不提供多人协作、云分享或 AI 服务。
+
+本地工作区、多页演示文稿、Market、内置 MCP、PDF 和结构化信息导出等功能请使用桌面版。下面的功能与使用指南主要介绍桌面版。
 
 ## 72 秒认识谷子白板
 
@@ -38,11 +50,11 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 - **图片复制**：复制选中元素后，粘贴到聊天或文档时呈现图片，在画板内部粘贴仍可编辑，并保留关联子画布。
 - **多种导出**：PNG、SVG、PDF，以及带图片附件的 JSON / Markdown 结构化导出。
 
-## 安装
+## 桌面版安装
 
-已发布的 [v0.7.4](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.7.4) 提供 **macOS Apple Silicon（arm64）** 和 **Windows 10 / 11 x64** 安装包，并提供 Windows 免安装版本。暂未提供 Intel Mac 或 Linux 安装包。
+已发布的 [v0.8.0](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.0) 提供 **macOS Apple Silicon（arm64）** 和 **Windows 10 / 11 x64** 安装包，并提供 Windows 免安装版本。暂未提供 Intel Mac 或 Linux 安装包。
 
-1. 在 [v0.7.4 Releases](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.7.4) 下载 `Excalidraw-Guzi-0.7.4-arm64.dmg`。
+1. 在 [v0.8.0 Releases](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.0) 下载 `Excalidraw-Guzi-0.8.0-arm64.dmg`。
 2. 打开 DMG，将 **Excalidraw-Guzi.app** 拖入「应用程序」。
 3. 从「应用程序」启动，也可用它打开 `.excalidraw` 文件。
 
@@ -50,7 +62,9 @@ macOS 安装包使用 ad-hoc 签名，**尚未经过 Apple 公证（notarization
 
 更新应用后，macOS 可能再次请求桌面等文件夹访问权限；允许后工作区会继续加载。同一个已授权版本正常重开无需重复授权。
 
-Windows 用户可在同一发布页下载 `Excalidraw-Guzi-0.7.4-win-x64.exe`，运行后按安装向导选择目录；也可下载 `Excalidraw-Guzi-0.7.4-win-x64-unpacked.zip`，完整解压后运行其中的 `Excalidraw-Guzi.exe`。Windows 安装包尚未使用代码签名证书，系统可能显示“未知发布者”。正式渠道沿用 `.excalidraw` 和 `.guzi-presentation` 文件关联。Windows 安装、升级、卸载及文件关联仍需在真实 Windows 10 / 11 上验收；具体步骤见 [Windows 开发与验收](./docs/windows-desktop.md)。
+Windows 用户可在同一发布页下载 `Excalidraw-Guzi-0.8.0-win-x64.exe`，运行后按安装向导选择目录；也可下载 `Excalidraw-Guzi-0.8.0-win-x64-unpacked.zip`，完整解压后运行其中的 `Excalidraw-Guzi.exe`。Windows 安装包尚未使用代码签名证书，系统可能显示“未知发布者”。正式渠道沿用 `.excalidraw` 和 `.guzi-presentation` 文件关联。Windows 安装、升级、卸载及文件关联仍需在真实 Windows 10 / 11 上验收；具体步骤见 [Windows 开发与验收](./docs/windows-desktop.md)。
+
+首次安装 v0.8.0 后，后续版本可通过应用内更新安装；Windows 免安装 ZIP 版本除外。
 
 ## 连接 MCP
 
@@ -155,8 +169,24 @@ yarn test:app run packages/excalidraw/features/rich-text/editor.test.tsx
 
 本地构建沿用 ad-hoc 签名配置，不会自动完成 Developer ID 签名或 Apple 公证。
 
+### 构建单人网页版
+
+安装仓库依赖后，在仓库根目录运行：
+
+```bash
+# 构建与在线站点相同的单人模式
+yarn --cwd apps/web build:single-user
+
+# 在本机预览构建结果
+yarn --cwd apps/web vite preview --host 127.0.0.1 --port 4173 --mode single-user
+```
+
+访问 `http://127.0.0.1:4173/` 预览，静态构建输出位于 `apps/web/build/`。单人模式配置位于 `tooling/config/env/.env.single-user`，关闭协作、云分享、AI 和统计服务，并将字体随站点打包；保留浏览器本地保存与文件导入导出。
+
+部署时将整个 `apps/web/build/` 目录交给支持 HTTPS 的静态文件服务器托管。首页和 `sw.js` 应使用重新校验缓存策略，带哈希的 `assets/` 文件可长期缓存；更新时保留旧哈希资源，避免已打开的页面加载失败。当前在线站点通过 Caddy 提供 HTTPS，无需画布存储后端。
+
 ## 上游与许可
 
 本项目基于 [Excalidraw](https://github.com/excalidraw/excalidraw) 修改，遵循 [MIT License](./LICENSE)，保留上游版权与许可声明。Excalidraw-Guzi 是独立修改版本；感谢并致敬 Excalidraw 团队与开源社区。
 
-上游资料：[使用 Excalidraw](https://excalidraw.com) · [组件文档](https://docs.excalidraw.com) · [开发指南](https://docs.excalidraw.com/docs/introduction/development)。上游网站提供的在线协作、分享等功能不代表本地桌面应用提供相同服务。
+上游资料：[使用 Excalidraw](https://excalidraw.com) · [组件文档](https://docs.excalidraw.com) · [开发指南](https://docs.excalidraw.com/docs/introduction/development)。上游网站提供的在线协作、分享等功能不代表本项目的桌面版或单人在线版提供相同服务。

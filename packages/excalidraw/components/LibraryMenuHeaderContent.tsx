@@ -54,7 +54,7 @@ export const LibraryDropdownMenuButton: React.FC<{
   appState,
   className,
 }) => {
-  const { desktopIntegration } = useAppProps();
+  const { desktopIntegration, UIOptions } = useAppProps();
   const [libraryItemsData] = useAtom(libraryItemsAtom);
   const [isLibraryMenuOpen, setIsLibraryMenuOpen] = useAtom(
     isLibraryMenuOpenAtom,
@@ -221,15 +221,17 @@ export const LibraryDropdownMenuButton: React.FC<{
               {t("buttons.export")}
             </DropdownMenu.Item>
           )}
-          {itemsSelected && !desktopIntegration?.localOnly && (
-            <DropdownMenu.Item
-              icon={publishIcon}
-              onSelect={() => setShowPublishLibraryDialog(true)}
-              data-testid="lib-dropdown--remove"
-            >
-              {t("buttons.publishLibrary")}
-            </DropdownMenu.Item>
-          )}
+          {itemsSelected &&
+            !desktopIntegration?.localOnly &&
+            UIOptions.libraryRemoteActions !== false && (
+              <DropdownMenu.Item
+                icon={publishIcon}
+                onSelect={() => setShowPublishLibraryDialog(true)}
+                data-testid="lib-dropdown--remove"
+              >
+                {t("buttons.publishLibrary")}
+              </DropdownMenu.Item>
+            )}
           {!!items.length && (
             <DropdownMenu.Item
               onSelect={() => setShowRemoveLibAlert(true)}

@@ -677,6 +677,8 @@ const persistLibraryUpdate = async (
 export const useHandleLibrary = (
   opts: {
     excalidrawAPI: ExcalidrawImperativeAPI | null;
+    /** Whether to import libraries from URL parameters. Defaults to true. */
+    libraryUrlImport?: boolean;
     /**
      * Return `true` if the library install url should be allowed.
      * If not supplied, only the excalidraw.com base domain is allowed.
@@ -778,6 +780,9 @@ export const useHandleLibrary = (
       }
     };
     const onHashChange = (event: HashChangeEvent) => {
+      if (optsRef.current.libraryUrlImport === false) {
+        return;
+      }
       event.preventDefault();
       const libraryUrlTokens = parseLibraryTokensFromUrl();
       if (libraryUrlTokens) {
@@ -796,7 +801,8 @@ export const useHandleLibrary = (
     // ---------------------------------- init ---------------------------------
     // -------------------------------------------------------------------------
 
-    const libraryUrlTokens = parseLibraryTokensFromUrl();
+    const libraryUrlTokens =
+      optsRef.current.libraryUrlImport !== false && parseLibraryTokensFromUrl();
 
     if (libraryUrlTokens) {
       importLibraryFromURL(libraryUrlTokens);
