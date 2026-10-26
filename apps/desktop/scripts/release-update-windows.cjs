@@ -220,17 +220,26 @@ ConvertTo-Json -InputObject @($keys) -Compress
         ignoreAbort,
       ),
     );
-  const appProcesses = async (ignoreAbort = false) =>
-    parse(
+  const appProcesses = async (ignoreAbort = false) => {
+    const items = parse(
       await powershell(
         `
 $items = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath -ieq $env:GUZI_RELEASE_EXE } | Select-Object ProcessId, ParentProcessId, ExecutablePath, CommandLine, CreationDate)
-ConvertTo-Json -InputObject $items -Depth 4 -Compress
+ConvertTo-Json -InputObject @($items) -Depth 4 -Compress
 `,
         { GUZI_RELEASE_EXE: executable },
         ignoreAbort,
       ),
     );
+    assert.ok(Array.isArray(items), "Expected an application process array");
+    for (const item of items) {
+      assert.ok(
+        Number.isInteger(item.ProcessId) && item.ProcessId > 0,
+        "Expected a numeric application process ID",
+      );
+    }
+    return items;
+  };
   const bridge = (method, value) =>
     bounded(
       page
@@ -591,8 +600,10 @@ ConvertTo-Json -InputObject $items -Compress
         70000,
         "production app launch",
       );
-      const pid = application.process().pid;
+      // On Windows Playwright may expose a launcher instead of Electron's main PID.
+      const launcherPid = application.process().pid;
       const facts = await application.evaluate(({ app }) => ({
+        pid: process.pid,
         version: app.getVersion(),
         profile: app.getPath("userData"),
         packaged: app.isPackaged,
@@ -602,10 +613,25 @@ ConvertTo-Json -InputObject $items -Compress
       assert.equal(facts.profile.toLowerCase(), profile.toLowerCase());
       assert.equal(facts.executable.toLowerCase(), executable.toLowerCase());
       assert.equal(facts.packaged, true);
+      const pid = facts.pid;
+      assert.ok(Number.isInteger(pid) && pid > 0);
+      const mainProcess = (await appProcesses()).find(
+        (item) => item.ProcessId === pid,
+      );
+      assert.ok(
+        mainProcess,
+        "Electron main PID must match the installed EXE path",
+      );
+      assert.ok(
+        mainProcess.CommandLine &&
+          !/(?:^|\s)--type=/.test(mainProcess.CommandLine),
+        "Electron main PID must identify the browser process",
+      );
       report.launches ||= [];
       const entry = {
-        pid,
+        launcherPid,
         ...facts,
+        mainProcess,
         at: new Date().toISOString(),
         stdout: "",
         stderr: "",
@@ -740,14 +766,14 @@ $process = Get-Process -Id $target.ProcessId
     };
     await screenshot("automatic-restart");
     await closeNormally(restarted.pid);
-    await launch(to);
+    const targetPid = await launch(to);
     await verifyPreserved();
     await openSettings();
     await clickUpdate("检查更新");
     await waitState("up-to-date", 180000);
     await screenshot("after-update");
     assert.equal(await hash(installedArchive), report.expectedArchiveSha256);
-    await closeNormally(application.process().pid);
+    await closeNormally(targetPid);
     report.passed = true;
   } catch (error) {
     report.error = error.stack || String(error);

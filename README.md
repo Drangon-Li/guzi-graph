@@ -64,7 +64,7 @@ macOS 安装包使用 ad-hoc 签名，**尚未经过 Apple 公证（notarization
 
 Windows 用户可在同一发布页下载 `Excalidraw-Guzi-0.8.1-win-x64.exe`，运行后按安装向导选择目录；也可下载 `Excalidraw-Guzi-0.8.1-win-x64-unpacked.zip`，完整解压后运行其中的 `Excalidraw-Guzi.exe`。Windows 安装包尚未使用代码签名证书，系统可能显示“未知发布者”。正式渠道沿用 `.excalidraw` 和 `.guzi-presentation` 文件关联。Windows 安装、升级、卸载及文件关联仍需在真实 Windows 10 / 11 上验收；具体步骤见 [Windows 开发与验收](./docs/windows-desktop.md)。
 
-首次安装 v0.8.0 后，后续版本可通过应用内更新安装；Windows 免安装 ZIP 版本除外。
+v0.8.0 和 v0.8.1 的应用内检查、下载更新可用，但“安装并重启”会被仍打开的设置窗口取消，暂时需要手动安装更新。修复版发布后，现有用户需要手动安装一次修复版。Windows 免安装 ZIP 版本始终需要手动替换。
 
 ## 连接 MCP
 
