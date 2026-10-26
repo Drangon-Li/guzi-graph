@@ -1,3 +1,4 @@
+// Temporary script-only CI timing fixture; this branch is not merged.
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { createHash, randomUUID } = require("node:crypto");
