@@ -1217,6 +1217,95 @@ test("PDF IPC translates invalid PDF request errors to the selected language", a
 });
 
 const flushUpdates = () => new Promise((resolve) => setImmediate(resolve));
+
+for (const platform of ["darwin", "win32"]) {
+  test(`startup checks once without downloading and preserves manual checks on ${platform}`, async (t) => {
+    let checks = 0;
+    let downloads = 0;
+    const h = await harness(t, {
+      platform,
+      isPackaged: true,
+      updateAdapter: ({ emit }) => ({
+        async check() {
+          checks++;
+          emit({ status: "available", availableVersion: "0.8.0" });
+        },
+        async download() {
+          downloads++;
+        },
+        async cancel() {},
+      }),
+    });
+    const result = await h.invoke("check-startup-update");
+    assert.equal(result.status, "available");
+    assert.equal(checks, 1);
+    assert.equal(downloads, 0);
+    h.window.emit("ready-to-show");
+    h.window.emit("ready-to-show");
+    h.app.emit("second-instance", {}, []);
+    assert.equal(await h.invoke("check-startup-update"), null);
+    await h.invoke("check-for-updates");
+    assert.equal(checks, 2);
+    assert.equal(downloads, 0);
+    await h.invoke("take-pending-files");
+    h.window.close();
+    h.ipcMain.emit("desktop:confirm-close", h.event);
+    await flushUpdates();
+    h.app.emit("activate");
+    const reopened = h.calls.window;
+    assert.notEqual(reopened, h.window);
+    assert.equal(
+      await h.handlers.get("desktop:check-startup-update")({
+        sender: reopened.webContents,
+        senderFrame: reopened.webContents.mainFrame,
+      }),
+      null,
+    );
+    assert.equal(checks, 2);
+  });
+}
+
+for (const outcome of ["up-to-date", "error"]) {
+  test(`startup ${outcome} remains silent and does not retry automatically`, async (t) => {
+    let checks = 0;
+    const h = await harness(t, {
+      isPackaged: true,
+      updateAdapter: ({ emit }) => ({
+        async check() {
+          checks++;
+          if (outcome === "error") throw new Error("Offline");
+          emit({ status: outcome });
+        },
+      }),
+    });
+    assert.equal((await h.invoke("check-startup-update")).status, outcome);
+    assert.equal(await h.invoke("check-startup-update"), null);
+    assert.equal(checks, 1);
+    assert.deepEqual(h.calls.errors, []);
+    await h.invoke("check-for-updates");
+    assert.equal(checks, 2);
+  });
+}
+
+test("development and test builds skip startup network checks", async (t) => {
+  for (const options of [
+    {},
+    { isPackaged: true, buildChannel: "test" },
+    { isPackaged: true, buildChannel: "dev-ppt" },
+    { isPackaged: true, platform: "linux" },
+  ]) {
+    const h = await harness(t, {
+      ...options,
+      updateAdapter: () => assert.fail("Unsupported build loaded an updater"),
+    });
+    assert.equal(
+      (await h.invoke("check-startup-update")).status,
+      "unavailable",
+    );
+    assert.equal(await h.invoke("check-startup-update"), null);
+  }
+});
+
 async function updateHarness(t) {
   const calls = { installs: 0, cancels: 0 };
   let emit;
@@ -1251,6 +1340,7 @@ test("update IPC rejects foreign senders and renderer cannot provide paths or fe
   const h = await updateHarness(t);
   for (const endpoint of [
     "get-update-state",
+    "check-startup-update",
     "check-for-updates",
     "download-update",
     "install-update",

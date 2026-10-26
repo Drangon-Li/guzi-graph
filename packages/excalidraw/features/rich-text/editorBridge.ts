@@ -1,6 +1,8 @@
 export type RichTextCommand =
   | { type: "bold" | "italic" | "underline" }
   | { type: "layout" }
+  | { type: "fontSize"; value: number; baseFontSize: number }
+  | { type: "fontSize"; scale: number; baseFontSize: number }
   | { type: "background"; value: string | null }
   | { type: "color"; value: string }
   | { type: "list"; value: "ordered" | "bullet" | null }
@@ -11,6 +13,7 @@ export type RichTextSelectionState = {
   background: string | null;
   color: string | null;
   hasSelection: boolean;
+  fontSize?: number | null;
   list: "none" | "ordered" | "bullet" | null;
   bold?: boolean;
   italic?: boolean;
@@ -50,6 +53,7 @@ export const publishRichTextSelectionState = (
         previous.background === state.background &&
         previous.color === state.color &&
         previous.hasSelection === state.hasSelection &&
+        previous.fontSize === state.fontSize &&
         previous.list === state.list &&
         previous.bold === state.bold &&
         previous.italic === state.italic &&

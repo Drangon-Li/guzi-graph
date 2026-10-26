@@ -88,6 +88,7 @@ describe("Lexical rich text editing", () => {
               underline: true,
               background: "#fff3bf",
               color: "#e03131",
+              fontSizeScale: 1.5,
             },
           ],
         },
@@ -176,6 +177,92 @@ describe("Lexical rich text editing", () => {
     editor.dispatchCommand(REDO_COMMAND, undefined);
     flush(editor);
     expect(read(editor)).toEqual(colored);
+  });
+
+  it("sizes a backward selection across paragraphs and restores styles with undo/redo", () => {
+    const document: RichTextDocument = {
+      version: 1,
+      paragraphs: [
+        { runs: [{ text: "abc", bold: true, fontSizeScale: 1.5 }] },
+        { runs: [{ text: "中文z", color: "#e03131" }] },
+      ],
+    };
+    editor.update(() => $writeRichText(document, { start: 6, end: 1 }), {
+      discrete: true,
+    });
+    editor.update(
+      () =>
+        applyRichTextEditorCommand(editor, {
+          type: "fontSize",
+          value: 40,
+          baseFontSize: 20,
+        }),
+      { discrete: true, tag: HISTORY_PUSH_TAG },
+    );
+    const sized = read(editor);
+    expect(sized.paragraphs).toEqual([
+      {
+        runs: [
+          { text: "a", bold: true, fontSizeScale: 1.5 },
+          { text: "bc", bold: true, fontSizeScale: 2 },
+        ],
+      },
+      {
+        runs: [
+          { text: "中文", color: "#e03131", fontSizeScale: 2 },
+          { text: "z", color: "#e03131" },
+        ],
+      },
+    ]);
+    editor.dispatchCommand(UNDO_COMMAND, undefined);
+    flush(editor);
+    expect(read(editor)).toEqual(document);
+    editor.dispatchCommand(REDO_COMMAND, undefined);
+    flush(editor);
+    expect(read(editor)).toEqual(sized);
+  });
+
+  it("increases mixed selected sizes relative to each run and removes the default scale", () => {
+    editor.update(
+      () =>
+        $writeRichText(
+          {
+            version: 1,
+            paragraphs: [
+              {
+                runs: [
+                  { text: "a" },
+                  { text: "中文", fontSizeScale: 2 },
+                  { text: "z" },
+                ],
+              },
+            ],
+          },
+          { start: 0, end: 3 },
+        ),
+      { discrete: true },
+    );
+    applyRichTextEditorCommand(editor, {
+      type: "fontSize",
+      scale: 1.1,
+      baseFontSize: 20,
+    });
+    flush(editor);
+    expect(read(editor).paragraphs[0].runs).toEqual([
+      { text: "a", fontSizeScale: 1.1 },
+      { text: "中文", fontSizeScale: 2.2 },
+      { text: "z" },
+    ]);
+    applyRichTextEditorCommand(editor, {
+      type: "fontSize",
+      value: 20,
+      baseFontSize: 20,
+    });
+    flush(editor);
+    expect(read(editor).paragraphs[0].runs).toEqual([
+      { text: "a中文" },
+      { text: "z" },
+    ]);
   });
 
   it("continues a list on Enter and exits an empty item on the next Enter", () => {

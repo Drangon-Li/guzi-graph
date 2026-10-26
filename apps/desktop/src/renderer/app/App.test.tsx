@@ -48,6 +48,7 @@ describe("desktop inline tab rename interaction", () => {
     document.body.append(root);
     root.ownerDocument.defaultView!.desktop = {
       platform: "darwin",
+      checkStartupUpdate: vi.fn().mockResolvedValue(null),
       getUpdateState: vi
         .fn()
         .mockResolvedValue({ status: "idle", currentVersion: "0.7.4" }),
@@ -119,7 +120,10 @@ describe("desktop inline tab rename interaction", () => {
       root.remove();
       const ownerDocument = frame.contentDocument!;
       ownerDocument.defaultView!.matchMedia = ownerWindow.matchMedia;
-      ownerDocument.defaultView!.desktop = { platform: "win32" } as DesktopAPI;
+      ownerDocument.defaultView!.desktop = {
+        platform: "win32",
+        checkStartupUpdate: vi.fn().mockResolvedValue(null),
+      } as unknown as DesktopAPI;
       root = ownerDocument.createElement("div");
       ownerDocument.body.append(root);
       canvas.api = {} as ExcalidrawImperativeAPI;
@@ -245,7 +249,10 @@ describe("desktop inline tab rename interaction", () => {
     expect((input as HTMLInputElement).selectionStart).toBe(0);
     expect((input as HTMLInputElement).selectionEnd).toBe(3);
     expect(view.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(vi.mocked(useWorkspace).mock.lastCall?.[1]).toBe(false);
+    const modalGuard = vi.mocked(useWorkspace).mock.lastCall?.[1];
+    expect(typeof modalGuard === "function" ? modalGuard() : modalGuard).toBe(
+      false,
+    );
     fireEvent.change(input, { target: { value: " 新名称 " } });
     fireEvent.keyDown(input, { key: "Enter" });
     fireEvent.blur(input);

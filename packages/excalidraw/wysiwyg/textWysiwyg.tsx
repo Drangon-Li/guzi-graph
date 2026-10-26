@@ -17,6 +17,7 @@ import { pointFrom, pointRotateRads, type Radians } from "@excalidraw/math";
 
 import {
   richTextFromPlainText,
+  getBaseFontSize,
   getTextFromElements,
   originalContainerCache,
   updateBoundElements,
@@ -932,8 +933,10 @@ export const textWysiwyg = ({
       app.actionManager.executeAction(actionResetZoom);
       updateWysiwygStyle();
     } else if (actionDecreaseFontSize.keyTest(event)) {
+      event.preventDefault();
       app.actionManager.executeAction(actionDecreaseFontSize);
     } else if (actionIncreaseFontSize.keyTest(event)) {
+      event.preventDefault();
       app.actionManager.executeAction(actionIncreaseFontSize);
     } else if (event.key === KEYS.ESCAPE) {
       event.preventDefault();
@@ -1148,7 +1151,7 @@ export const textWysiwyg = ({
     if (
       next instanceof ownerWindow.Element &&
       next.closest(
-        `.${CLASSES.SHAPE_ACTIONS_MENU}, .selected-shape-actions, .compact-shape-actions-island, .properties-content, .properties-trigger, .selection-toolbar`,
+        `.${CLASSES.SHAPE_ACTIONS_MENU}, .selected-shape-actions, .compact-shape-actions-island, .properties-content, .properties-trigger, .selection-toolbar, .exc-stats`,
       )
     ) {
       return;
@@ -1200,7 +1203,7 @@ export const textWysiwyg = ({
     const isPropertiesContent =
       (target instanceof ownerWindow.HTMLElement ||
         target instanceof ownerWindow.SVGElement) &&
-      !!(target as Element).closest(".properties-content");
+      !!(target as Element).closest(".properties-content, .exc-stats");
     const inShapeActionsMenu =
       (target instanceof ownerWindow.HTMLElement ||
         target instanceof ownerWindow.SVGElement) &&
@@ -1286,7 +1289,7 @@ export const textWysiwyg = ({
     const isPropertiesContent =
       (target instanceof ownerWindow.HTMLElement ||
         target instanceof ownerWindow.SVGElement) &&
-      !!(target as Element).closest(".properties-content");
+      !!(target as Element).closest(".properties-content, .exc-stats");
 
     if (
       ((event.target instanceof ownerWindow.HTMLElement ||
@@ -1355,6 +1358,10 @@ export const textWysiwyg = ({
       color:
         app.scene.getElement<ExcalidrawTextElement>(element.id)?.strokeColor ??
         element.strokeColor,
+      fontSize: getBaseFontSize(
+        app.scene.getElement<ExcalidrawTextElement>(element.id) ?? element,
+        app.scene.getNonDeletedElementsMap(),
+      ),
       list: "none",
       hasSelection: start !== end,
       bold: false,
@@ -1405,9 +1412,11 @@ export const textWysiwyg = ({
       if (isDestroyed) {
         return;
       }
-      const focusedColorInput =
+      const focusedPropertyInput =
         ownerDocument.activeElement instanceof ownerWindow.HTMLInputElement &&
-        ownerDocument.activeElement.matches(".color-picker-input")
+        ownerDocument.activeElement.matches(
+          ".properties-content input, .exc-stats input, .color-picker-input",
+        )
           ? ownerDocument.activeElement
           : null;
       const selection = {
@@ -1433,7 +1442,7 @@ export const textWysiwyg = ({
           isExistingElement: true,
           initialSelection: selection,
         });
-        focusedColorInput?.focus({ preventScroll: true });
+        focusedPropertyInput?.focus({ preventScroll: true });
         executeRichTextCommand(ownerDocument, command);
       });
     },
@@ -1451,7 +1460,7 @@ export const textWysiwyg = ({
     updateWysiwygStyle();
     publishSelection();
     const isPopupOpened = !!ownerDocument.activeElement?.closest(
-      ".properties-content",
+      ".properties-content, .exc-stats",
     );
     if (!isPopupOpened) {
       editable.focus({ preventScroll: true });

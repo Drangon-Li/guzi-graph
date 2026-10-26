@@ -6,6 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { StrictMode } from "react";
 
 import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
 
@@ -66,6 +67,7 @@ describe.each(["darwin", "win32"] as const)(
       command = () => {};
       desktop = {
         platform,
+        checkStartupUpdate: vi.fn().mockResolvedValue(null),
         getSettings: vi.fn().mockResolvedValue(settings),
         listProjects: vi.fn().mockResolvedValue({
           rootDirectory: "/drawings",
@@ -101,6 +103,17 @@ describe.each(["darwin", "win32"] as const)(
           status: "downloaded",
           currentVersion: "0.8.1",
           availableVersion: "0.8.2",
+        }),
+        checkForUpdates: vi.fn().mockResolvedValue({
+          status: "available",
+          currentVersion: "0.8.1",
+          availableVersion: "0.8.2",
+        }),
+        downloadUpdate: vi.fn().mockResolvedValue({
+          status: "downloaded",
+          currentVersion: "0.8.1",
+          availableVersion: "0.8.2",
+          progress: 100,
         }),
         onUpdateState: vi.fn(() => () => {}),
         installUpdate: vi.fn(async () => {
@@ -182,6 +195,178 @@ describe.each(["darwin", "win32"] as const)(
       });
       return { view, install };
     };
+
+    const available = {
+      status: "available" as const,
+      currentVersion: "0.8.1",
+      availableVersion: "0.8.2",
+    };
+
+    it("prompts once in StrictMode and leaves downloading to the user", async () => {
+      vi.mocked(desktop.checkStartupUpdate).mockResolvedValue(available);
+      vi.mocked(desktop.getUpdateState).mockResolvedValue(available);
+      const view = render(
+        <StrictMode>
+          <App root={root} />
+        </StrictMode>,
+        { container: root },
+      );
+      const prompt = await view.findByRole("dialog", { name: "发现新版本" });
+      expect(desktop.checkStartupUpdate).toHaveBeenCalledTimes(1);
+      await within(prompt).findByRole("button", { name: "下载更新" });
+      expect(desktop.downloadUpdate).not.toHaveBeenCalled();
+      expect(desktop.installUpdate).not.toHaveBeenCalled();
+      fireEvent.click(within(prompt).getByRole("button", { name: "稍后更新" }));
+      expect(view.queryByRole("dialog")).not.toBeInTheDocument();
+      fireEvent.click(view.getByRole("button", { name: "返回项目页" }));
+      fireEvent.click(view.getByRole("button", { name: "设置" }));
+      await view.findByRole("button", { name: "下载更新" });
+      expect(
+        view.queryByRole("dialog", { name: "发现新版本" }),
+      ).not.toBeInTheDocument();
+      expect(desktop.checkStartupUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps a manual available result inside settings without a startup prompt", async () => {
+      vi.mocked(desktop.getUpdateState).mockResolvedValue({
+        status: "idle",
+        currentVersion: "0.8.1",
+      });
+      const view = render(<App root={root} />, { container: root });
+      await view.findByRole("tab", { name: "升级画布" });
+      fireEvent.click(view.getByRole("button", { name: "返回项目页" }));
+      fireEvent.click(view.getByRole("button", { name: "设置" }));
+      fireEvent.click(await view.findByRole("button", { name: "检查更新" }));
+      await view.findByRole("button", { name: "下载更新" });
+      expect(desktop.checkForUpdates).toHaveBeenCalledTimes(1);
+      fireEvent.click(view.getByRole("button", { name: "完成" }));
+      expect(view.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(desktop.downloadUpdate).not.toHaveBeenCalled();
+    });
+
+    it("does not block closing while a startup update waits for workspace loading", async () => {
+      vi.mocked(desktop.checkStartupUpdate).mockResolvedValue(available);
+      let resolveSession!: (session: {
+        paths: string[];
+        activePath: null;
+      }) => void;
+      vi.mocked(desktop.getSession).mockReturnValue(
+        new Promise((resolve) => {
+          resolveSession = resolve;
+        }),
+      );
+      const view = render(<App root={root} />, { container: root });
+      await act(async () => {});
+      expect(
+        view.queryByRole("dialog", { name: "发现新版本" }),
+      ).not.toBeInTheDocument();
+      act(() => command("close-window"));
+      await waitFor(() =>
+        expect(desktop.confirmClose).toHaveBeenCalledTimes(1),
+      );
+      expect(desktop.cancelClose).not.toHaveBeenCalled();
+      await act(async () => resolveSession({ paths: [], activePath: null }));
+    });
+
+    it.each(["保存", "取消"])(
+      "defers a startup result arriving during an existing close prompt and honors %s",
+      async (choice) => {
+        let resolveStartup!: (state: typeof available) => void;
+        vi.mocked(desktop.checkStartupUpdate).mockReturnValue(
+          new Promise((resolve) => {
+            resolveStartup = resolve;
+          }),
+        );
+        const { view } = await mount(true);
+        fireEvent.click(view.getByRole("button", { name: "完成" }));
+        act(() => command("close-window"));
+        const savePrompt = await view.findByRole("dialog", {
+          name: "保存画布更改？",
+        });
+        vi.mocked(desktop.getUpdateState).mockResolvedValue(available);
+        await act(async () => resolveStartup(available));
+        expect(
+          view.queryByRole("dialog", { name: "发现新版本" }),
+        ).not.toBeInTheDocument();
+        expect(desktop.cancelClose).not.toHaveBeenCalled();
+        fireEvent.click(
+          within(savePrompt).getByRole("button", { name: choice }),
+        );
+        await waitFor(() =>
+          expect(
+            choice === "保存" ? desktop.confirmClose : desktop.cancelClose,
+          ).toHaveBeenCalledTimes(1),
+        );
+        expect(desktop.saveFile).toHaveBeenCalledTimes(
+          choice === "保存" ? 1 : 0,
+        );
+      },
+    );
+
+    it.each(["up-to-date", "error", "unavailable", "rejected"])(
+      "does not prompt for a startup result of %s",
+      async (outcome) => {
+        if (outcome === "rejected") {
+          vi.mocked(desktop.checkStartupUpdate).mockRejectedValue(
+            new Error("Offline"),
+          );
+        } else {
+          vi.mocked(desktop.checkStartupUpdate).mockResolvedValue({
+            currentVersion: "0.8.1",
+            status: outcome as "up-to-date" | "error" | "unavailable",
+          });
+        }
+        const view = render(<App root={root} />, { container: root });
+        await view.findByRole("tab", { name: "升级画布" });
+        expect(view.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(view.queryByRole("alert")).not.toBeInTheDocument();
+        expect(desktop.downloadUpdate).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(["保存", "取消"])(
+      "defers a startup prompt behind settings and preserves %s before installing",
+      async (choice) => {
+        let resolveStartup!: (state: typeof available) => void;
+        vi.mocked(desktop.checkStartupUpdate).mockReturnValue(
+          new Promise((resolve) => {
+            resolveStartup = resolve;
+          }),
+        );
+        const { view } = await mount(true);
+        vi.mocked(desktop.getUpdateState).mockResolvedValue(available);
+        await act(async () => resolveStartup(available));
+        expect(
+          view.queryByRole("dialog", { name: "发现新版本" }),
+        ).not.toBeInTheDocument();
+        fireEvent.click(view.getByRole("button", { name: "完成" }));
+        const prompt = await view.findByRole("dialog", { name: "发现新版本" });
+        fireEvent.click(
+          await within(prompt).findByRole("button", { name: "下载更新" }),
+        );
+        expect(desktop.downloadUpdate).toHaveBeenCalledTimes(1);
+        fireEvent.click(
+          await within(prompt).findByRole("button", { name: "安装并重启" }),
+        );
+        const savePrompt = await view.findByRole("dialog", {
+          name: "保存画布更改？",
+        });
+        expect(
+          view.queryByRole("dialog", { name: "发现新版本" }),
+        ).not.toBeInTheDocument();
+        fireEvent.click(
+          within(savePrompt).getByRole("button", { name: choice }),
+        );
+        await waitFor(() =>
+          expect(
+            choice === "保存" ? desktop.confirmClose : desktop.cancelClose,
+          ).toHaveBeenCalledTimes(1),
+        );
+        expect(desktop.saveFile).toHaveBeenCalledTimes(
+          choice === "保存" ? 1 : 0,
+        );
+      },
+    );
 
     it.each(["保存", "取消"])(
       "closes settings before a synchronous close command and honors %s",

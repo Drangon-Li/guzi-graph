@@ -48,6 +48,7 @@ import type {
 
 import {
   getRichTextFont,
+  getRichTextFontSize,
   getRichTextUnderline,
   layoutRichText,
 } from "./richText";
@@ -720,22 +721,23 @@ const drawElementOnCanvas = (
               : element.width,
             renderConfig.renderEnvironment,
           );
-          const baseline = getVerticalOffset(
-            element.fontFamily,
-            element.fontSize,
-            element.fontSize * element.lineHeight,
-          );
           withSavedContext(context, () => {
             context.textAlign = "left";
             for (const line of layout.lines) {
               for (const run of line.runs) {
+                const fontSize = getRichTextFontSize(element, run);
+                const baseline = getVerticalOffset(
+                  element.fontFamily,
+                  fontSize,
+                  fontSize * element.lineHeight,
+                );
                 if (run.background) {
                   context.fillStyle = run.background;
                   context.fillRect(
                     run.x,
                     run.y,
                     run.width,
-                    element.fontSize * element.lineHeight,
+                    fontSize * element.lineHeight,
                   );
                 }
                 context.font = getRichTextFont(element, run);
@@ -747,7 +749,7 @@ const drawElementOnCanvas = (
                 if (run.underline) {
                   const underline = getRichTextUnderline(
                     run,
-                    element.fontSize,
+                    fontSize,
                     baseline,
                   );
                   context.fillRect(

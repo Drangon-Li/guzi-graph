@@ -58,6 +58,7 @@ test("update bridge actions accept no renderer arguments and unsubscribe update 
   });
   for (const [method, channel] of [
     ["getUpdateState", "get-update-state"],
+    ["checkStartupUpdate", "check-startup-update"],
     ["checkForUpdates", "check-for-updates"],
     ["downloadUpdate", "download-update"],
     ["installUpdate", "install-update"],

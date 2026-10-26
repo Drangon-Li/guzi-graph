@@ -13,6 +13,7 @@ import type { StaticCanvasRenderConfig } from "@excalidraw/excalidraw/scene/type
 
 import {
   layoutRichText,
+  getRichTextFontSize,
   getRichTextUnderline,
   normalizeRichText,
   richTextFromPlainText,
@@ -35,6 +36,286 @@ const element = (
 });
 
 describe("rich text layout", () => {
+  it("normalizes and restores relative font sizes without merging differently sized runs", async () => {
+    const { serializeAsJSON } = await import(
+      "@excalidraw/excalidraw/data/json"
+    );
+    const { restoreElements } = await import(
+      "@excalidraw/excalidraw/data/restore"
+    );
+    const richText = normalizeRichText({
+      version: 1,
+      paragraphs: [
+        {
+          runs: [
+            { text: "a", fontSizeScale: 0.5 },
+            { text: "b", fontSizeScale: 2 },
+            { text: "c", fontSizeScale: 1 },
+          ],
+        },
+      ],
+    })!;
+    expect(richText.paragraphs[0].runs).toEqual([
+      { text: "a", fontSizeScale: 0.5 },
+      { text: "b", fontSizeScale: 2 },
+      { text: "c" },
+    ]);
+    const text = element("abc", { richText });
+    expect(layoutRichText(text).lines[0].runs.map((run) => run.text)).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    const restored = restoreElements(
+      JSON.parse(serializeAsJSON([text], {}, {}, "local")).elements,
+      null,
+    );
+    expect(restored.find((item) => item.type === "text")?.richText).toEqual(
+      richText,
+    );
+    for (const fontSizeScale of [0, -1, NaN, Infinity, -Infinity, "2", null]) {
+      expect(
+        normalizeRichText({
+          version: 1,
+          paragraphs: [{ runs: [{ text: "x", fontSizeScale }] }],
+        })?.paragraphs[0].runs,
+      ).toEqual([{ text: "x" }]);
+    }
+    expect(getRichTextFontSize(text, richText.paragraphs[0].runs[0])).toBe(10);
+    const resized = { ...text, fontSize: 40 };
+    expect(
+      layoutRichText(resized).lines[0].runs.map((run) =>
+        getRichTextFontSize(resized, run),
+      ),
+    ).toEqual([20, 80, 40]);
+    expect(resized.richText).toEqual(richText);
+  });
+
+  it("measures and wraps at each run's font size while keeping ordinary lines at their base height", () => {
+    const richText = richTextFromPlainText("aa\naa\naa");
+    richText.paragraphs[1].runs[0].fontSizeScale = 2;
+    const text = element("aa\naa\naa", { richText });
+    const environment = {
+      createCanvas: () => {
+        throw new Error("Unexpected canvas measurement");
+      },
+      createImage: () => {
+        throw new Error("Unexpected image creation");
+      },
+      textMetrics: {
+        getLineWidth: (value: string, font: string) =>
+          (value.length * Number(font.match(/([\d.]+)px/)![1])) / 2,
+      },
+    };
+    const layout = layoutRichText(text, Infinity, environment);
+    expect(layout.lines.map((line) => line.width)).toEqual([20, 40, 20]);
+    expect(layout.lines.map((line) => line.height)).toEqual([
+      20 * text.lineHeight,
+      40 * text.lineHeight,
+      20 * text.lineHeight,
+    ]);
+    expect(layout.height).toBe(80 * text.lineHeight);
+    expect(
+      layoutRichText(text, 30, environment).lines.map((line) =>
+        line.runs.map((run) => run.text).join(""),
+      ),
+    ).toEqual(["aa", "a", "a", "aa"]);
+    const refreshed = refreshTextDimensions(
+      { ...text, autoResize: false, width: 30 },
+      null,
+      new Map(),
+      text.originalText,
+      30,
+      environment,
+    );
+    expect(refreshed).toMatchObject({
+      text: "aa\na\na\naa",
+      height: 120 * text.lineHeight,
+    });
+  });
+
+  it("aligns mixed sizes on one baseline and preserves the base line box for smaller text", () => {
+    const text = element("abc", {
+      richText: {
+        version: 1,
+        paragraphs: [
+          {
+            runs: [
+              { text: "a", fontSizeScale: 0.5 },
+              { text: "b", fontSizeScale: 2 },
+              { text: "c" },
+            ],
+          },
+        ],
+      },
+    });
+    const line = layoutRichText(text).lines[0];
+    expect(line.height).toBe(40 * text.lineHeight);
+    for (const run of line.runs) {
+      const fontSize = getRichTextFontSize(text, run);
+      expect(
+        run.y +
+          getVerticalOffset(
+            text.fontFamily,
+            fontSize,
+            fontSize * text.lineHeight,
+          ),
+      ).toBeCloseTo(line.y + line.baseline);
+    }
+    const smaller = layoutRichText(
+      element("a", {
+        richText: {
+          version: 1,
+          paragraphs: [{ runs: [{ text: "a", fontSizeScale: 0.5 }] }],
+        },
+      }),
+    );
+    expect(smaller.height).toBe(20 * text.lineHeight);
+  });
+
+  it("grows a table cell to accommodate a larger inline run", async () => {
+    const { createTableData, createTableElements } = await import(
+      "../src/table"
+    );
+    const plain = createTableData(1, 1);
+    plain.cells[0].text = "small LARGE";
+    plain.cells[0].richText = richTextFromPlainText("small LARGE");
+    const mixed = structuredClone(plain);
+    mixed.cells[0].richText = {
+      version: 1,
+      paragraphs: [
+        { runs: [{ text: "small " }, { text: "LARGE", fontSizeScale: 3 }] },
+      ],
+    };
+    const before = createTableElements(plain, 0, 0);
+    const after = createTableElements(mixed, 0, 0);
+    expect(after.root.height).toBeGreaterThan(before.root.height);
+    const cellText = after.elements.find((item) => item.type === "text")!;
+    expect(cellText).toMatchObject({ richText: mixed.cells[0].richText });
+  });
+
+  it("exports each inline font size and shared baseline with correctly sized highlights and underlines", async () => {
+    const { exportScene } = await import("@excalidraw/excalidraw/scene/export");
+    const text = element("smallBIG", {
+      richText: {
+        version: 1,
+        paragraphs: [
+          {
+            runs: [
+              {
+                text: "small",
+                fontSizeScale: 0.5,
+                background: "#fff3bf",
+                underline: true,
+              },
+              {
+                text: "BIG",
+                fontSizeScale: 2,
+                background: "#d3f9d8",
+                underline: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const layout = layoutRichText(text);
+    const renderedText = {
+      ...text,
+      width: layout.width,
+      height: layout.height,
+    };
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d")!;
+    const drawnText: {
+      text: string;
+      font: string;
+      baseline: string;
+      y: number;
+    }[] = [];
+    const rectangles: {
+      fill: string | CanvasGradient | CanvasPattern;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }[] = [];
+    const textSpy = vi
+      .spyOn(context, "fillText")
+      .mockImplementation((value, _x, y) => {
+        drawnText.push({
+          text: value,
+          font: context.font,
+          baseline: context.textBaseline,
+          y,
+        });
+      });
+    const rectangleSpy = vi
+      .spyOn(context, "fillRect")
+      .mockImplementation((x, y, width, height) => {
+        rectangles.push({ fill: context.fillStyle, x, y, width, height });
+      });
+    try {
+      await exportScene({
+        type: "canvas",
+        data: { elements: [renderedText] },
+        config: {
+          canvasBackgroundColor: false,
+          environment: {
+            createCanvas: () => canvas,
+            loadFonts: async () => {},
+          },
+        },
+      });
+    } finally {
+      textSpy.mockRestore();
+      rectangleSpy.mockRestore();
+    }
+    expect(drawnText.map(({ text }) => text)).toEqual(["small", "BIG"]);
+    expect(
+      drawnText.map(({ font }) => Number(font.match(/([\d.]+)px/)![1])),
+    ).toEqual([10, 40]);
+    expect(drawnText.map(({ baseline }) => baseline)).toEqual([
+      "alphabetic",
+      "alphabetic",
+    ]);
+    expect(drawnText[0].y).toBeCloseTo(drawnText[1].y);
+    const highlights = rectangles.filter(
+      ({ fill }) => fill === "#fff3bf" || fill === "#d3f9d8",
+    );
+    expect(highlights.map(({ height }) => height)).toEqual([
+      10 * text.lineHeight,
+      40 * text.lineHeight,
+    ]);
+    expect(highlights[0].y).toBeGreaterThan(highlights[1].y);
+    const underlines = rectangles.filter(({ height }) => height <= 2);
+    expect(underlines.map(({ height }) => height)).toEqual([1, 2]);
+    expect(underlines[1].y).toBeGreaterThan(underlines[0].y);
+    const svg = await exportScene({
+      type: "svg",
+      data: { elements: [renderedText] },
+      config: { canvasBackgroundColor: false, skipInliningFonts: true },
+    });
+    const svgText = Array.from(svg.querySelectorAll("text"));
+    expect(svgText.map((node) => node.getAttribute("font-size"))).toEqual([
+      "10px",
+      "40px",
+    ]);
+    expect(Number(svgText[0].getAttribute("y"))).toBeCloseTo(
+      Number(svgText[1].getAttribute("y")),
+    );
+    const svgRectangles = Array.from(svg.querySelectorAll("rect")).map(
+      (node) => ({
+        fill: node.getAttribute("fill"),
+        x: Number(node.getAttribute("x")),
+        y: Number(node.getAttribute("y")),
+        width: Number(node.getAttribute("width")),
+        height: Number(node.getAttribute("height")),
+      }),
+    );
+    expect(svgRectangles).toEqual(rectangles);
+  });
+
   it("repaints the cached static canvas after an inline-color-only mutation", async () => {
     const { Scene } = await import("../src/Scene");
     const { renderElement, elementWithCanvasCache } = await import(

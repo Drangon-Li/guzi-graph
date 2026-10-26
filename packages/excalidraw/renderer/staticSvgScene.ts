@@ -16,7 +16,11 @@ import {
   STICKY_NOTE_FOOTER,
   STICKY_NOTE_SHADOW_OPACITY,
 } from "@excalidraw/common";
-import { getRichTextUnderline, layoutRichText } from "@excalidraw/element";
+import {
+  getRichTextFontSize,
+  getRichTextUnderline,
+  layoutRichText,
+} from "@excalidraw/element";
 import { normalizeLink, toValidURL } from "@excalidraw/common";
 import {
   getImageBorderDrawable,
@@ -901,13 +905,14 @@ const renderElementToSvg = (
               : element.width,
             renderConfig.renderEnvironment,
           );
-          const baseline = getVerticalOffset(
-            element.fontFamily,
-            element.fontSize,
-            element.fontSize * element.lineHeight,
-          );
           for (const line of layout.lines) {
             for (const run of line.runs) {
+              const fontSize = getRichTextFontSize(element, run);
+              const baseline = getVerticalOffset(
+                element.fontFamily,
+                fontSize,
+                fontSize * element.lineHeight,
+              );
               if (run.background) {
                 const rect = svgRoot.ownerDocument.createElementNS(
                   SVG_NS,
@@ -916,10 +921,7 @@ const renderElementToSvg = (
                 rect.setAttribute("x", `${run.x}`);
                 rect.setAttribute("y", `${run.y}`);
                 rect.setAttribute("width", `${run.width}`);
-                rect.setAttribute(
-                  "height",
-                  `${element.fontSize * element.lineHeight}`,
-                );
+                rect.setAttribute("height", `${fontSize * element.lineHeight}`);
                 rect.setAttribute("fill", run.background);
                 node.appendChild(rect);
               }
@@ -931,7 +933,7 @@ const renderElementToSvg = (
               text.setAttribute("x", `${run.x}`);
               text.setAttribute("y", `${run.y + baseline}`);
               text.setAttribute("font-family", getFontFamilyString(element));
-              text.setAttribute("font-size", `${element.fontSize}px`);
+              text.setAttribute("font-size", `${fontSize}px`);
               text.setAttribute("font-weight", run.bold ? "bold" : "normal");
               text.setAttribute("font-style", run.italic ? "italic" : "normal");
               text.setAttribute(
@@ -944,11 +946,7 @@ const renderElementToSvg = (
               text.setAttribute("style", "white-space: pre;");
               node.appendChild(text);
               if (run.underline) {
-                const underline = getRichTextUnderline(
-                  run,
-                  element.fontSize,
-                  baseline,
-                );
+                const underline = getRichTextUnderline(run, fontSize, baseline);
                 const rect = svgRoot.ownerDocument.createElementNS(
                   SVG_NS,
                   "rect",

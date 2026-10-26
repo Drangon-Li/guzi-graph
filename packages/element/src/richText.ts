@@ -1,4 +1,4 @@
-import { getFontString } from "@excalidraw/common";
+import { getFontString, getVerticalOffset } from "@excalidraw/common";
 
 import { getLineWidth } from "./textMeasurements";
 
@@ -12,6 +12,7 @@ export type RichTextRun = {
   underline?: boolean;
   background?: string;
   color?: string;
+  fontSizeScale?: number;
 };
 
 export type RichTextParagraph = {
@@ -43,6 +44,16 @@ export const normalizeRichTextBackground = (
 export const normalizeRichTextColor = (value: unknown): string | undefined =>
   value === "transparent" ? value : normalizeRichTextBackground(value);
 
+export const normalizeRichTextFontSizeScale = (
+  value: unknown,
+): number | undefined =>
+  typeof value === "number" &&
+  Number.isFinite(value) &&
+  value > 0 &&
+  value !== 1
+    ? value
+    : undefined;
+
 export const normalizeRichText = (
   value: unknown,
 ): RichTextDocument | undefined => {
@@ -72,6 +83,9 @@ export const normalizeRichText = (
           background: run.background,
         }),
         ...(normalizeRichTextColor(run.color) && { color: run.color }),
+        ...(normalizeRichTextFontSizeScale(run.fontSizeScale) && {
+          fontSizeScale: run.fontSizeScale,
+        }),
       });
     }
     const list = paragraph.list;
@@ -92,13 +106,19 @@ export const normalizeRichText = (
   };
 };
 
+export const getRichTextFontSize = (
+  element: Pick<ExcalidrawTextElement, "fontSize">,
+  run: Pick<RichTextRun, "fontSizeScale">,
+) => element.fontSize * (run.fontSizeScale ?? 1);
+
 export const getRichTextFont = (
   element: Pick<ExcalidrawTextElement, "fontSize" | "fontFamily">,
   run: RichTextRun,
 ): FontString =>
-  `${run.italic ? "italic " : ""}${run.bold ? "bold " : ""}${getFontString(
-    element,
-  )}` as FontString;
+  `${run.italic ? "italic " : ""}${run.bold ? "bold " : ""}${getFontString({
+    ...element,
+    fontSize: getRichTextFontSize(element, run),
+  })}` as FontString;
 
 export type RichTextLayoutRun = RichTextRun & {
   x: number;
@@ -109,6 +129,8 @@ export type RichTextLayoutLine = {
   runs: RichTextLayoutRun[];
   width: number;
   y: number;
+  height: number;
+  baseline: number;
   paragraph: number;
   last: boolean;
 };
@@ -178,6 +200,22 @@ export const layoutRichText = (
     let pendingWidth = 0;
     let first = true;
     const flush = (last: boolean) => {
+      // Keep the base-font strut used by the contenteditable line box.
+      const fontSize = pending.reduce(
+        (maximum, glyph) =>
+          Math.max(maximum, getRichTextFontSize(element, glyph.run)),
+        element.fontSize,
+      );
+      const height = fontSize * element.lineHeight;
+      const baseline = getVerticalOffset(element.fontFamily, fontSize, height);
+      const runTop = (runFontSize: number) =>
+        y +
+        baseline -
+        getVerticalOffset(
+          element.fontFamily,
+          runFontSize,
+          runFontSize * element.lineHeight,
+        );
       const naturalWidth = pending.reduce((sum, glyph) => sum + glyph.width, 0);
       const available = Number.isFinite(maxWidth)
         ? Math.max(0, maxWidth - indent)
@@ -204,7 +242,7 @@ export const layoutRichText = (
         runs.push({
           text: marker,
           x: indent - markerWidth,
-          y,
+          y: runTop(element.fontSize),
           width: markerWidth,
         });
       }
@@ -220,6 +258,7 @@ export const layoutRichText = (
           previous.underline === glyph.run.underline &&
           previous.background === glyph.run.background &&
           previous.color === glyph.run.color &&
+          (previous.fontSizeScale ?? 1) === (glyph.run.fontSizeScale ?? 1) &&
           previous.x + previous.width === x
         ) {
           previous.text += glyph.text;
@@ -229,7 +268,7 @@ export const layoutRichText = (
             ...glyph.run,
             text: glyph.text,
             x,
-            y,
+            y: runTop(getRichTextFontSize(element, glyph.run)),
             width: glyphWidth,
           });
         }
@@ -239,11 +278,13 @@ export const layoutRichText = (
         runs,
         width: indent + naturalWidth,
         y,
+        height,
+        baseline,
         paragraph: paragraphIndex,
         last,
       });
       width = Math.max(width, indent + naturalWidth);
-      y += lineHeight;
+      y += height;
       first = false;
       pending = [];
       pendingWidth = 0;
