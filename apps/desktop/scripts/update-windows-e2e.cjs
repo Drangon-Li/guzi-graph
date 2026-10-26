@@ -327,7 +327,9 @@ async function execute(configuration) {
         name: "发现新版本",
         exact: true,
       });
-      await prompt.getByRole("button", { name: "稍后更新", exact: true }).click();
+      await prompt
+        .getByRole("button", { name: "稍后更新", exact: true })
+        .click();
     }
     await page
       .getByRole("tab", { name: "NSIS update canvas", exact: true })
