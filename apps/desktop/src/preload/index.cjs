@@ -12,6 +12,7 @@ const listen = (name, callback) => {
 contextBridge.exposeInMainWorld("desktop", {
   platform: process.platform,
   getUpdateState: () => invoke("get-update-state"),
+  checkStartupUpdate: () => invoke("check-startup-update"),
   checkForUpdates: () => invoke("check-for-updates"),
   downloadUpdate: () => invoke("download-update"),
   installUpdate: () => invoke("install-update"),

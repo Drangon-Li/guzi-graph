@@ -395,6 +395,21 @@ async function launch(executable, document) {
     .filter({ hasText: path.basename(document, ".excalidraw") })
     .waitFor();
   assert.equal(page.url(), "app://local/index.html");
+  const startupUpdateStatus = await until(async () => {
+    const { status } = await state();
+    return status !== "idle" && status !== "checking" && status;
+  }, "startup update check");
+  if (startupUpdateStatus === "available") {
+    const startupUpdate = page.getByRole("dialog", {
+      name: "发现新版本",
+      exact: true,
+    });
+    await startupUpdate.waitFor();
+    await startupUpdate
+      .getByRole("button", { name: "稍后更新", exact: true })
+      .click();
+    await startupUpdate.waitFor({ state: "hidden" });
+  }
   return application.process().pid;
 }
 async function dirtyCanvas() {
@@ -442,11 +457,15 @@ async function installFromSettings(screenshotName) {
   return beforeInstallSession;
 }
 async function download() {
-  const checked = await bounded(
-    page.evaluate(() => window.desktop.checkForUpdates()),
-    60000,
-    "check update",
-  );
+  const current = await state();
+  const checked =
+    current.status === "available"
+      ? current
+      : await bounded(
+          page.evaluate(() => window.desktop.checkForUpdates()),
+          60000,
+          "check update",
+        );
   assert.equal(checked.status, "available");
   const downloaded = await bounded(
     page.evaluate(() => window.desktop.downloadUpdate()),

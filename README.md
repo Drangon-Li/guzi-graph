@@ -52,9 +52,9 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 
 ## 桌面版安装
 
-已发布的 [v0.8.2](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.2) 提供 **macOS Apple Silicon（arm64）** 和 **Windows 10 / 11 x64** 安装包，并提供 Windows 免安装版本。暂未提供 Intel Mac 或 Linux 安装包。
+已发布的 [v0.8.3](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.3) 提供 **macOS Apple Silicon（arm64）** 和 **Windows 10 / 11 x64** 安装包，并提供 Windows 免安装版本。暂未提供 Intel Mac 或 Linux 安装包。
 
-1. 在 [v0.8.2 Releases](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.2) 下载 `Excalidraw-Guzi-0.8.2-arm64.dmg`。
+1. 在 [v0.8.3 Releases](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.3) 下载 `Excalidraw-Guzi-0.8.3-arm64.dmg`。
 2. 打开 DMG，将 **Excalidraw-Guzi.app** 拖入「应用程序」。
 3. 从「应用程序」启动，也可用它打开 `.excalidraw` 文件。
 
@@ -62,9 +62,9 @@ macOS 安装包使用 ad-hoc 签名，**尚未经过 Apple 公证（notarization
 
 更新应用后，macOS 可能再次请求桌面等文件夹访问权限；允许后工作区会继续加载。同一个已授权版本正常重开无需重复授权。
 
-Windows 用户可在同一发布页下载 `Excalidraw-Guzi-0.8.2-win-x64.exe`，运行后按安装向导选择目录；也可下载 `Excalidraw-Guzi-0.8.2-win-x64-unpacked.zip`，完整解压后运行其中的 `Excalidraw-Guzi.exe`。Windows 安装包尚未使用代码签名证书，系统可能显示“未知发布者”。正式渠道沿用 `.excalidraw` 和 `.guzi-presentation` 文件关联。Windows 安装、升级、卸载及文件关联仍需在真实 Windows 10 / 11 上验收；具体步骤见 [Windows 开发与验收](./docs/windows-desktop.md)。
+Windows 用户可在同一发布页下载 `Excalidraw-Guzi-0.8.3-win-x64.exe`，运行后按安装向导选择目录；也可下载 `Excalidraw-Guzi-0.8.3-win-x64-unpacked.zip`，完整解压后运行其中的 `Excalidraw-Guzi.exe`。Windows 安装包尚未使用代码签名证书，系统可能显示“未知发布者”。正式渠道沿用 `.excalidraw` 和 `.guzi-presentation` 文件关联。Windows 安装、升级、卸载及文件关联仍需在真实 Windows 10 / 11 上验收；具体步骤见 [Windows 开发与验收](./docs/windows-desktop.md)。
 
-v0.8.0 和 v0.8.1 的应用内检查、下载更新可用，但“安装并重启”会被仍打开的设置窗口取消，暂时需要手动安装更新。v0.8.2 已修复该问题，现有用户需要手动安装一次 v0.8.2，之后才能使用后续版本的应用内安装。Windows 免安装 ZIP 版本始终需要手动替换。
+v0.8.0 和 v0.8.1 的应用内检查、下载更新可用，但“安装并重启”会被仍打开的设置窗口取消，暂时需要手动安装更新。v0.8.2 已修复该问题，使用 v0.8.1 及更早版本的用户需要手动安装一次 v0.8.3（或 v0.8.2），之后才能使用后续版本的应用内安装。Windows 免安装 ZIP 版本始终需要手动替换。
 
 ## 连接 MCP
 

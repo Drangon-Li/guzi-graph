@@ -137,6 +137,7 @@ export interface DesktopUpdateState {
 
 export interface DesktopAPI {
   getUpdateState(): Promise<DesktopUpdateState>;
+  checkStartupUpdate(): Promise<DesktopUpdateState | null>;
   checkForUpdates(): Promise<DesktopUpdateState>;
   downloadUpdate(): Promise<DesktopUpdateState>;
   installUpdate(): Promise<void>;

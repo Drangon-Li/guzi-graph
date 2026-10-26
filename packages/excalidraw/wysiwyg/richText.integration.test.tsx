@@ -31,7 +31,10 @@ import { exportScene } from "../scene/export";
 import { restoreElements } from "../data/restore";
 import { serializeAsJSON } from "../data/json";
 import * as dataModule from "../data";
-import { actionChangeStrokeColor } from "../actions/actionProperties";
+import {
+  actionChangeStrokeColor,
+  actionChangeFontSize,
+} from "../actions/actionProperties";
 
 import {
   executeRichTextCommand,
@@ -63,6 +66,332 @@ describe("rich text application integration", () => {
   afterAll(() => vi.unstubAllGlobals());
   beforeEach(async () => {
     rendered = await render(<Excalidraw handleKeyboardGlobally />);
+  });
+
+  const showDockedProperties = () => {
+    API.setAppState({ width: 1600, height: 1000 });
+    rendered.rerender(
+      <Excalidraw
+        handleKeyboardGlobally
+        desktopIntegration={{
+          save: async () => true,
+          open: async () => {},
+          selectionToolbar: false,
+          toolPanel: {
+            dock: "left",
+            pinned: true,
+            width: 280,
+            onDockChange: () => {},
+            onWidthChange: () => {},
+            labels: {
+              title: "Tools",
+              canvas: "Canvas",
+              properties: "Properties",
+              pinLeft: "Dock left",
+              pinRight: "Dock right",
+              unpin: "Unpin",
+              collapse: "Collapse",
+              expand: "Expand",
+              resize: "Resize",
+            },
+          },
+        }}
+      />,
+    );
+  };
+
+  it.each([false, true])(
+    "sizes only a textarea selection through a preset, preserves it for undo/redo and restores saved sizes (docked=%s)",
+    async (docked) => {
+      if (docked) {
+        showDockedProperties();
+      }
+
+      const text = API.createElement({
+        type: "text",
+        text: "abc中文def",
+        fontSize: 20,
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      Keyboard.keyPress(KEYS.ENTER);
+      const textarea = await getTextEditor();
+      textarea.setSelectionRange(3, 5);
+      const preset = rendered.getByTestId("fontSize-large");
+      if (docked) {
+        expect(preset.closest(".selected-shape-actions")).not.toBeNull();
+      }
+      fireEvent.pointerDown(preset, { button: 0, pointerId: 1 });
+      fireEvent.mouseDown(preset, { button: 0 });
+      act(() => preset.focus());
+      fireEvent.pointerUp(preset, { button: 0, pointerId: 1 });
+      fireEvent.click(preset);
+      const expected = [
+        { text: "abc" },
+        { text: "中文", fontSizeScale: 1.4 },
+        { text: "def" },
+      ];
+      await waitFor(() =>
+        expect(current(text.id).richText?.paragraphs[0].runs).toEqual(expected),
+      );
+      expect(current(text.id).fontSize).toBe(20);
+      expect(getRichTextSelectionState(document)).toMatchObject({
+        hasSelection: true,
+        fontSize: 28,
+      });
+      expect(
+        getRichEditor().querySelector<HTMLElement>('[style*="font-size"]')
+          ?.style.fontSize,
+      ).toBe("1.4em");
+      fireEvent.keyDown(getRichEditor(), {
+        key: "z",
+        [KEYS.CTRL_OR_CMD]: true,
+      });
+      await waitFor(() =>
+        expect(current(text.id).richText?.paragraphs[0].runs).toEqual([
+          { text: "abc中文def" },
+        ]),
+      );
+      fireEvent.keyDown(getRichEditor(), {
+        key: "z",
+        [KEYS.CTRL_OR_CMD]: true,
+        shiftKey: true,
+      });
+      await waitFor(() =>
+        expect(current(text.id).richText?.paragraphs[0].runs).toEqual(expected),
+      );
+      fireEvent.keyDown(getRichEditor(), { key: "Escape" });
+      const restored = restoreElements(
+        JSON.parse(serializeAsJSON([current(text.id)], {}, {}, "local"))
+          .elements,
+        null,
+      )[0] as ExcalidrawTextElement;
+      expect(restored.richText?.paragraphs[0].runs).toEqual(expected);
+      API.setElements([restored]);
+      API.setSelectedElements([restored].filter(isNonDeletedElement));
+      act(() =>
+        h.app.actionManager.executeAction(actionChangeFontSize, "ui", 40),
+      );
+      expect(current(text.id).fontSize).toBe(40);
+      expect(current(text.id).richText?.paragraphs[0].runs).toEqual(expected);
+    },
+  );
+
+  it("keeps relative differences when shortcuts size a mixed text selection", async () => {
+    const base = API.createElement({
+      type: "text",
+      text: "a中文z",
+      fontSize: 20,
+    });
+    const text = newElementWith(base, {
+      richText: {
+        version: 1,
+        paragraphs: [
+          {
+            runs: [
+              { text: "a" },
+              { text: "中", fontSizeScale: 1.5, bold: true },
+              { text: "文", fontSizeScale: 2 },
+              { text: "z" },
+            ],
+          },
+        ],
+      },
+    });
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+    API.setAppState({ editingTextElement: text });
+    act(() =>
+      h.app.text.handleTextWysiwyg(text, {
+        isExistingElement: true,
+        initialSelection: { start: 1, end: 3 },
+      }),
+    );
+    await waitFor(() =>
+      expect(getRichTextSelectionState(document)).toMatchObject({
+        fontSize: null,
+        hasSelection: true,
+      }),
+    );
+    fireEvent.keyDown(getRichEditor(), {
+      key: ">",
+      [KEYS.CTRL_OR_CMD]: true,
+      shiftKey: true,
+    });
+    await waitFor(() =>
+      expect(current(text.id).richText?.paragraphs[0].runs).toEqual([
+        { text: "a" },
+        { text: "中", fontSizeScale: 1.65, bold: true },
+        { text: "文", fontSizeScale: 2.2 },
+        { text: "z" },
+      ]),
+    );
+    expect(current(text.id).fontSize).toBe(20);
+    fireEvent.keyDown(getRichEditor(), {
+      key: "<",
+      [KEYS.CTRL_OR_CMD]: true,
+      shiftKey: true,
+    });
+    await waitFor(() =>
+      expect(current(text.id).richText).toEqual(text.richText),
+    );
+    fireEvent.keyDown(getRichEditor(), { key: "Escape" });
+  });
+
+  it.each([false, true])(
+    "changes the whole block with a collapsed caret and retains run scales (rich=%s)",
+    async (rich) => {
+      const base = API.createElement({
+        type: "text",
+        text: "a中文z",
+        fontSize: 20,
+      });
+      const text = rich
+        ? newElementWith(base, {
+            richText: {
+              version: 1,
+              paragraphs: [
+                {
+                  runs: [
+                    { text: "a" },
+                    { text: "中文", fontSizeScale: 1.5 },
+                    { text: "z" },
+                  ],
+                },
+              ],
+            },
+          })
+        : base;
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      API.setAppState({ editingTextElement: text });
+      act(() =>
+        h.app.text.handleTextWysiwyg(text, {
+          isExistingElement: true,
+          initialSelection: { start: 2, end: 2 },
+        }),
+      );
+      act(() =>
+        h.app.actionManager.executeAction(actionChangeFontSize, "ui", 28),
+      );
+      await waitFor(() => expect(current(text.id).fontSize).toBe(28));
+      expect(current(text.id).richText).toEqual(text.richText);
+      fireEvent.keyDown(rich ? getRichEditor() : await getTextEditor(), {
+        key: "Escape",
+      });
+    },
+  );
+
+  it.each([false, true])(
+    "keeps a text selection when focusing the desktop custom size input (rich=%s)",
+    async (rich) => {
+      showDockedProperties();
+      const base = API.createElement({
+        type: "text",
+        text: "a中文z",
+        fontSize: 20,
+      });
+      const text = rich
+        ? newElementWith(base, {
+            richText: richTextFromPlainText(base.originalText),
+          })
+        : base;
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      API.setAppState({
+        editingTextElement: text,
+        stats: { open: true, panels: 3 },
+      });
+      act(() =>
+        h.app.text.handleTextWysiwyg(text, {
+          isExistingElement: true,
+          initialSelection: { start: 1, end: 3 },
+        }),
+      );
+      expect(h.state.stats).toEqual({ open: true, panels: 3 });
+      const input = await waitFor(() => {
+        const input = document.querySelector<HTMLInputElement>(
+          '[data-testid="F"] input',
+        )!;
+        expect(input).not.toBeNull();
+        return input;
+      });
+      fireEvent.pointerDown(input, { button: 0, pointerId: 1 });
+      act(() => input.focus());
+      expect(h.state.editingTextElement?.id).toBe(text.id);
+      fireEvent.change(input, { target: { value: "32" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      await waitFor(() =>
+        expect(current(text.id).richText?.paragraphs[0].runs).toEqual([
+          { text: "a" },
+          { text: "中文", fontSizeScale: 1.6 },
+          { text: "z" },
+        ]),
+      );
+      expect(current(text.id).fontSize).toBe(20);
+      fireEvent.keyDown(getRichEditor(), { key: "Escape" });
+    },
+  );
+
+  it("drags the selected font size from its gesture-start size on desktop", async () => {
+    showDockedProperties();
+    const base = API.createElement({
+      type: "text",
+      text: "a中文z",
+      fontSize: 20,
+    });
+    const text = newElementWith(base, {
+      richText: {
+        version: 1,
+        paragraphs: [
+          {
+            runs: [
+              { text: "a" },
+              { text: "中文", fontSizeScale: 1.4 },
+              { text: "z" },
+            ],
+          },
+        ],
+      },
+    });
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+    API.setAppState({
+      editingTextElement: text,
+      stats: { open: true, panels: 3 },
+    });
+    act(() =>
+      h.app.text.handleTextWysiwyg(text, {
+        isExistingElement: true,
+        initialSelection: { start: 1, end: 3 },
+      }),
+    );
+    const input = await waitFor(() => {
+      const input = document.querySelector<HTMLInputElement>(
+        '[data-testid="F"] input',
+      )!;
+      expect(input?.value).toBe("28");
+      return input;
+    });
+    const label = input.parentElement!.querySelector(".drag-input-label")!;
+    fireEvent.pointerDown(label, { button: 0, pointerId: 1, clientX: 0 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 0 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 4 });
+    await waitFor(() =>
+      expect(getRichTextSelectionState(document)?.fontSize).toBe(32),
+    );
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 8 });
+    await waitFor(() =>
+      expect(getRichTextSelectionState(document)?.fontSize).toBe(36),
+    );
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 8 });
+    expect(current(text.id).richText?.paragraphs[0].runs).toEqual([
+      { text: "a" },
+      { text: "中文", fontSizeScale: 1.8 },
+      { text: "z" },
+    ]);
+    expect(current(text.id).fontSize).toBe(20);
+    fireEvent.keyDown(getRichEditor(), { key: "Escape" });
   });
 
   it("changes only selected textarea characters through the stroke action", async () => {
@@ -1528,6 +1857,60 @@ describe("rich text application integration", () => {
     for (const run of runs) {
       expect(draw).toHaveBeenCalledWith(run.text, run.x, expect.any(Number));
     }
+  });
+
+  it("remeasures bound text and grows its container when selected characters are enlarged", async () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      id: "sized-container",
+      width: 200,
+      height: 100,
+      boundElements: [{ id: "sized-label", type: "text" }],
+    });
+    const text = API.createElement({
+      type: "text",
+      id: "sized-label",
+      text: "label",
+      fontSize: 20,
+      containerId: rectangle.id,
+    });
+    API.setElements([rectangle, text]);
+    API.setSelectedElements([rectangle]);
+    API.setAppState({ editingTextElement: text });
+    act(() =>
+      h.app.text.handleTextWysiwyg(text, {
+        isExistingElement: true,
+        initialSelection: { start: 1, end: 3 },
+      }),
+    );
+    const textarea = await getTextEditor();
+    textarea.setSelectionRange(1, 3);
+    const originalTextHeight = current(text.id).height;
+    const originalContainerHeight = h.app.scene.getElement(
+      rectangle.id,
+    )!.height;
+    act(() =>
+      h.app.actionManager.executeAction(actionChangeFontSize, "ui", 120),
+    );
+    await waitFor(() =>
+      expect(current(text.id).richText?.paragraphs[0].runs).toEqual([
+        { text: "l" },
+        { text: "ab", fontSizeScale: 6 },
+        { text: "el" },
+      ]),
+    );
+    expect(current(text.id).fontSize).toBe(20);
+    expect(current(text.id).height).toBeGreaterThan(originalTextHeight);
+    expect(current(text.id).height).toBe(
+      layoutRichText(current(text.id), current(text.id).width).height,
+    );
+    expect(h.app.scene.getElement(rectangle.id)!.height).toBeGreaterThan(
+      originalContainerHeight,
+    );
+    expect(h.app.scene.getElement(rectangle.id)!.height).toBeGreaterThan(
+      current(text.id).height,
+    );
+    fireEvent.keyDown(getRichEditor(), { key: "Escape" });
   });
 
   it("keeps a rich label bound to its container after editing and submitting", async () => {

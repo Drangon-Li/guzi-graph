@@ -320,7 +320,30 @@ const changeFontSize = (
   app: AppClassProperties,
   getNewFontSize: (element: ExcalidrawTextElement) => number,
   fallbackValue?: ExcalidrawTextElement["fontSize"],
+  selectionScale?: number,
 ) => {
+  const editingText =
+    appState.editingTextElement &&
+    app.scene.getElement<ExcalidrawTextElement>(appState.editingTextElement.id);
+  if (
+    editingText &&
+    executeRichTextCommand(
+      app.ownerDocument,
+      {
+        type: "fontSize",
+        baseFontSize: getBaseFontSize(
+          editingText,
+          app.scene.getNonDeletedElementsMap(),
+        ),
+        ...(selectionScale
+          ? { scale: selectionScale }
+          : { value: getNewFontSize(editingText) }),
+      },
+      editingText.id,
+    )
+  ) {
+    return { captureUpdate: CaptureUpdateAction.EVENTUALLY };
+  }
   const newFontSizes = new Set<number>();
   const elementsMap = app.scene.getNonDeletedElementsMap();
 
@@ -1095,6 +1118,22 @@ export const actionChangeFontSize = register<ExcalidrawTextElement["fontSize"]>(
       );
     },
     PanelComponent: ({ elements, appState, updateData, app, data }) => {
+      const selection = useSyncExternalStore(
+        useCallback(
+          (listener) => subscribeRichTextSelection(app.ownerDocument, listener),
+          [app.ownerDocument],
+        ),
+        useCallback(
+          () => getRichTextSelectionState(app.ownerDocument),
+          [app.ownerDocument],
+        ),
+        () => null,
+      );
+      const selectedText =
+        selection?.hasSelection &&
+        selection.elementId === appState.editingTextElement?.id
+          ? selection
+          : null;
       const { isCompact } = getStylesPanelInfo(app);
       const fontSizes = getFontSizePresets(
         app.props.desktopIntegration?.fontSizePresets,
@@ -1132,34 +1171,39 @@ export const actionChangeFontSize = register<ExcalidrawTextElement["fontSize"]>(
                   testId: "fontSize-veryLarge",
                 },
               ]}
-              value={getFormValue(
-                elements,
-                app,
-                (element) => {
-                  const elementsMap = app.scene.getNonDeletedElementsMap();
-                  if (isTextElement(element)) {
-                    return getBaseFontSize(element, elementsMap);
-                  }
-                  const boundTextElement = getBoundTextElement(
-                    element,
-                    elementsMap,
-                  );
-                  if (boundTextElement) {
-                    return getBaseFontSize(boundTextElement, elementsMap);
-                  }
-                  return null;
-                },
-                (element) =>
-                  isTextElement(element) ||
-                  getBoundTextElement(
-                    element,
-                    app.scene.getNonDeletedElementsMap(),
-                  ) !== null,
-                (hasSelection) =>
-                  hasSelection
-                    ? null
-                    : appState.currentItemFontSize || DEFAULT_FONT_SIZE,
-              )}
+              value={
+                selectedText
+                  ? selectedText.fontSize ?? null
+                  : getFormValue(
+                      elements,
+                      app,
+                      (element) => {
+                        const elementsMap =
+                          app.scene.getNonDeletedElementsMap();
+                        if (isTextElement(element)) {
+                          return getBaseFontSize(element, elementsMap);
+                        }
+                        const boundTextElement = getBoundTextElement(
+                          element,
+                          elementsMap,
+                        );
+                        if (boundTextElement) {
+                          return getBaseFontSize(boundTextElement, elementsMap);
+                        }
+                        return null;
+                      },
+                      (element) =>
+                        isTextElement(element) ||
+                        getBoundTextElement(
+                          element,
+                          app.scene.getNonDeletedElementsMap(),
+                        ) !== null,
+                      (hasSelection) =>
+                        hasSelection
+                          ? null
+                          : appState.currentItemFontSize || DEFAULT_FONT_SIZE,
+                    )
+              }
               onChange={(value) => {
                 withCaretPositionPreservation(
                   () => updateData(value),
@@ -1185,13 +1229,19 @@ export const actionDecreaseFontSize = register({
   icon: fontSizeIcon,
   trackEvent: false,
   perform: (elements, appState, value, app) => {
-    return changeFontSize(elements, appState, app, (element) =>
-      Math.round(
-        // get previous value before relative increase (doesn't work fully
-        // due to rounding and float precision issues)
-        (1 / (1 + FONT_SIZE_RELATIVE_INCREASE_STEP)) *
-          getBaseFontSize(element, app.scene.getNonDeletedElementsMap()),
-      ),
+    return changeFontSize(
+      elements,
+      appState,
+      app,
+      (element) =>
+        Math.round(
+          // get previous value before relative increase (doesn't work fully
+          // due to rounding and float precision issues)
+          (1 / (1 + FONT_SIZE_RELATIVE_INCREASE_STEP)) *
+            getBaseFontSize(element, app.scene.getNonDeletedElementsMap()),
+        ),
+      undefined,
+      1 / (1 + FONT_SIZE_RELATIVE_INCREASE_STEP),
     );
   },
   keyTest: (event) => {
@@ -1210,11 +1260,17 @@ export const actionIncreaseFontSize = register({
   icon: fontSizeIcon,
   trackEvent: false,
   perform: (elements, appState, value, app) => {
-    return changeFontSize(elements, appState, app, (element) =>
-      Math.round(
-        getBaseFontSize(element, app.scene.getNonDeletedElementsMap()) *
-          (1 + FONT_SIZE_RELATIVE_INCREASE_STEP),
-      ),
+    return changeFontSize(
+      elements,
+      appState,
+      app,
+      (element) =>
+        Math.round(
+          getBaseFontSize(element, app.scene.getNonDeletedElementsMap()) *
+            (1 + FONT_SIZE_RELATIVE_INCREASE_STEP),
+        ),
+      undefined,
+      1 + FONT_SIZE_RELATIVE_INCREASE_STEP,
     );
   },
   keyTest: (event) => {

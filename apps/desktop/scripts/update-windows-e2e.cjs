@@ -313,7 +313,24 @@ async function execute(configuration) {
       "production renderer",
     );
     page.setDefaultTimeout(30000);
-    await page.locator(".desktop-workspace").waitFor();
+    await page
+      .locator(".desktop-workspace .desktop-project-pane")
+      .waitFor({ state: "attached" });
+    const startupUpdate = await waitFor(async () => {
+      const state = await bridge("getUpdateState");
+      return state.status === "idle" || state.status === "checking"
+        ? null
+        : state;
+    }, "startup update check");
+    if (startupUpdate.status === "available") {
+      const prompt = page.getByRole("dialog", {
+        name: "发现新版本",
+        exact: true,
+      });
+      await prompt
+        .getByRole("button", { name: "稍后更新", exact: true })
+        .click();
+    }
     await page
       .getByRole("tab", { name: "NSIS update canvas", exact: true })
       .waitFor();

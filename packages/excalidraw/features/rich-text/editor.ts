@@ -54,6 +54,8 @@ import {
   richTextFromPlainText,
   normalizeRichTextBackground,
   normalizeRichTextColor,
+  normalizeRichTextFontSizeScale,
+  getBaseFontSize,
   richTextToPlainText,
   redrawTextBoundingBox,
 } from "@excalidraw/element";
@@ -96,6 +98,15 @@ import type {
 import type { RichTextCommand } from "./editorBridge";
 import type { TextWysiwygOptions } from "../../wysiwyg/textWysiwyg";
 
+const getFontSizeScale = (style: string | null) => {
+  const value = style?.trim();
+  return (
+    normalizeRichTextFontSizeScale(
+      value?.endsWith("em") ? Number(value.slice(0, -2)) : undefined,
+    ) ?? 1
+  );
+};
+
 export const $readRichText = (): RichTextDocument => {
   const paragraphs: RichTextParagraph[] = [];
   const runsFrom = (node: ElementNode): RichTextRun[] => {
@@ -108,8 +119,14 @@ export const $readRichText = (): RichTextDocument => {
         const color = normalizeRichTextColor(
           node.getStyle().match(/(?:^|;)\s*color:\s*([^;]+)/i)?.[1],
         );
+        const fontSizeScale = normalizeRichTextFontSizeScale(
+          getFontSizeScale(
+            node.getStyle().match(/font-size:\s*([^;]+)/i)?.[1] ?? null,
+          ),
+        );
         runs.push({
           text: node.getTextContent(),
+          ...(fontSizeScale && { fontSizeScale }),
           ...(node.hasFormat("bold") && { bold: true }),
           ...(node.hasFormat("italic") && { italic: true }),
           ...(node.hasFormat("underline") && { underline: true }),
@@ -203,11 +220,11 @@ export const $writeRichText = (
       if (run.underline) {
         text.toggleFormat("underline");
       }
-      if (run.background || run.color) {
+      if (run.background || run.color || run.fontSizeScale) {
         text.setStyle(
           `${run.background ? `background-color: ${run.background};` : ""}${
             run.color ? `color: ${run.color};` : ""
-          }`,
+          }${run.fontSizeScale ? `font-size: ${run.fontSizeScale}em;` : ""}`,
         );
       }
       target.append(text);
@@ -284,6 +301,36 @@ export const applyRichTextEditorCommand = (
       command.value === "in" ? INDENT_CONTENT_COMMAND : OUTDENT_CONTENT_COMMAND,
       undefined,
     );
+  } else if (command.type === "fontSize") {
+    editor.update(() => {
+      const selection = $getSelection();
+      const value = "value" in command ? command.value : command.scale;
+      if (
+        $isRangeSelection(selection) &&
+        !selection.isCollapsed() &&
+        Number.isFinite(value) &&
+        value > 0 &&
+        Number.isFinite(command.baseFontSize) &&
+        command.baseFontSize > 0
+      ) {
+        $patchStyleText(selection, {
+          "font-size": (current) => {
+            const size =
+              "value" in command
+                ? command.value
+                : Math.max(
+                    1,
+                    Math.round(
+                      command.baseFontSize *
+                        getFontSizeScale(current) *
+                        command.scale,
+                    ),
+                  );
+            return `${size / command.baseFontSize}em`;
+          },
+        });
+      }
+    });
   } else if (command.type === "background" || command.type === "color") {
     editor.update(() => {
       const selection = $getSelection();
@@ -518,6 +565,11 @@ export const richTextWysiwyg = ({
         "background-color",
         "transparent",
       );
+      const fontSizeStyle = $getSelectionStyleValueForProperty(
+        selection,
+        "font-size",
+        "1em",
+      );
       const nativeSelection = ownerWindow.getSelection();
       const nativeRange =
         createDOMRange(
@@ -550,6 +602,10 @@ export const richTextWysiwyg = ({
             }
           : null,
         elementId: element.id,
+        fontSize: fontSizeStyle
+          ? getBaseFontSize(latest(), app.scene.getNonDeletedElementsMap()) *
+            getFontSizeScale(fontSizeStyle)
+          : null,
         background: background || null,
         color:
           $getSelectionStyleValueForProperty(
@@ -629,7 +685,7 @@ export const richTextWysiwyg = ({
       return;
     }
     const inputHasFocus = !!ownerDocument.activeElement?.closest(
-      ".properties-content input, .color-picker-input",
+      ".properties-content input, .exc-stats input, .color-picker-input",
     );
     if (!inputHasFocus) {
       editable.focus({ preventScroll: true });
@@ -758,7 +814,7 @@ export const richTextWysiwyg = ({
     }
     if (
       target.closest(
-        ".App-menu__left, .selected-shape-actions, .properties-content, .compact-shape-actions-island, .selection-toolbar, .properties-trigger",
+        ".App-menu__left, .selected-shape-actions, .properties-content, .compact-shape-actions-island, .selection-toolbar, .properties-trigger, .exc-stats",
       )
     ) {
       return;
@@ -771,7 +827,7 @@ export const richTextWysiwyg = ({
     if (
       next instanceof ownerWindow.Element &&
       next.closest(
-        ".selected-shape-actions, .properties-content, .compact-shape-actions-island, .selection-toolbar",
+        ".selected-shape-actions, .properties-content, .compact-shape-actions-island, .selection-toolbar, .exc-stats",
       )
     ) {
       return;

@@ -35,6 +35,7 @@ import { SubcanvasEditor } from "../features/editor/SubcanvasEditor";
 import { PresentationEditor } from "../features/presentation/PresentationEditor";
 import { exportPresentationPdf } from "../features/presentation/renderSlide";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
+import { UpdatePanel } from "../features/settings/UpdatePanel";
 import {
   DEFAULT_STYLE_PRESETS,
   applyStylePreset,
@@ -46,6 +47,7 @@ import "./styles.scss";
 import type { ProjectEdit } from "../features/projects/Projects";
 import type { DesktopLanguage } from "../shared/i18n/i18n";
 import type { ProjectFile } from "../../shared/desktop-api";
+import type { DesktopUpdateState } from "../../shared/desktop-api";
 import type {
   CanvasDocument,
   Workspace,
@@ -565,6 +567,10 @@ const RemoveConfirmation = ({
 export const App = ({ root }: { root: HTMLElement }) => {
   const platform = root.ownerDocument.defaultView!.desktop.platform;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [startupUpdatePending, setStartupUpdatePending] = useState(false);
+  const startupUpdateCheck = useRef<Promise<DesktopUpdateState | null> | null>(
+    null,
+  );
   const [preferencesSection, setPreferencesSection] =
     useState<PreferenceSection | null>(null);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
@@ -575,18 +581,29 @@ export const App = ({ root }: { root: HTMLElement }) => {
   } | null>(null);
   const [structuredExport, setStructuredExport] =
     useState<CanvasDocument | null>(null);
-  const workspace = useWorkspace(
-    root,
-    settingsOpen ||
-      !!preferencesSection ||
-      recoveryOpen ||
-      !!edit ||
-      !!removal ||
-      !!structuredExport,
-  );
+  const workspace = useWorkspace(root, () => modalOpen);
+  useEffect(() => {
+    let active = true;
+    startupUpdateCheck.current ??=
+      root.ownerDocument.defaultView!.desktop.checkStartupUpdate();
+    void startupUpdateCheck.current.then(
+      (state) => {
+        if (active && state?.status === "available") {
+          setStartupUpdatePending(true);
+        }
+      },
+      () => {},
+    );
+    return () => {
+      active = false;
+    };
+  }, [root]);
   const installUpdate = async () => {
     // The close command must reach the workspace after its modal guard updates.
-    flushSync(() => setSettingsOpen(false));
+    flushSync(() => {
+      setSettingsOpen(false);
+      setStartupUpdatePending(false);
+    });
     try {
       await root.ownerDocument.defaultView!.desktop.installUpdate();
     } catch (error) {
@@ -637,7 +654,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
   const active = workspace.documents.find(
     (document) => document.id === workspace.activeId,
   );
-  const modalOpen =
+  const otherModalOpen =
     settingsOpen ||
     !!preferencesSection ||
     recoveryOpen ||
@@ -645,6 +662,12 @@ export const App = ({ root }: { root: HTMLElement }) => {
     !!removal ||
     !!structuredExport ||
     !!workspace.closePrompt;
+  const startupUpdateOpen =
+    startupUpdatePending &&
+    !otherModalOpen &&
+    !workspace.loading &&
+    !workspace.closing;
+  const modalOpen = otherModalOpen || startupUpdateOpen;
   const libraryAdapter = useMemo<LibraryPersistenceAdapter>(
     () => ({
       load: () => {
@@ -907,6 +930,22 @@ export const App = ({ root }: { root: HTMLElement }) => {
           </>
         )}
       </div>
+      {startupUpdateOpen && (
+        <Modal
+          root={root}
+          language={workspace.settings.language}
+          title={t("发现新版本")}
+          className="desktop-update-dialog"
+          onClose={() => setStartupUpdatePending(false)}
+        >
+          <UpdatePanel
+            root={root}
+            language={workspace.settings.language}
+            onInstallUpdate={installUpdate}
+            onDefer={() => setStartupUpdatePending(false)}
+          />
+        </Modal>
+      )}
       {settingsOpen && (
         <Modal
           root={root}

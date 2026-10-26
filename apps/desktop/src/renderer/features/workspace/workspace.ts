@@ -154,7 +154,12 @@ export interface ClosePrompt {
   resolve: (choice: "save" | "discard" | "cancel") => void;
 }
 
-export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
+export const useWorkspace = (
+  root: HTMLElement,
+  modalOpen: boolean | (() => boolean) = false,
+) => {
+  const isModalOpen = () =>
+    typeof modalOpen === "function" ? modalOpen() : modalOpen;
   const ownerDocument = root.ownerDocument;
   const ownerWindow = ownerDocument.defaultView!;
   const desktop = ownerWindow.desktop;
@@ -1982,7 +1987,7 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
     if (
       !readyRef.current ||
       closingRef.current ||
-      modalOpen ||
+      isModalOpen() ||
       closePrompt ||
       document?.removalPhase ||
       (!allowPresenting && document?.presenting) ||
@@ -3027,11 +3032,11 @@ export const useWorkspace = (root: HTMLElement, modalOpen = false) => {
       if (command === "undo" || command === "redo") {
         void handleDesktopEditingCommand(root, command, {
           canvasActive: !!activeRef.current && !projectRef.current,
-          blocked: modalOpen || closingRef.current || !!closePrompt,
+          blocked: isModalOpen() || closingRef.current || !!closePrompt,
         }).catch(reportError);
         return;
       }
-      if (modalOpen) {
+      if (isModalOpen()) {
         if (command === "close-window") {
           desktop.cancelClose();
         }

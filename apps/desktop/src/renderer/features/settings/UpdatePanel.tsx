@@ -13,10 +13,12 @@ export const UpdatePanel = ({
   root,
   language,
   onInstallUpdate,
+  onDefer,
 }: {
   root: HTMLElement;
   language: DesktopSettings["language"];
   onInstallUpdate: () => Promise<void>;
+  onDefer?: () => void;
 }) => {
   const desktop = root.ownerDocument.defaultView!.desktop;
   const [state, setState] = useState<DesktopUpdateState | null>(null);
@@ -106,29 +108,26 @@ export const UpdatePanel = ({
     ? "重试检查"
     : "检查更新";
 
-  return (
-    <section className="desktop-settings-card desktop-update-panel">
-      <h4>{t("版本与更新")}</h4>
-      <div className="desktop-settings-item">
-        <div className="desktop-settings-item__label">
-          <span>
-            {t("当前版本：{version}", {
-              version: state?.currentVersion || t("正在读取…"),
-            })}
-          </span>
-          <p role="status" aria-live="polite">
-            {status
-              ? t(messages[status], { version: state?.availableVersion || "" })
-              : t("正在读取更新状态…")}
-          </p>
-        </div>
-        <Button
-          onSelect={() => void run()}
-          disabled={busy || (!state && !error) || status === "unavailable"}
-        >
-          {t(action)}
-        </Button>
-      </div>
+  const actionButton = (
+    <Button
+      className={onDefer ? "desktop-primary" : undefined}
+      onSelect={() => void run()}
+      disabled={busy || (!state && !error) || status === "unavailable"}
+    >
+      {t(action)}
+    </Button>
+  );
+  const statusMessage = (
+    <p role="status" aria-live="polite">
+      {status
+        ? onDefer && status === "available"
+          ? t("下载完成后，可选择安装并重启。")
+          : t(messages[status], { version: state?.availableVersion || "" })
+        : t("正在读取更新状态…")}
+    </p>
+  );
+  const feedback = (
+    <>
       {state?.status === "downloading" && (
         <div className="desktop-update-progress">
           <progress
@@ -160,6 +159,49 @@ export const UpdatePanel = ({
           {t(error || state?.error || "")}
         </p>
       )}
+    </>
+  );
+
+  if (onDefer) {
+    return (
+      <>
+        <div className="desktop-modal-body desktop-update-panel">
+          <div className="desktop-update-dialog__status">{statusMessage}</div>
+          <dl className="desktop-update-versions">
+            <div>
+              <dt>{t("当前版本")}</dt>
+              <dd>{state?.currentVersion || t("正在读取…")}</dd>
+            </div>
+            <div className="desktop-update-versions__latest">
+              <dt>{t("新版本")}</dt>
+              <dd>{state?.availableVersion || t("正在读取…")}</dd>
+            </div>
+          </dl>
+          {feedback}
+        </div>
+        <footer>
+          <Button onSelect={onDefer}>{t("稍后更新")}</Button>
+          {actionButton}
+        </footer>
+      </>
+    );
+  }
+
+  return (
+    <section className="desktop-settings-card desktop-update-panel">
+      <h4>{t("版本与更新")}</h4>
+      <div className="desktop-settings-item">
+        <div className="desktop-settings-item__label">
+          <span>
+            {t("当前版本：{version}", {
+              version: state?.currentVersion || t("正在读取…"),
+            })}
+          </span>
+          {statusMessage}
+        </div>
+        {actionButton}
+      </div>
+      {feedback}
     </section>
   );
 };

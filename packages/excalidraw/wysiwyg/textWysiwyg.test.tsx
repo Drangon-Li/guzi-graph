@@ -2539,6 +2539,7 @@ describe("textWysiwyg", () => {
       ).toEqual(FONT_FAMILY["Comic Shanns"]);
       expect(getOriginalContainerHeightFromCache(rectangle.id)).toBe(75);
 
+      (await getTextEditor()).setSelectionRange(0, 0);
       fireEvent.click(screen.getByTitle(/Very large/i));
       expect(
         (h.elements[1] as ExcalidrawTextElementWithContainer).fontSize,

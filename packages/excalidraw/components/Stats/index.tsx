@@ -132,6 +132,9 @@ export const StatsInner = memo(
     const elementsMap = scene.getNonDeletedElementsMap();
     const setAppState = useExcalidrawSetAppState();
 
+    const editingText =
+      appState.editingTextElement &&
+      scene.getNonDeletedElement(appState.editingTextElement.id);
     const singleElement =
       selectedElements.length === 1 ? selectedElements[0] : null;
 
@@ -181,6 +184,9 @@ export const StatsInner = memo(
     const _frameAndChildrenSelectedTogether = useMemo(() => {
       return frameAndChildrenSelectedTogether(selectedElements);
     }, [selectedElements]);
+    const showElementStats =
+      !!editingText ||
+      (!_frameAndChildrenSelectedTogether && selectedElements.length > 0);
 
     return (
       <div
@@ -242,7 +248,7 @@ export const StatsInner = memo(
             {renderCustomStats?.(elements, appState)}
           </Collapsible>
 
-          {!_frameAndChildrenSelectedTogether && selectedElements.length > 0 && (
+          {showElementStats && (
             <div
               id="elementStats"
               style={{
@@ -267,6 +273,16 @@ export const StatsInner = memo(
                 }
               >
                 <StatsRows>
+                  {!selectedElements.length && editingText && (
+                    <StatsRow>
+                      <FontSize
+                        property="fontSize"
+                        element={editingText}
+                        scene={scene}
+                        appState={appState}
+                      />
+                    </StatsRow>
+                  )}
                   {singleElement && (
                     <>
                       {cropMode && (

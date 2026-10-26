@@ -193,6 +193,7 @@ describe("desktop document workspace", () => {
     cancelPlugin = () => {};
     desktop = {
       getUpdateState: vi.fn(),
+      checkStartupUpdate: vi.fn().mockResolvedValue(null),
       checkForUpdates: vi.fn(),
       downloadUpdate: vi.fn(),
       installUpdate: vi.fn(),

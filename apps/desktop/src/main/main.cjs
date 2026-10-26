@@ -82,6 +82,7 @@ let quitApproved = false;
 let closeAttempt = 0;
 let closeFinalizing = false;
 let updates;
+let startupUpdateChecked = false;
 let filesConsumerReady = false;
 const pendingPaths = new Set();
 const appURL = "app://local/index.html";
@@ -407,6 +408,11 @@ function installIPC() {
       }
     });
   handle("get-update-state", () => updates.getState());
+  handle("check-startup-update", () => {
+    if (startupUpdateChecked) return null;
+    startupUpdateChecked = true;
+    return updates.checkForUpdates();
+  });
   handle("check-for-updates", () => updates.checkForUpdates());
   handle("download-update", () => updates.downloadUpdate());
   handle("install-update", () => updates.installUpdate());
