@@ -34,8 +34,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.x
-          cache: ${{ steps.scope.outputs.full == 'true' && 'yarn' || '' }}
-          cache-dependency-path: yarn.lock
       - name: Test desktop CI scope selection
         run: node --test tooling/scripts/desktop-ci-scope.node-test.cjs
       - name: Check published update validation scripts
