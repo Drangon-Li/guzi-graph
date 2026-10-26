@@ -44,6 +44,7 @@ it("navigates categories with the keyboard and saves individual tool and file se
       settings={settings}
       onChange={onChange}
       onChangeDirectory={onChangeDirectory}
+      onInstallUpdate={vi.fn()}
     />,
   );
   await screen.findByText("当前版本：0.7.4");
@@ -81,6 +82,7 @@ it("edits drawing defaults within settings and keeps save failures visible", asy
       settings={settings}
       onChange={onChange}
       onChangeDirectory={async () => {}}
+      onInstallUpdate={vi.fn()}
     />,
   );
   fireEvent.click(screen.getByRole("tab", { name: "字体与颜色" }));
@@ -117,6 +119,7 @@ it("opens the built-in MCP settings category", async () => {
       settings={settings}
       onChange={async () => settings}
       onChangeDirectory={async () => {}}
+      onInstallUpdate={vi.fn()}
     />,
   );
   fireEvent.click(screen.getByRole("tab", { name: "内置 MCP" }));
@@ -134,6 +137,7 @@ it("places version and updates in General after appearance and language", async 
       settings={settings}
       onChange={async () => settings}
       onChangeDirectory={async () => {}}
+      onInstallUpdate={vi.fn()}
     />,
   );
   await screen.findByText("当前版本：0.7.4");

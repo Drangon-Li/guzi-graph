@@ -191,7 +191,8 @@ function fixtureBootstrap(config) {
             await new Promise(resolve => setTimeout(resolve, 50));
           }
           return {url: location.href, workspace: !!document.querySelector('.desktop-workspace'),
-            update: await window.desktop.getUpdateState(), settings: await window.desktop.getSettings()};
+            update: await window.desktop.getUpdateState(), settings: await window.desktop.getSettings(),
+            session: await window.desktop.getSession()};
         })()`);
         record("renderer-loaded", { renderer });
       } catch (error) {
@@ -415,6 +416,31 @@ async function dirtyCanvas() {
     .waitFor();
 }
 const state = () => page.evaluate(() => window.desktop.getUpdateState());
+const readSession = () =>
+  page
+    .locator(".desktop-workspace")
+    .evaluate((mounted) =>
+      mounted.ownerDocument.defaultView.desktop.getSession(),
+    );
+async function installFromSettings(screenshotName) {
+  await page.getByRole("button", { name: "返回项目页", exact: true }).click();
+  await page.locator(".desktop-project-pane.is-active").waitFor();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "桌面设置", exact: true });
+  await settings.locator(".desktop-update-panel").waitFor();
+  const beforeInstallSession = await until(async () => {
+    const value = await readSession();
+    return value.activePath === null && value;
+  }, "project-view session persistence");
+  await page.screenshot({
+    path: path.join(artifacts, `${screenshotName}.png`),
+  });
+  await settings
+    .getByRole("button", { name: "安装并重启", exact: true })
+    .click();
+  await settings.waitFor({ state: "hidden" });
+  return beforeInstallSession;
+}
 async function download() {
   const checked = await bounded(
     page.evaluate(() => window.desktop.checkForUpdates()),
@@ -576,9 +602,17 @@ async function main() {
   await download();
   await dirtyCanvas();
   const checkpoint = events().length;
-  await page.evaluate(() => window.desktop.installUpdate());
+  const cancelledInstallSession = await installFromSettings(
+    "cancel-install-settings",
+  );
+  assert.deepEqual(cancelledInstallSession.paths, [document]);
   const prompt = page.getByRole("dialog").filter({ hasText: "保存画布更改？" });
   await prompt.waitFor();
+  const cancelledSaveSession = await until(async () => {
+    const value = await readSession();
+    return value.activePath === document && value;
+  }, "dirty-document session activation before cancel");
+  assert.deepEqual(cancelledSaveSession.paths, [document]);
   assert(
     !events()
       .slice(checkpoint)
@@ -621,11 +655,18 @@ async function main() {
     fixture.currentVersion,
   );
   assert(JSON.parse(fs.readFileSync(document)).elements.length > 0);
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(path.join(profile, "session.json"), "utf8")),
+    cancelledSaveSession,
+  );
   report.cases.cancelThenQuit = {
     passed: true,
     originalPid: pid,
     version: fixture.currentVersion,
     savedDocument: true,
+    beforeInstallSession: cancelledInstallSession,
+    beforeSaveSession: cancelledSaveSession,
+    sessionPreserved: true,
   };
   progress("save-install-relaunch");
   pid = await launch(fixture.executable, document);
@@ -633,11 +674,19 @@ async function main() {
   await dirtyCanvas();
   const beforeSave = digest(document);
   const installCheckpoint = events().length;
-  await page.evaluate(() => window.desktop.installUpdate());
+  const beforeInstallSession = await installFromSettings(
+    "save-install-settings",
+  );
+  assert.deepEqual(beforeInstallSession.paths, [document]);
   const savePrompt = page
     .getByRole("dialog")
     .filter({ hasText: "保存画布更改？" });
   await savePrompt.waitFor();
+  const beforeSaveSession = await until(async () => {
+    const value = await readSession();
+    return value.activePath === document && value;
+  }, "dirty-document session activation before install");
+  assert.deepEqual(beforeSaveSession.paths, [document]);
   assert(
     !events()
       .slice(installCheckpoint)
@@ -671,6 +720,11 @@ async function main() {
     fixture.targetVersion,
   );
   assert.equal(relaunched.renderer.settings.rootDirectory, drawings);
+  assert.deepEqual(relaunched.renderer.session, beforeSaveSession);
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(path.join(profile, "session.json"), "utf8")),
+    beforeSaveSession,
+  );
   assert.notEqual(digest(document), beforeSave);
   assert.equal(digest(sentinel), sentinelHash);
   assert.equal(
@@ -706,6 +760,10 @@ async function main() {
     sameProfile: true,
     rendererURL: relaunched.renderer.url,
     savedDocument: true,
+    beforeInstallSession,
+    beforeSaveSession,
+    relaunchedSession: relaunched.renderer.session,
+    sessionPreserved: true,
     sentinelPreserved: true,
     signatureVerified: true,
     nativeHelperFilesPreserved: Object.keys(helperBefore).length,

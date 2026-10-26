@@ -64,6 +64,7 @@ export const SettingsPanel = ({
   onChange,
   onChangeDirectory,
   onApplyFontToOpenDocuments,
+  onInstallUpdate,
 }: {
   root: HTMLElement;
   settings: DesktopSettings;
@@ -72,6 +73,7 @@ export const SettingsPanel = ({
   ) => Promise<DesktopSettings | null>;
   onChangeDirectory: () => Promise<void>;
   onApplyFontToOpenDocuments?: (fontFamily: FontFamilyValues) => Promise<void>;
+  onInstallUpdate: () => Promise<void>;
 }) => {
   const [category, setCategory] = useState<SettingsCategory>("general");
   const [preference, setPreference] = useState<PreferenceSection>("fonts");
@@ -226,7 +228,11 @@ export const SettingsPanel = ({
                 />
               </SettingsRow>
             </section>
-            <UpdatePanel root={root} language={settings.language} />
+            <UpdatePanel
+              root={root}
+              language={settings.language}
+              onInstallUpdate={onInstallUpdate}
+            />
           </>
         )}
         {category === "tools" && (

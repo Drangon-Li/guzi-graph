@@ -12,9 +12,11 @@ import type {
 export const UpdatePanel = ({
   root,
   language,
+  onInstallUpdate,
 }: {
   root: HTMLElement;
   language: DesktopSettings["language"];
+  onInstallUpdate: () => Promise<void>;
 }) => {
   const desktop = root.ownerDocument.defaultView!.desktop;
   const [state, setState] = useState<DesktopUpdateState | null>(null);
@@ -60,7 +62,7 @@ export const UpdatePanel = ({
     try {
       const next =
         !error && state?.status === "downloaded"
-          ? await desktop.installUpdate()
+          ? await onInstallUpdate()
           : !error && state?.status === "available"
           ? await desktop.downloadUpdate()
           : await desktop.checkForUpdates();

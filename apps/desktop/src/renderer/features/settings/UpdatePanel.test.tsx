@@ -40,9 +40,14 @@ const mount = (
     installUpdate: vi.fn().mockResolvedValue(undefined),
   };
   ownerDocument.defaultView!.desktop = desktop as unknown as DesktopAPI;
-  const view = render(<UpdatePanel root={root} language="en" />, {
-    container: root,
-  });
+  const view = render(
+    <UpdatePanel
+      root={root}
+      language="en"
+      onInstallUpdate={desktop.installUpdate}
+    />,
+    { container: root },
+  );
   return {
     ...view,
     root,
@@ -195,7 +200,13 @@ it("uses the mounted document bridge, localizes interpolation, and unsubscribes"
     iframe.contentDocument!,
   );
   await view.findByText("Version 0.8.0 is available.");
-  view.rerender(<UpdatePanel root={view.root} language="zh-CN" />);
+  view.rerender(
+    <UpdatePanel
+      root={view.root}
+      language="zh-CN"
+      onInstallUpdate={view.desktop.installUpdate}
+    />,
+  );
   expect(view.getByText("当前版本：0.7.4")).toBeInTheDocument();
   expect(view.getByText("新版本 0.8.0 可用。")).toBeInTheDocument();
   expect(view.desktop.getUpdateState).toHaveBeenCalledTimes(1);

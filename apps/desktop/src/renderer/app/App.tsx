@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 import { Button, MainMenu, useHandleLibrary } from "@excalidraw/excalidraw";
 import { TextField } from "@excalidraw/excalidraw/components/TextField";
@@ -583,6 +584,15 @@ export const App = ({ root }: { root: HTMLElement }) => {
       !!removal ||
       !!structuredExport,
   );
+  const installUpdate = async () => {
+    // The close command must reach the workspace after its modal guard updates.
+    flushSync(() => setSettingsOpen(false));
+    try {
+      await root.ownerDocument.defaultView!.desktop.installUpdate();
+    } catch (error) {
+      workspace.reportError(error);
+    }
+  };
   const t = (message: string, params?: Record<string, string | number>) =>
     translate(workspace.settings.language, message, params);
   const removeFile = async (
@@ -911,6 +921,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
             onChange={workspace.updateSettings}
             onChangeDirectory={workspace.changeDirectory}
             onApplyFontToOpenDocuments={workspace.applyFontToOpenDocuments}
+            onInstallUpdate={installUpdate}
           />
           <footer>
             <span>
