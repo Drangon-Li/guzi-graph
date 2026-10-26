@@ -5,6 +5,7 @@ import { WelcomeScreen } from "@excalidraw/excalidraw/index";
 import React from "react";
 
 import { isExcalidrawPlusSignedUser } from "../app_constants";
+import { SINGLE_USER_MODE } from "../singleUser";
 
 export const AppWelcomeScreen: React.FC<{
   onCollabDialogOpen: () => any;
@@ -13,7 +14,9 @@ export const AppWelcomeScreen: React.FC<{
   const { t } = useI18n();
   let headingContent;
 
-  if (isExcalidrawPlusSignedUser) {
+  if (SINGLE_USER_MODE) {
+    headingContent = "谷子白板";
+  } else if (isExcalidrawPlusSignedUser) {
     headingContent = t("welcomeScreen.app.center_heading_plus")
       .split(/(Excalidraw\+)/)
       .map((bit, idx) => {
@@ -64,7 +67,7 @@ export const AppWelcomeScreen: React.FC<{
               onSelect={() => props.onCollabDialogOpen()}
             />
           )}
-          {!isExcalidrawPlusSignedUser && (
+          {!SINGLE_USER_MODE && !isExcalidrawPlusSignedUser && (
             <WelcomeScreen.Center.MenuItemLink
               href={`${
                 import.meta.env.VITE_APP_PLUS_LP

@@ -1236,6 +1236,14 @@ export type CanvasActions = Partial<{
 
 export type UIOptions = Partial<{
   dockedSidebarBreakpoint: number;
+  /**
+   * Enable the text selection toolbar without desktop integration. Defaults to
+   * desktopIntegration.selectionToolbar when desktop integration is present.
+   * Explicit false here or in desktopIntegration.selectionToolbar disables it.
+   */
+  textSelectionToolbar: boolean;
+  /** Show remote library browsing and publishing actions. Defaults to true. */
+  libraryRemoteActions: boolean;
   canvasActions: CanvasActions;
   tools: {
     image: boolean;

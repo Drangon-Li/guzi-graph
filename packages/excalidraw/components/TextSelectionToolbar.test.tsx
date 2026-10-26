@@ -16,6 +16,8 @@ import { act, fireEvent, render, waitFor } from "../tests/test-utils";
 
 import { getTextSelectionToolbarPosition } from "./TextSelectionToolbar";
 
+import type { ExcalidrawProps } from "../types";
+
 const { h } = window;
 const current = (id: string) =>
   h.app.scene.getElement<ExcalidrawTextElement>(id)!;
@@ -66,7 +68,7 @@ const mount = async () => {
   API.setAppState({ width: 1200, height: 800 });
   return result;
 };
-const selectedPlainText = async () => {
+const selectedPlainText = async (expectToolbar = true) => {
   const text = API.createElement({
     type: "text",
     x: 400,
@@ -79,9 +81,73 @@ const selectedPlainText = async () => {
   const textarea = await getTextEditor();
   textarea.setSelectionRange(3, 5);
   fireEvent.select(textarea);
-  await waitFor(() => expect(toolbar()).not.toBeNull());
+  if (expectToolbar) {
+    await waitFor(() => expect(toolbar()).not.toBeNull());
+  }
   return { text, textarea };
 };
+
+it.each<{
+  name: string;
+  desktopIntegration?: ExcalidrawProps["desktopIntegration"];
+  textSelectionToolbar?: boolean;
+  enabled: boolean;
+}>([
+  { name: "web default", enabled: false },
+  { name: "web opt-in", textSelectionToolbar: true, enabled: true },
+  { name: "web disabled", textSelectionToolbar: false, enabled: false },
+  {
+    name: "desktop default",
+    desktopIntegration: { save: async () => true, open: async () => {} },
+    enabled: true,
+  },
+  {
+    name: "desktop disabled via UIOptions",
+    desktopIntegration: { save: async () => true, open: async () => {} },
+    textSelectionToolbar: false,
+    enabled: false,
+  },
+  {
+    name: "desktop selection toolbar disabled despite opt-in",
+    desktopIntegration: {
+      save: async () => true,
+      open: async () => {},
+      selectionToolbar: false,
+    },
+    textSelectionToolbar: true,
+    enabled: false,
+  },
+])("respects the text toolbar option for $name", async (options) => {
+  await render(
+    <Excalidraw
+      handleKeyboardGlobally
+      desktopIntegration={options.desktopIntegration}
+      UIOptions={{ textSelectionToolbar: options.textSelectionToolbar }}
+    />,
+  );
+  API.setAppState({ width: 1200, height: 800 });
+  if (!options.desktopIntegration) {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 400,
+      y: 250,
+      width: 100,
+      height: 100,
+    });
+    API.setElements([rectangle]);
+    API.setSelectedElements([rectangle]);
+    expect(document.querySelector(".selection-toolbar")).toBeNull();
+  }
+  await selectedPlainText(options.enabled);
+  if (!options.enabled) {
+    await act(async () => {
+      await new Promise((resolve) =>
+        h.app.ownerWindow.setTimeout(resolve, 180),
+      );
+    });
+    expect(toolbar()).toBeNull();
+  }
+});
 
 it("publishes a new equal-format range and geometry without suppressing listeners", () => {
   const listener = vi.fn();

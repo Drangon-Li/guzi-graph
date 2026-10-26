@@ -104,6 +104,7 @@ export default defineConfig(({ mode }) => {
   const repositoryRoot = path.resolve(__dirname, "../..");
   const envDirectory = path.join(repositoryRoot, "tooling/config/env");
   const envVars = loadEnv(mode, envDirectory);
+  const singleUserMode = envVars.VITE_APP_SINGLE_USER === "true";
   // mermaid (+ its many deps & per-diagram chunks) is lazy-loaded and large,
   // so we don't precache it. Populated at build time by `lazyChunksPlugin`.
   const mermaidChunkFileNames = new Set<string>();
@@ -238,13 +239,15 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       Sitemap({
-        hostname: "https://excalidraw.com",
+        hostname: singleUserMode
+          ? "https://graph.guzilab.com"
+          : "https://excalidraw.com",
         outDir: "build",
         changefreq: "monthly",
-        // its static in public folder
-        generateRobotsTxt: false,
+        // Keep the default robots.txt from public for the normal app.
+        generateRobotsTxt: singleUserMode,
       }),
-      woff2BrowserPlugin(),
+      !singleUserMode && woff2BrowserPlugin(),
       lazyChunksPlugin(
         /[\\/]node_modules[\\/]@excalidraw[\\/]mermaid-to-excalidraw[\\/]/,
         mermaidChunkFileNames,
@@ -262,7 +265,7 @@ export default defineConfig(({ mode }) => {
         },
       }),
       svgrPlugin(),
-      ViteEjsPlugin(),
+      ViteEjsPlugin({ SINGLE_USER_MODE: singleUserMode }),
       VitePWA({
         registerType: "autoUpdate",
         devOptions: {
@@ -298,7 +301,10 @@ export default defineConfig(({ mode }) => {
           ],
           runtimeCaching: [
             {
-              urlPattern: new RegExp(".+.woff2"),
+              urlPattern: singleUserMode
+                ? ({ sameOrigin, url }) =>
+                    sameOrigin && url.pathname.endsWith(".woff2")
+                : new RegExp(".+.woff2"),
               handler: "CacheFirst",
               options: {
                 cacheName: "fonts",
@@ -308,12 +314,15 @@ export default defineConfig(({ mode }) => {
                 },
                 cacheableResponse: {
                   // 0 to cache "opaque" responses from cross-origin requests (i.e. CDN)
-                  statuses: [0, 200],
+                  statuses: singleUserMode ? [200] : [0, 200],
                 },
               },
             },
             {
-              urlPattern: new RegExp("fonts.css"),
+              urlPattern: singleUserMode
+                ? ({ sameOrigin, url }) =>
+                    sameOrigin && url.pathname.endsWith("fonts.css")
+                : new RegExp("fonts.css"),
               handler: "StaleWhileRevalidate",
               options: {
                 cacheName: "fonts",
@@ -359,10 +368,11 @@ export default defineConfig(({ mode }) => {
           maximumFileSizeToCacheInBytes: 3 * 1024 ** 2,
         },
         manifest: {
-          short_name: "Excalidraw",
-          name: "Excalidraw",
-          description:
-            "Excalidraw is a whiteboard tool that lets you easily sketch diagrams that have a hand-drawn feel to them.",
+          short_name: singleUserMode ? "谷子白板" : "Excalidraw",
+          name: singleUserMode ? "谷子白板" : "Excalidraw",
+          description: singleUserMode
+            ? "个人手绘白板，画布自动保存在当前浏览器，支持本地文件导入导出。"
+            : "Excalidraw is a whiteboard tool that lets you easily sketch diagrams that have a hand-drawn feel to them.",
           icons: [
             {
               src: "android-chrome-192x192.png",
@@ -386,7 +396,7 @@ export default defineConfig(({ mode }) => {
             },
           ],
           start_url: "/",
-          id: "excalidraw",
+          id: singleUserMode ? "guzi-graph" : "excalidraw",
           display: "standalone",
           theme_color: "#121212",
           background_color: "#ffffff",
@@ -436,11 +446,15 @@ export default defineConfig(({ mode }) => {
               type: "image/png",
               sizes: "462x945",
             },
-            {
-              src: "/screenshots/collaboration.png",
-              type: "image/png",
-              sizes: "462x945",
-            },
+            ...(!singleUserMode
+              ? [
+                  {
+                    src: "/screenshots/collaboration.png",
+                    type: "image/png",
+                    sizes: "462x945",
+                  },
+                ]
+              : []),
             {
               src: "/screenshots/export.png",
               type: "image/png",
@@ -451,6 +465,9 @@ export default defineConfig(({ mode }) => {
       }),
       createHtmlPlugin({
         minify: true,
+        inject: {
+          data: { SINGLE_USER_MODE: singleUserMode },
+        },
       }),
     ],
     publicDir: path.resolve(__dirname, "public"),

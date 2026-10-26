@@ -48,7 +48,8 @@
     "start": "yarn && vite",
     "start:production": "yarn build && yarn serve",
     "serve": "npx http-server build -a localhost -p 5001 -o",
-    "build:preview": "yarn build && vite preview --port 5000"
+    "build:preview": "yarn build && vite preview --port 5000",
+    "build:single-user": "cross-env VITE_APP_SINGLE_USER=true VITE_APP_DISABLE_SENTRY=true VITE_APP_ENABLE_TRACKING=false vite build --mode single-user && yarn build:version"
   },
   "devDependencies": {
     "vite-plugin-sitemap": "0.7.1"

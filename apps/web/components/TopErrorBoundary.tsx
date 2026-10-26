@@ -3,6 +3,8 @@ import { t } from "@excalidraw/excalidraw/i18n";
 import * as Sentry from "@sentry/browser";
 import React from "react";
 
+import { SINGLE_USER_MODE } from "../singleUser";
+
 interface TopErrorBoundaryState {
   hasError: boolean;
   sentryEventId: string;
@@ -33,6 +35,15 @@ export class TopErrorBoundary extends React.Component<
       }
     }
 
+    if (SINGLE_USER_MODE) {
+      this.setState({
+        hasError: true,
+        sentryEventId: "",
+        localStorage: JSON.stringify(_localStorage),
+      });
+      return;
+    }
+
     Sentry.withScope((scope) => {
       scope.setExtras(errorInfo);
       const eventId = Sentry.captureException(error);
@@ -52,7 +63,8 @@ export class TopErrorBoundary extends React.Component<
     }
   }
 
-  private async createGithubIssue() {
+  private async createGithubIssue(event: React.MouseEvent<HTMLButtonElement>) {
+    const ownerWindow = event.currentTarget.ownerDocument.defaultView;
     let body = "";
     try {
       const templateStrFn = (
@@ -65,8 +77,11 @@ export class TopErrorBoundary extends React.Component<
       console.error(error);
     }
 
-    window.open(
-      `https://github.com/excalidraw/excalidraw/issues/new?body=${body}`,
+    const repository = SINGLE_USER_MODE
+      ? "Drangon-Li/guzi-graph"
+      : "excalidraw/excalidraw";
+    ownerWindow?.open(
+      `https://github.com/${repository}/issues/new?body=${body}`,
       "_blank",
       "noopener noreferrer",
     );
@@ -114,16 +129,20 @@ export class TopErrorBoundary extends React.Component<
             </div>
           </div>
           <div>
-            <div className="ErrorSplash-paragraph">
-              {t("errorSplash.trackedToSentry", {
-                eventId: this.state.sentryEventId,
-              })}
-            </div>
+            {!SINGLE_USER_MODE && (
+              <div className="ErrorSplash-paragraph">
+                {t("errorSplash.trackedToSentry", {
+                  eventId: this.state.sentryEventId,
+                })}
+              </div>
+            )}
             <div className="ErrorSplash-paragraph">
               <Trans
                 i18nKey="errorSplash.openIssueMessage"
                 button={(el) => (
-                  <button onClick={() => this.createGithubIssue()}>{el}</button>
+                  <button onClick={(event) => this.createGithubIssue(event)}>
+                    {el}
+                  </button>
                 )}
               />
             </div>

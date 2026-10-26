@@ -1,0 +1,20 @@
+Generation method: Built-in image_gen
+Created: 2026-10-21
+References: existing promotional cover frame, actual Causal Mask demonstration frame, approved two-character render.
+
+Use case: ads-marketing. Create one finished professional 16:9 landscape promotional video cover, ideally 2048x1152 pixels, for the free open-source macOS whiteboard app Excalidraw-Guzi, Chinese product name “谷子白板”. This is an original cover design based on the existing promotional video's references, not a screenshot montage.
+Input image 1: existing video frame, reference for the two characters' identities, cel-shaded 3D anime style, warm reading room and blue star-window atmosphere. Ignore all existing overlaid titles/subtitles.
+Input image 2: actual software frame, reference for its white canvas, loose hand-drawn black outlines, lavender controls and pale coral upper triangular causal-mask grid. Ignore selection handles, floating menus and subtitles.
+Input image 3: clean two-character render, identity/costume reference. Preserve both characters faithfully: left gray-haired golden-eyed Stelle in black/white/gold clothes, right long white-haired purple-eyed Nihilux with black beret, delicate glasses, white coat and black gloves.
+Composition: a polished attention-grabbing Chinese tech/anime promotional thumbnail, with ample breathing room and clear hierarchy. Product headline and value proposition dominate the upper-left ~55%; both recognizable characters grouped on the right ~40%, attractive waist-up framing, friendly lively expressions, one natural relaxed pointing gesture toward the whiteboard and one conversational open-palm gesture. Anatomically correct natural hands and fingers; no rigid claws, no extra fingers. Character faces unobstructed, large and expressive, coherent soft illustration/3D toon rendering with clean edges.
+A large off-white hand-drawn whiteboard card spans the lower-left/center, with a sparse readable Transformer learning sketch: two pale blue rounded rectangles labeled “Encoder” and “Decoder” connected by one clear arrow; a small accurate 4x4 causal mask grid beside them, only the strictly upper triangular six cells are pale coral and diagonal/lower cells are blank. This is illustrative visual vocabulary, no fabricated detailed application UI. The card is attractive, its shapes stay rectangular, enough space, no dense tiny technical text. A thin lavender tool strip can suggest the app.
+Background: warm ivory paper texture transitioning very subtly to a softly lit blue-purple star-window reading room behind the characters, echoing the video while keeping the cover bright, clean and readable. Restrained charcoal, lavender, pale blue, warm yellow accents. A few sketchy motion arrows/stars tie the characters to the diagram. No clutter, no collage borders, no random logos.
+Typography: professionally art-directed bold Chinese sans-serif, excellent kerning, real readable Chinese, hero title much larger than every other line, crisp at thumbnail size. EXACT visible copy:
+Main title, largest: “谷子白板”
+Supporting slogan below title: “把论文，画成自己的知识”
+Prominent compact yellow badge: “免费开源”
+Small benefit line: “简单面板 · 便捷快捷键”
+Small unobtrusive bottom line: “基于 Excalidraw · macOS 桌面端”
+The diagram labels only: “Encoder” and “Decoder”.
+Small unobtrusive corner disclosure: “非官方同人演示”.
+Do not repeat text or add other slogans, fake download buttons, play buttons, channel watermarks, timestamps, subtitles or a game logo. Keep all text within a generous 5% safe margin. The focal point must clearly advertise the whiteboard software, while the characters connect it to the already-made video. Output one complete ready-to-use cover, opaque background.
