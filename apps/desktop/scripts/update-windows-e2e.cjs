@@ -831,6 +831,20 @@ record("bootstrap");
     old = await launch(report.oldVersion);
     assert.equal((await bridge("checkForUpdates")).status, "available");
     assert.equal((await bridge("downloadUpdate")).status, "downloaded");
+    await page.getByRole("button", { name: "返回项目页", exact: true }).click();
+    await page.locator(".desktop-project-pane.is-active").waitFor();
+    await page.getByRole("button", { name: "设置", exact: true }).click();
+    const settings = page.getByRole("dialog", {
+      name: "桌面设置",
+      exact: true,
+    });
+    await settings.locator(".desktop-update-panel").waitFor();
+    const beforeInstallSession = await waitFor(async () => {
+      const session = await bridge("getSession");
+      return session.activePath === null && session;
+    }, "project-view session persistence");
+    assert.ok(beforeInstallSession.paths.includes(canvasPath));
+    report.beforeInstallSession = beforeInstallSession;
     await page.screenshot({
       path: path.join(outputDirectory, "before-update.png"),
       fullPage: true,
@@ -839,7 +853,10 @@ record("bootstrap");
     const offset = (await readEvents()).length;
     const closed = page.waitForEvent("close", { timeout: 180000 });
     closed.catch(() => {});
-    await bridge("installUpdate");
+    await settings
+      .locator(".desktop-update-panel")
+      .getByRole("button", { name: "安装并重启", exact: true })
+      .click();
     await bounded(
       closed,
       180000,
@@ -898,7 +915,7 @@ record("bootstrap");
     assert.equal(await hash(canvasPath), canvasHash);
     const session = await bridge("getSession");
     assert.ok(session.paths.includes(canvasPath));
-    assert.equal(session.activePath, canvasPath);
+    assert.deepEqual(session, beforeInstallSession);
     const saved = await page
       .locator(".desktop-workspace")
       .evaluate(
@@ -920,7 +937,7 @@ record("bootstrap");
     await closeNormally(replacement.pid);
     assert.equal(await hash(sourceArchive), initialArchiveHash);
     report.scenarios.push(
-      "Production desktop bridge checks, downloads, confirms saved documents, installs NSIS, and restarts higher version at same path",
+      "Desktop bridge checks and downloads; Settings UI confirms saved documents, installs NSIS, and restarts higher version at same path",
     );
     report.scenarios.push(
       "Isolated user profile sentinel, open session, and saved canvas bytes survive replacement",

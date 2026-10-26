@@ -498,6 +498,11 @@ if CommandLine.arguments[1] == "quit" {
     exact: true,
   });
   await prompt.waitFor();
+  report.beforeSave = await until(async () => {
+    const value = await snapshot();
+    return value.session.activePath === document && value;
+  }, "dirty-document session activation before install");
+  assert.deepEqual(report.beforeSave.session.paths, [document]);
   assert.equal(plist(installed, "CFBundleVersion"), from);
   assert.equal(oldProcess.exitCode, null);
   assert.equal(digest(document), initialDocumentHash);
@@ -548,7 +553,7 @@ if CommandLine.arguments[1] == "quit" {
   assert.equal(digest(sentinel), sentinelHash);
   assert.deepEqual(
     JSON.parse(fs.readFileSync(path.join(profile, "session.json"), "utf8")),
-    report.beforeInstall.session,
+    report.beforeSave.session,
   );
   writeReport();
 
@@ -567,7 +572,7 @@ if CommandLine.arguments[1] == "quit" {
   report.after = await snapshot();
   assert.equal(report.after.update.currentVersion, to);
   assert.deepEqual(report.after.settings, report.before.settings);
-  assert.deepEqual(report.after.session, report.beforeInstall.session);
+  assert.deepEqual(report.after.session, report.beforeSave.session);
   assert.equal(digest(document), savedDocumentHash);
   assert.equal(digest(sentinel), sentinelHash);
   const reopenedDocument = await page
