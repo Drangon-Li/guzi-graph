@@ -773,6 +773,12 @@ $process = Get-Process -Id $target.ProcessId
     await waitState("up-to-date", 180000);
     await screenshot("after-update");
     assert.equal(await hash(installedArchive), report.expectedArchiveSha256);
+    const settings = page.getByRole("dialog", {
+      name: "桌面设置",
+      exact: true,
+    });
+    await settings.getByRole("button", { name: "完成", exact: true }).click();
+    await settings.waitFor({ state: "hidden" });
     await closeNormally(targetPid);
     report.passed = true;
   } catch (error) {
