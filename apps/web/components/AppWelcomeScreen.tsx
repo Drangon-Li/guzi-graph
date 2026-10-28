@@ -2,6 +2,7 @@ import { loginIcon } from "@excalidraw/excalidraw/components/icons";
 import { POINTER_EVENTS } from "@excalidraw/common";
 import { useI18n } from "@excalidraw/excalidraw/i18n";
 import { WelcomeScreen } from "@excalidraw/excalidraw/index";
+import guziLogo from "@excalidraw/excalidraw/assets/guzi-logo.png";
 import React from "react";
 
 import { isExcalidrawPlusSignedUser } from "../app_constants";
@@ -55,7 +56,17 @@ export const AppWelcomeScreen: React.FC<{
       <WelcomeScreen.Hints.ToolbarHint />
       <WelcomeScreen.Hints.HelpHint />
       <WelcomeScreen.Center>
-        <WelcomeScreen.Center.Logo />
+        <WelcomeScreen.Center.Logo>
+          {SINGLE_USER_MODE ? (
+            <img
+              src={guziLogo}
+              alt="谷子白板"
+              width={80}
+              height={80}
+              draggable={false}
+            />
+          ) : null}
+        </WelcomeScreen.Center.Logo>
         <WelcomeScreen.Center.Heading>
           {headingContent}
         </WelcomeScreen.Center.Heading>

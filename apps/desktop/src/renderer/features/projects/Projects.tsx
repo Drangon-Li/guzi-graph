@@ -9,7 +9,6 @@ import {
   ExternalLinkIcon,
   PenModeIcon,
   TrashIcon,
-  ExcalLogo,
   LoadIcon,
   PlusIcon,
   searchIcon,
@@ -20,6 +19,7 @@ import { fileTitle } from "../../shared/model/document";
 import { isPathInDirectory, parentDirectory } from "../../shared/model/path";
 import { translate } from "../../shared/i18n/i18n";
 import { DesktopSelect } from "../../shared/ui/DesktopControls";
+import { GuziLogo } from "../../shared/ui/GuziLogo";
 import { desktopShortcut } from "../../shared/ui/desktopShortcut";
 
 import { FilePreview } from "./FilePreview";
@@ -153,7 +153,9 @@ export const Projects = ({
     <div className="desktop-projects">
       <aside className="desktop-sidebar">
         <div className="desktop-brand">
-          <span>{ExcalLogo}</span>
+          <span>
+            <GuziLogo />
+          </span>
           <strong>Excalidraw</strong>
         </div>
         <div className="desktop-sidebar-section">{t("本地画布")}</div>
@@ -451,7 +453,9 @@ export const Projects = ({
             </div>
             {!files.length && (
               <div className="desktop-empty">
-                <span>{ExcalLogo}</span>
+                <span>
+                  <GuziLogo />
+                </span>
                 <h2>
                   {query
                     ? t("没有找到匹配的画布")
