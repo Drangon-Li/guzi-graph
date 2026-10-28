@@ -297,19 +297,21 @@ try {
     }
     return current;
   };
-  const waitState = (status, timeout) =>
-    waitFor(
+  const waitState = (status, timeout) => {
+    const expected = Array.isArray(status) ? status : [status];
+    return waitFor(
       async () => {
         const current = await state();
         assert.ok(
           !["error", "unavailable"].includes(current.status),
           JSON.stringify(current),
         );
-        return current.status === status && current;
+        return expected.includes(current.status) && current;
       },
-      `update ${status}`,
+      `update ${expected.join(" or ")}`,
       timeout,
     );
+  };
   const openSettings = async () => {
     await page.getByRole("button", { name: "返回项目页", exact: true }).click();
     await page.locator(".desktop-project-pane.is-active").waitFor();
@@ -690,14 +692,43 @@ ConvertTo-Json -InputObject $items -Compress
     };
     const oldPid = await launch(from);
     await verifyPreserved();
-    await openSettings();
-    await screenshot("before-check");
-    await clickUpdate("检查更新");
-    const available = await waitState("available", 180000);
-    assert.equal(available.availableVersion, to);
-    await screenshot("update-available");
-    await clickUpdate("下载更新");
-    await waitState("downloaded", 10 * 60 * 1000);
+    if (semver.gte(from, "0.8.3")) {
+      const startupCheck = await waitState(
+        ["available", "downloading", "downloaded"],
+        180000,
+      );
+      assert.equal(startupCheck.availableVersion, to);
+      report.checkSource = "startup";
+      if (startupCheck.status === "available") {
+        const startupPrompt = page.getByRole("dialog", {
+          name: "发现新版本",
+          exact: true,
+        });
+        await startupPrompt.waitFor();
+        await screenshot("startup-update-available");
+        await startupPrompt
+          .getByRole("button", { name: "稍后更新", exact: true })
+          .click();
+        await startupPrompt.waitFor({ state: "hidden" });
+      }
+      await openSettings();
+    } else {
+      await openSettings();
+      await screenshot("before-check");
+      await clickUpdate("检查更新");
+      report.checkSource = "manual";
+    }
+    const discovered = await waitState(
+      ["available", "downloading", "downloaded"],
+      180000,
+    );
+    assert.equal(discovered.availableVersion, to);
+    await screenshot("update-discovered");
+    if (discovered.status === "available") {
+      await clickUpdate("下载更新");
+    }
+    const downloaded = await waitState("downloaded", 10 * 60 * 1000);
+    assert.equal(downloaded.availableVersion, to);
     await screenshot("update-downloaded");
     const beforeInstall = await appProcesses();
     const oldPids = new Set(beforeInstall.map((item) => item.ProcessId));
