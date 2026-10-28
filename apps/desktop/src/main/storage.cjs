@@ -1011,29 +1011,6 @@ class DesktopStorage {
     this.authorized.delete(path.resolve(candidate));
     this.authorized.delete(source);
     this.authorized.add(destination);
-    if (this.recentFiles.has(source)) {
-      const recentFiles = new Map(this.recentFiles);
-      const lastOpenedAt = recentFiles.get(source);
-      recentFiles.delete(source);
-      recentFiles.set(
-        destination,
-        Math.max(recentFiles.get(destination) || 0, lastOpenedAt),
-      );
-      await this.persistRecentFiles(recentFiles);
-    }
-    this.session.paths = this.session.paths.map((item) =>
-      item === candidate || item === source ? destination : item,
-    );
-    if (
-      this.session.activePath === candidate ||
-      this.session.activePath === source
-    ) {
-      this.session.activePath = destination;
-    }
-    await atomicWrite(
-      path.join(this.userData, "session.json"),
-      JSON.stringify(this.session),
-    );
     const document = await this.readFile(destination);
     if (copiedTimes) {
       await fs.utimes(
@@ -1052,6 +1029,47 @@ class DesktopStorage {
       });
     } else if (priorCopy?.after === document.modifiedAt) {
       this.copiedVersions.set(destination, priorCopy);
+    }
+    const updateRecentFiles = this.recentFiles.has(source);
+    if (updateRecentFiles) {
+      const recentFiles = new Map(this.recentFiles);
+      const lastOpenedAt = recentFiles.get(source);
+      recentFiles.delete(source);
+      recentFiles.set(
+        destination,
+        Math.max(recentFiles.get(destination) || 0, lastOpenedAt),
+      );
+      this.recentFiles = recentFiles;
+    }
+    this.session.paths = this.session.paths.map((item) =>
+      item === candidate || item === source ? destination : item,
+    );
+    if (
+      this.session.activePath === candidate ||
+      this.session.activePath === source
+    ) {
+      this.session.activePath = destination;
+    }
+    if (updateRecentFiles) {
+      try {
+        await this.persistRecentFiles(this.recentFiles);
+      } catch (error) {
+        console.warn(
+          "[guzi-storage] moved document history update failed",
+          error,
+        );
+      }
+    }
+    try {
+      await atomicWrite(
+        path.join(this.userData, "session.json"),
+        JSON.stringify(this.session),
+      );
+    } catch (error) {
+      console.warn(
+        "[guzi-storage] moved document session update failed",
+        error,
+      );
     }
     return document;
   }
@@ -1192,6 +1210,8 @@ class DesktopStorage {
           await fs.readFile(this.draftPath(name.slice(0, -5)), "utf8"),
         );
         if (
+          draft !== null &&
+          typeof draft === "object" &&
           draft.id === name.slice(0, -5) &&
           typeof draft.content === "string" &&
           typeof draft.title === "string" &&

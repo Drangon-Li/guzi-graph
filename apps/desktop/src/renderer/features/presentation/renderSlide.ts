@@ -69,7 +69,7 @@ export const renderSlideSvg = async (
   }
   const appState = restoreAppState(slide.scene.appState, null);
   const bounds = getSlideBounds(slide, width, height);
-  registerCustomFontRegistry(appState.fontRegistry ?? {});
+  registerCustomFontRegistry(appState.fontRegistry);
   const svg = ownerDocument.createElementNS(SVG_NS, "svg");
   svg.setAttribute("xmlns", SVG_NS);
   svg.setAttribute("width", String(width));

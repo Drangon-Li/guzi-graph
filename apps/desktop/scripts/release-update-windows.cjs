@@ -22,20 +22,23 @@ function options(argv) {
       return { help: true };
     }
     assert.ok(
-      ["--from", "--to", "--artifacts"].includes(flag),
+      ["--from", "--to", "--latest-release", "--artifacts"].includes(flag),
       `Unknown option: ${flag}`,
     );
-    const key = flag.slice(2);
+    const key = flag === "--latest-release" ? "latestRelease" : flag.slice(2);
     assert.ok(!result[key], `Duplicate option: ${flag}`);
     const value = argv[++index];
     assert.ok(value && !value.startsWith("--"), `${flag} requires a value`);
     result[key] = value;
   }
-  for (const key of ["from", "to"]) {
+  result.latestRelease ||= result.to;
+  for (const key of ["from", "to", "latestRelease"]) {
     assert.match(
       result[key] || "",
       /^\d+\.\d+\.\d+$/,
-      `--${key} must be a stable version`,
+      `--${
+        key === "latestRelease" ? "latest-release" : key
+      } must be a stable version`,
     );
     assert.equal(semver.valid(result[key]), result[key]);
   }
@@ -57,11 +60,12 @@ async function hash(filename) {
 }
 
 async function execute(configuration) {
-  const { from, to, artifacts } = configuration;
+  const { from, to, latestRelease, artifacts } = configuration;
   await fs.mkdir(artifacts, { recursive: true });
   const report = {
     from,
     to,
+    latestRelease,
     repository,
     platform: process.platform,
     arch: process.arch,
@@ -360,8 +364,8 @@ if (-not $process.CloseMainWindow()) { throw 'App has no closable main window' }
     );
     assert.equal(
       latest.tag_name,
-      `v${to}`,
-      "Latest public Release must be the requested target",
+      `v${latestRelease}`,
+      "Latest public Release must match --latest-release",
     );
     assert.equal(latest.draft, false);
     assert.equal(latest.prerelease, false);
@@ -920,12 +924,14 @@ async function main() {
   const configuration = options(process.argv.slice(2));
   if (configuration.help) {
     process.stdout.write(
-      "node release-update-windows.cjs --from 0.8.0 --to 0.8.1 --artifacts output/release-update-validation/windows\n",
+      "node release-update-windows.cjs --from 0.8.0 --to 0.8.1 [--latest-release 0.8.1] --artifacts output/release-update-validation/windows\n",
     );
   } else {
     await execute(configuration);
   }
 }
+
+module.exports = { options };
 
 if (require.main === module) {
   main().catch((error) => {

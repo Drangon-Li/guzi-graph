@@ -566,7 +566,7 @@ export const PresentationLayout = (props: Props) => {
         }
       } else if (action === "next") {
         index = Math.min(playing.session.slides.length - 1, index + 1);
-      } else if (action === "previous") {
+      } else {
         index = Math.max(0, index - 1);
       }
       flushSync(() => setPage(index));

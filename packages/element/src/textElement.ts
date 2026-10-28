@@ -5,6 +5,7 @@ import {
   DEFAULT_FONT_SIZE,
   STICKY_NOTE_BODY_INSET_Y,
   STICKY_NOTE_PADDING,
+  TABLE_CELL_PADDING,
   TEXT_ALIGN,
   VERTICAL_ALIGN,
   getFontString,
@@ -137,6 +138,7 @@ export const redrawTextBoundingBox = (
       const nextHeight = computeContainerDimensionForBoundText(
         metrics.height,
         container.type,
+        getBoundTextPadding(container),
       );
       scene.mutateElement(container, { height: nextHeight });
       updateOriginalContainerCache(container.id, nextHeight);
@@ -146,6 +148,7 @@ export const redrawTextBoundingBox = (
       const nextWidth = computeContainerDimensionForBoundText(
         metrics.width,
         container.type,
+        getBoundTextPadding(container),
       );
       scene.mutateElement(container, { width: nextWidth });
     }
@@ -235,6 +238,7 @@ export const handleBindTextResize = (
       containerHeight = computeContainerDimensionForBoundText(
         nextHeight,
         container.type,
+        getBoundTextPadding(container),
       );
 
       // Crossing the opposite edge swaps the anchor for text-driven growth.
@@ -423,10 +427,16 @@ export const getContainerCenter = (
   return { x: center[0], y: center[1] };
 };
 
-export const getContainerCoords = (container: ExcalidrawElement) => {
-  const padding = isStickyNoteElement(container)
+export const getBoundTextPadding = (container: ExcalidrawElement) =>
+  isStickyNoteElement(container)
     ? STICKY_NOTE_PADDING
+    : container.type === "rectangle" &&
+      container.customData?.tableCell?.role === "background"
+    ? TABLE_CELL_PADDING
     : BOUND_TEXT_PADDING;
+
+export const getContainerCoords = (container: ExcalidrawElement) => {
+  const padding = getBoundTextPadding(container);
   let offsetX = padding;
   let offsetY = padding;
 
@@ -551,9 +561,10 @@ export const isValidTextContainer = (element: {
 export const computeContainerDimensionForBoundText = (
   dimension: number,
   containerType: ExtractSetType<typeof VALID_CONTAINER_TYPES>,
+  padding = BOUND_TEXT_PADDING,
 ) => {
   dimension = Math.ceil(dimension);
-  const padding = BOUND_TEXT_PADDING * 2;
+  padding *= 2;
 
   if (containerType === "ellipse") {
     return Math.round(((dimension + padding) / Math.sqrt(2)) * 2);
@@ -589,13 +600,7 @@ export const getBoundTextMaxWidth = (
     // Math.round(width / 2) - https://github.com/excalidraw/excalidraw/pull/6265
     return Math.round(width / 2) - BOUND_TEXT_PADDING * 2;
   }
-  return (
-    width -
-    (isStickyNoteElement(container)
-      ? STICKY_NOTE_PADDING
-      : BOUND_TEXT_PADDING) *
-      2
-  );
+  return width - getBoundTextPadding(container) * 2;
 };
 
 export const getBoundTextMaxHeight = (
@@ -625,7 +630,7 @@ export const getBoundTextMaxHeight = (
     // Math.round(height / 2) - https://github.com/excalidraw/excalidraw/pull/6265
     return Math.round(height / 2) - BOUND_TEXT_PADDING * 2;
   }
-  return height - BOUND_TEXT_PADDING * 2;
+  return height - getBoundTextPadding(container) * 2;
 };
 
 /** retrieves text from text elements and concatenates to a single string */

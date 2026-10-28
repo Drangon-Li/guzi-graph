@@ -1,5 +1,11 @@
 import "@excalidraw/element";
-import { isNonDeletedElement, newElementWith } from "@excalidraw/element";
+import {
+  CaptureUpdateAction,
+  distanceToElement,
+  getBindingGap,
+  isNonDeletedElement,
+  newElementWith,
+} from "@excalidraw/element";
 import { FONT_FAMILY, KEYS } from "@excalidraw/common";
 import { pointFrom, pointRotateRads } from "@excalidraw/math";
 
@@ -502,3 +508,340 @@ it("uses configurable table size presets and isolates text and border color popo
   expect(cells[0].textColor).not.toBe(swatch.title);
   expect(cells[1].strokeColor).not.toBe(swatch.title);
 });
+
+const setTableWithBoundArrows = (elbowed = false) => {
+  const table = createTableElements(createTableData(1, 1), 100, 100);
+  const background = table.elements.find(
+    (element) => getTableMember(element)?.role === "background",
+  )!;
+  const targets = [table.root, background];
+  const arrows = targets.map((target) =>
+    API.createElement({
+      type: "arrow",
+      elbowed,
+      x: 400,
+      y: 124,
+      width: 150,
+      height: 0,
+      points: [pointFrom(0, 0), pointFrom(-150, 0)],
+      endBinding: {
+        elementId: target.id,
+        fixedPoint: [1, 0.5],
+        mode: "orbit",
+      },
+      startBinding: null,
+    }),
+  );
+  API.setElements([
+    ...table.elements.map((element) => {
+      const index = targets.findIndex((target) => target.id === element.id);
+      return index < 0
+        ? element
+        : newElementWith(element, {
+            boundElements: [
+              ...(element.boundElements ?? []),
+              { id: arrows[index].id, type: "arrow" },
+            ],
+          });
+    }),
+    ...arrows,
+  ]);
+  API.setSelectedElements(
+    h.elements
+      .filter(isNonDeletedElement)
+      .filter(
+        (element) =>
+          element.groupIds[0] === table.root.groupIds[0] &&
+          element.type !== "text",
+      ),
+  );
+  return { table, targets, arrows };
+};
+
+it.each([false, true])(
+  "keeps root and cell arrows attached after table size property changes (elbowed=%s)",
+  (elbowed) => {
+    const { targets, arrows } = setTableWithBoundArrows(elbowed);
+    act(() => h.app.actionManager.executeAction(actionTableProperties, "ui"));
+    fireEvent.change(screen.getByLabelText("列宽"), {
+      target: { value: "220" },
+    });
+    const beforeRowResize = arrows.map((arrow) => {
+      const current = h.elements.find((element) => element.id === arrow.id)!;
+      return JSON.stringify(
+        current.type === "arrow"
+          ? { x: current.x, y: current.y, points: current.points }
+          : null,
+      );
+    });
+    fireEvent.change(screen.getByLabelText("行高"), {
+      target: { value: "120" },
+    });
+    targets.forEach((target, index) => {
+      const updated = h.elements.find((element) => element.id === target.id)!;
+      const arrow = h.elements.find(
+        (element) => element.id === arrows[index].id,
+      )!;
+      expect(arrow.type).toBe("arrow");
+      if (arrow.type === "arrow") {
+        const end = arrow.points[arrow.points.length - 1];
+        expect(arrow.x + end[0]).toBeGreaterThanOrEqual(
+          updated.x + updated.width,
+        );
+        expect(arrow.y + end[1]).toBeGreaterThan(144);
+        expect(
+          distanceToElement(
+            updated,
+            h.app.scene.getNonDeletedElementsMap(),
+            pointFrom(arrow.x + end[0], arrow.y + end[1]),
+          ),
+        ).toBeLessThanOrEqual(getBindingGap(updated) + 1);
+      }
+    });
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "表格详细设置" }), {
+      key: "Escape",
+    });
+    fireEvent.keyDown(document.querySelector("canvas.interactive")!, {
+      key: "z",
+      code: "KeyZ",
+      [KEYS.CTRL_OR_CMD]: true,
+    });
+    expect(h.elements.find(isTableRoot)?.height).toBe(48);
+    arrows.forEach((arrow, index) => {
+      const current = h.elements.find((element) => element.id === arrow.id)!;
+      expect(
+        JSON.stringify(
+          current.type === "arrow"
+            ? { x: current.x, y: current.y, points: current.points }
+            : null,
+        ),
+      ).toBe(beforeRowResize[index]);
+    });
+  },
+);
+
+it("keeps root and cell arrows attached after native text submission grows the table", () => {
+  const { targets, arrows } = setTableWithBoundArrows();
+  mouse.doubleClickAt(120, 120);
+  const editor = document.querySelector<HTMLTextAreaElement>(
+    'textarea[data-type="wysiwyg"]',
+  )!;
+  expect(editor).not.toBeNull();
+  fireEvent.change(editor, {
+    target: { value: "One\nTwo\nThree\nFour\nFive\nSix" },
+  });
+  fireEvent.input(editor);
+  act(() => h.app.text.textWysiwygSubmitHandler?.());
+  const root = h.elements.find(isTableRoot)!;
+  expect(root.height).toBeGreaterThan(48);
+  targets.forEach((target, index) => {
+    const updated = h.elements.find((element) => element.id === target.id)!;
+    const arrow = h.elements.find(
+      (element) => element.id === arrows[index].id,
+    )!;
+    if (arrow.type === "arrow") {
+      const end = arrow.points[arrow.points.length - 1];
+      expect(arrow.y + end[1]).toBeGreaterThan(144);
+      expect(
+        distanceToElement(
+          updated,
+          h.app.scene.getNonDeletedElementsMap(),
+          pointFrom(arrow.x + end[0], arrow.y + end[1]),
+        ),
+      ).toBeLessThanOrEqual(getBindingGap(updated) + 1);
+    }
+  });
+});
+
+it.each(
+  (["row", "column"] as const).flatMap((axis) =>
+    [false, true].flatMap((elbowed) =>
+      [0, Math.PI / 3].map((angle) => ({ axis, elbowed, angle })),
+    ),
+  ),
+)(
+  "keeps arrow ownership through $axis insertion, deletion, undo and redo (elbowed=$elbowed, angle=$angle)",
+  ({ axis, elbowed, angle }) => {
+    const data = createTableData(3, 3);
+    data.cells.forEach((cell) => {
+      cell.text = `${cell.row},${cell.column}`;
+    });
+    const initial = createTableElements(data, 100, 100);
+    const rotated = updateTableElements(
+      initial.elements,
+      newElementWith(initial.root, { angle: angle as Radians }),
+      (data) => data,
+    );
+    const table = { root: rotated.find(isTableRoot)!, elements: rotated };
+    const targets = [0, 1].map(
+      (position) =>
+        table.elements.find((element) => {
+          const member = getTableMember(element);
+          return (
+            member?.role === "background" &&
+            member.row === position &&
+            member.column === position
+          );
+        })!,
+    );
+    const arrows = targets.map((target) =>
+      API.createElement({
+        type: "arrow",
+        elbowed,
+        x: target.x + target.width + 160,
+        y: target.y + target.height / 2,
+        width: 154,
+        height: 0,
+        points: [pointFrom(0, 0), pointFrom(-154, 0)],
+        endBinding: {
+          elementId: target.id,
+          fixedPoint: [1, 0.5],
+          mode: "orbit",
+        },
+        startBinding: null,
+      }),
+    );
+    API.updateScene({
+      elements: [
+        ...table.elements.map((element) => {
+          const index = targets.findIndex((target) => target.id === element.id);
+          return index < 0
+            ? element
+            : newElementWith(element, {
+                boundElements: [
+                  ...(element.boundElements ?? []),
+                  { id: arrows[index].id, type: "arrow" },
+                ],
+              });
+        }),
+        ...arrows,
+      ],
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+    API.setSelectedElements(
+      h.elements
+        .filter(isNonDeletedElement)
+        .filter(
+          (element) =>
+            element.groupIds[0] === table.root.groupIds[0] &&
+            element.type !== "text",
+        ),
+    );
+    const textGeometry = () =>
+      h.elements
+        .filter((element) => element.type === "text" && !element.isDeleted)
+        .map((element) => ({
+          id: element.id,
+          x: element.x,
+          y: element.y,
+          width: element.width,
+          height: element.height,
+          angle: element.angle,
+        }))
+        .sort((left, right) => left.id.localeCompare(right.id));
+    const expectTextGeometry = (expected: ReturnType<typeof textGeometry>) => {
+      const actual = textGeometry();
+      if (!angle) {
+        expect(actual).toEqual(expected);
+        return;
+      }
+      expect(actual).toHaveLength(expected.length);
+      actual.forEach((element, index) => {
+        expect(element.id).toBe(expected[index].id);
+        for (const field of ["x", "y", "width", "height", "angle"] as const) {
+          expect(element[field]).toBeCloseTo(expected[index][field], 8);
+        }
+      });
+    };
+    const initialTextGeometry = textGeometry();
+    const dialogName = "表格详细设置";
+    const open = () =>
+      act(() => h.app.actionManager.executeAction(actionTableProperties, "ui"));
+    const close = () =>
+      fireEvent.keyDown(screen.getByRole("dialog", { name: dialogName }), {
+        key: "Escape",
+      });
+    const undoRedo = (redo = false) =>
+      fireEvent.keyDown(document.querySelector("canvas.interactive")!, {
+        key: "z",
+        code: "KeyZ",
+        [KEYS.CTRL_OR_CMD]: true,
+        shiftKey: redo,
+      });
+    const targetNow = (index: number) =>
+      h.elements.find((element) => element.id === targets[index].id)!;
+    const arrowNow = (index: number) => {
+      const arrow = h.elements.find(
+        (element) => element.id === arrows[index].id,
+      )!;
+      if (arrow.type !== "arrow") {
+        throw new Error("Expected an arrow");
+      }
+      return arrow;
+    };
+    const expectSurvivor = (position: number) => {
+      const target = targetNow(1);
+      expect(target.isDeleted).toBe(false);
+      expect(getTableMember(target)?.[axis]).toBe(position);
+      const label = h.elements.find(
+        (element) =>
+          element.type === "text" && element.containerId === target.id,
+      )!;
+      expect(label).toMatchObject({ isDeleted: false, originalText: "1,1" });
+      const arrow = arrowNow(1);
+      expect(arrow.endBinding?.elementId).toBe(target.id);
+      const end = arrow.points[arrow.points.length - 1];
+      expect(
+        distanceToElement(
+          target,
+          h.app.scene.getNonDeletedElementsMap(),
+          pointFrom(arrow.x + end[0], arrow.y + end[1]),
+        ),
+      ).toBeLessThanOrEqual(getBindingGap(target) + 1);
+    };
+    open();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: axis === "row" ? "在上方插入行" : "在左侧插入列",
+      }),
+    );
+    expectSurvivor(2);
+    const insertedTextGeometry = textGeometry();
+    expect(getTableMember(targetNow(0))?.[axis]).toBe(1);
+    close();
+    undoRedo();
+    expectSurvivor(1);
+    expectTextGeometry(initialTextGeometry);
+    undoRedo(true);
+    expectSurvivor(2);
+    expectTextGeometry(insertedTextGeometry);
+    open();
+    const grid = screen.getByRole("dialog", { name: dialogName });
+    fireEvent.click(
+      grid.querySelector(
+        `[aria-label="${axis === "row" ? "第2行，第1列" : "第1行，第2列"}"]`,
+      )!,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: axis === "row" ? "删除行" : "删除列",
+      }),
+    );
+    expect(targetNow(0).isDeleted).toBe(true);
+    expect(arrowNow(0).endBinding).toBeNull();
+    expect(arrows[0].endBinding?.elementId).toBe(targets[0].id);
+    expectSurvivor(1);
+    const deletedTextGeometry = textGeometry();
+    close();
+    undoRedo();
+    expect(targetNow(0).isDeleted).toBe(false);
+    expect(arrowNow(0).endBinding?.elementId).toBe(targets[0].id);
+    expectSurvivor(2);
+    expectTextGeometry(insertedTextGeometry);
+    undoRedo(true);
+    expect(targetNow(0).isDeleted).toBe(true);
+    expect(arrowNow(0).endBinding).toBeNull();
+    expectSurvivor(1);
+    expectTextGeometry(deletedTextGeometry);
+  },
+);

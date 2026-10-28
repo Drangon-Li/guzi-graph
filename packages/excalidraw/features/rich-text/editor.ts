@@ -48,6 +48,7 @@ import {
   updateBoundElements,
   getBoundTextMaxHeight,
   computeContainerDimensionForBoundText,
+  getBoundTextPadding,
   isStickyNoteElement,
   isNonDeletedElement,
   isArrowElement,
@@ -460,7 +461,11 @@ export const richTextWysiwyg = ({
     ) {
       const targetHeight = Math.max(
         initialContainerHeight,
-        computeContainerDimensionForBoundText(current.height, container.type),
+        computeContainerDimensionForBoundText(
+          current.height,
+          container.type,
+          getBoundTextPadding(container),
+        ),
       );
       if (
         container.height !== targetHeight &&
