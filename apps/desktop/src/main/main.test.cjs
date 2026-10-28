@@ -72,6 +72,7 @@ async function harness(
     textCommands: [],
     trash: [],
     printWindows: [],
+    messageBoxes: [],
   };
   const handlers = new Map();
   const nativeTheme = new EventEmitter();
@@ -167,7 +168,12 @@ async function harness(
         calls.openDialog = args.at(-1);
         return calls.openResult || { canceled: true, filePaths: [] };
       },
-      showMessageBox: async () => ({ response: calls.conflictChoice || 0 }),
+      showMessageBox: async (...args) => {
+        calls.messageBoxes.push(args);
+        return (
+          calls.messageBoxResult || { response: calls.conflictChoice || 0 }
+        );
+      },
       showErrorBox: (title, message) => calls.errors.push({ title, message }),
     },
     Menu: {
@@ -545,6 +551,99 @@ test("close requested during initialization is replayed when renderer is ready",
   await invoke("take-pending-files");
   await new Promise(setImmediate);
   assert.equal(calls.commands.at(-1).value, "close-window");
+});
+
+test("renderer crash permits native close and quit confirmation with cancellation and retry", async (t) => {
+  for (const quit of [false, true]) {
+    const h = await harness(t);
+    await h.invoke("take-pending-files");
+    if (quit) await h.invoke("update-settings", { language: "en" });
+    let closed = 0;
+    h.window.on("closed", () => closed++);
+    const commands = () =>
+      h.calls.commands.filter(({ channel }) => channel === "desktop:command");
+    const commandCount = commands().length;
+    h.window.webContents.emit("render-process-gone");
+    assert.equal(h.calls.messageBoxes.length, 0);
+    assert.equal(closed, 0);
+    const close = () => (quit ? h.app.quit() : h.window.close());
+    close();
+    await new Promise(setImmediate);
+    assert.equal(h.calls.messageBoxes.length, 1);
+    assert.equal(h.calls.messageBoxes[0][0], h.window);
+    assert.equal(h.calls.messageBoxes[0][1].cancelId, 0);
+    assert.equal(h.calls.messageBoxes[0][1].defaultId, 0);
+    assert.equal(
+      h.calls.messageBoxes[0][1].message,
+      quit ? "The application interface has crashed" : "界面已异常退出",
+    );
+    assert.equal(commands().length, commandCount);
+    assert.equal(h.app.quitCompleted, 0);
+    assert.equal(closed, 0);
+    h.calls.messageBoxResult = { response: 1 };
+    close();
+    await new Promise(setImmediate);
+    assert.equal(h.calls.messageBoxes.length, 2);
+    assert.equal(h.app.quitCompleted, quit ? 1 : 0);
+    assert.equal(closed, quit ? 0 : 1);
+  }
+});
+
+test("renderer crash takes over an existing close request and deduplicates native confirmation", async (t) => {
+  const h = await harness(t);
+  await h.invoke("take-pending-files");
+  let respond;
+  h.calls.messageBoxResult = new Promise((resolve) => {
+    respond = resolve;
+  });
+  h.window.close();
+  h.window.webContents.emit("render-process-gone");
+  assert.equal(h.calls.messageBoxes.length, 1);
+  h.app.quit();
+  h.window.close();
+  h.ipcMain.emit("desktop:confirm-close", h.event);
+  await new Promise(setImmediate);
+  assert.equal(h.calls.messageBoxes.length, 1);
+  assert.equal(h.app.quitCompleted, 0);
+  respond({ response: 1 });
+  await new Promise(setImmediate);
+  assert.equal(h.app.quitCompleted, 1);
+});
+
+test("renderer recovery restores saved-close confirmation and ignores a stale native response", async (t) => {
+  for (const pendingClose of [false, true]) {
+    const h = await harness(t);
+    await h.invoke("take-pending-files");
+    let respond;
+    h.calls.messageBoxResult = new Promise((resolve) => {
+      respond = resolve;
+    });
+    h.window.webContents.emit("render-process-gone");
+    if (pendingClose) h.app.quit();
+    h.window.webContents.emit(
+      "did-start-navigation",
+      {},
+      "app://local/index.html",
+      false,
+      true,
+    );
+    await h.invoke("take-pending-files");
+    if (!pendingClose) h.app.quit();
+    await new Promise(setImmediate);
+    assert.equal(
+      h.calls.commands
+        .filter(({ channel }) => channel === "desktop:command")
+        .at(-1).value,
+      "close-window",
+    );
+    assert.equal(h.calls.messageBoxes.length, pendingClose ? 1 : 0);
+    respond({ response: 1 });
+    await new Promise(setImmediate);
+    assert.equal(h.app.quitCompleted, 0);
+    h.ipcMain.emit("desktop:confirm-close", h.event);
+    await new Promise(setImmediate);
+    assert.equal(h.app.quitCompleted, 1);
+  }
 });
 
 test("local protocol rejects traversal, remote hosts and symlink assets", async (t) => {

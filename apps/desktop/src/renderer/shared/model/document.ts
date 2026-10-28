@@ -120,6 +120,64 @@ export const createSceneTracker = () => {
   };
 };
 
+type ComparisonElement = {
+  isDeleted?: boolean;
+  version?: number;
+  versionNonce?: number;
+  updated?: number;
+  boundElements?: { id: string; type: string }[] | null;
+};
+type ComparisonScene = {
+  elements: ComparisonElement[];
+  appState?: {
+    subscenes?: Record<string, { elements: ComparisonElement[] }>;
+  };
+};
+
+export const documentContentSignature = (content: string) => {
+  const value = JSON.parse(content) as
+    | (ComparisonScene & { type: "excalidraw" })
+    | { type: "guzi-presentation"; slides: { scene: ComparisonScene }[] };
+  const elements = (elements: ComparisonElement[]) =>
+    elements
+      .filter((element) => !element.isDeleted)
+      .map(({ version, versionNonce, updated, ...element }) => {
+        const bindings = element.boundElements;
+        // Conflicting text bindings use their order to decide which label survives repair.
+        if (bindings?.length === 0) {
+          element.boundElements = null;
+        } else if (
+          bindings &&
+          bindings.filter(({ type }) => type === "text").length <= 1
+        ) {
+          element.boundElements = [...bindings].sort(
+            (left, right) =>
+              left.id.localeCompare(right.id) ||
+              left.type.localeCompare(right.type),
+          );
+        }
+        return element;
+      });
+  const scene = (scene: ComparisonScene) => {
+    scene.elements = elements(scene.elements);
+    for (const child of Object.values(scene.appState?.subscenes ?? {})) {
+      child.elements = elements(child.elements);
+    }
+  };
+  if (value.type === "guzi-presentation") {
+    value.slides.forEach((slide) => scene(slide.scene));
+  } else {
+    scene(value);
+  }
+  return JSON.stringify(value, (_key, value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.entries(value).sort(([a], [b]) => a.localeCompare(b)),
+        )
+      : value,
+  );
+};
+
 export const fileTitle = (path: string) =>
   (fileName(path) || "未命名").replace(
     /\.(excalidraw|guzi-presentation)$/i,

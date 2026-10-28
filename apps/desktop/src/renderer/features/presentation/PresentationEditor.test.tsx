@@ -519,9 +519,18 @@ describe("presentation editor lifecycle", () => {
     deck.slides.push({ id: "second", title: "Second", scene: {} });
     const view = await mount(deck);
     const first = await readyApi();
-    canvasDocument.savedContent = canvasDocument.content;
-    canvasDocument.dirty = false;
-    canvasDocument.unsavedCopy = false;
+    root.ownerDocument.defaultView!.desktop.saveFile = vi.fn(
+      async (request) => ({
+        path: "/drawings/presentation.guzi-presentation",
+        content: request.content,
+        modifiedAt: 123,
+        size: request.content.length,
+      }),
+    );
+    await act(async () => {
+      expect(await workspace.requestSave(canvasDocument)).toBe(true);
+    });
+    expect(canvasDocument.dirty).toBe(false);
     act(() => workspace.renameSlide(canvasDocument, "first", "Renamed"));
     act(() => workspace.moveSlide(canvasDocument, "first", 1));
     act(() => workspace.addSlide(canvasDocument, "first"));

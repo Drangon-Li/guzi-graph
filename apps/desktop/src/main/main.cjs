@@ -81,6 +81,8 @@ let quitRequested = false;
 let quitApproved = false;
 let closeAttempt = 0;
 let closeFinalizing = false;
+let rendererUnavailable = false;
+let nativeClosePending = false;
 let updates;
 let startupUpdateChecked = false;
 let filesConsumerReady = false;
@@ -147,8 +149,36 @@ function requestClose(quit = false) {
     return;
   }
   closePending = true;
-  if (filesConsumerReady) {
+  if (rendererUnavailable) {
+    void confirmUnavailableClose();
+  } else if (filesConsumerReady) {
     emitCommand("close-window");
+  }
+}
+
+async function confirmUnavailableClose() {
+  if (nativeClosePending || closeFinalizing) return;
+  nativeClosePending = true;
+  const attempt = closeAttempt;
+  const choice = await dialog.showMessageBox(
+    ...nativeDialogOptions({
+      type: "warning",
+      buttons: [t("取消"), t("关闭")],
+      defaultId: 0,
+      cancelId: 0,
+      message: t("界面已异常退出"),
+      detail: t("未保存的内容可能丢失。"),
+      noLink: true,
+    }),
+  );
+  if (attempt !== closeAttempt) return;
+  nativeClosePending = false;
+  if (!rendererUnavailable) return;
+  if (choice.response === 1) {
+    await approveClose();
+  } else {
+    updates.cancelInstall();
+    resetClose();
   }
 }
 
@@ -159,6 +189,7 @@ function resetClose() {
   quitRequested = false;
   quitApproved = false;
   closeFinalizing = false;
+  nativeClosePending = false;
 }
 
 async function approveClose() {
@@ -634,6 +665,7 @@ function installIPC() {
   handle("delete-draft", (id) => storage.deleteDraft(id));
   handle("take-pending-files", async () => {
     filesConsumerReady = true;
+    rendererUnavailable = false;
     if (closePending) {
       setImmediate(() => emitCommand("close-window"));
     }
@@ -645,7 +677,7 @@ function installIPC() {
     } catch {
       return;
     }
-    if (!closePending) {
+    if (!closePending || rendererUnavailable) {
       return;
     }
     void approveClose();
@@ -656,6 +688,7 @@ function installIPC() {
     } catch {
       return;
     }
+    if (rendererUnavailable) return;
     updates.cancelInstall();
     resetClose();
   });
@@ -755,6 +788,7 @@ function updateWindowControls() {
 function createWindow() {
   resetClose();
   filesConsumerReady = false;
+  rendererUnavailable = false;
   window = new BrowserWindow({
     width: 1440,
     height: 960,
@@ -802,7 +836,14 @@ function createWindow() {
       }
     },
   );
-  window.webContents.on("render-process-gone", () => void setHostsReady(false));
+  window.webContents.on("render-process-gone", () => {
+    rendererUnavailable = true;
+    filesConsumerReady = false;
+    void setHostsReady(false);
+    if (closePending) {
+      void confirmUnavailableClose();
+    }
+  });
   window.webContents.on("will-navigate", (event, url) => {
     if (!trustedURL(url)) {
       event.preventDefault();

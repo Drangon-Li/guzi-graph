@@ -322,6 +322,14 @@ export class AppText {
               this.app.renderEnvironment,
             ),
           );
+          for (const member of this.app.scene.getNonDeletedElements()) {
+            if (
+              member.groupIds[0] === table.groupIds[0] &&
+              member.boundElements?.some(({ type }) => type === "arrow")
+            ) {
+              updateBoundElements(member, this.app.scene);
+            }
+          }
         }
 
         // keyboard-submit keeps focus on the edited object. For bound text, keep

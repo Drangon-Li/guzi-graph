@@ -1123,7 +1123,7 @@ export const exportCanvasPdf = async (
   };
   const files = { ...(options.snapshot?.files ?? api.getFiles()) };
   const { exportScene } = await import("@excalidraw/utils");
-  registerCustomFontRegistry(appState.fontRegistry ?? {});
+  registerCustomFontRegistry(appState.fontRegistry);
   const svg = await exportScene({
     type: "svg",
     data: { elements, appState, files },

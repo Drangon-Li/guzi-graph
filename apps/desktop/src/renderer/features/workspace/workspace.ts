@@ -28,6 +28,7 @@ import type { FontFamilyValues } from "@excalidraw/element/types";
 
 import {
   createSceneTracker,
+  documentContentSignature,
   errorMessage,
   fileTitle,
 } from "../../shared/model/document";
@@ -140,6 +141,8 @@ export interface CanvasDocument {
   revision: number;
   content: string;
   savedContent: string | null;
+  contentSignature: string;
+  savedContentSignature: string | null;
   tracker: ReturnType<typeof createSceneTracker>;
   draftTimer?: number;
   draftTask: Promise<void>;
@@ -371,6 +374,8 @@ export const useWorkspace = (
       revision: 0,
       content: "",
       savedContent: null,
+      contentSignature: "",
+      savedContentSignature: null,
       tracker: createSceneTracker(),
       draftTask: Promise.resolve(),
       saving: null,
@@ -557,12 +562,14 @@ export const useWorkspace = (
       return;
     }
     document.content = content;
+    document.contentSignature = documentContentSignature(content);
     document.revision += 1;
     if (!document.initialized) {
       return;
     }
     const wasDirty = document.dirty;
-    document.dirty = content !== document.savedContent;
+    document.dirty =
+      document.contentSignature !== document.savedContentSignature;
     scheduleDraft(document);
     if (wasDirty !== document.dirty || document.presentation) {
       refresh();
@@ -848,7 +855,9 @@ export const useWorkspace = (
     document.initialized = true;
     const unsaved = document.recovered || !!document.unsavedCopy;
     document.savedContent = unsaved ? null : document.content;
-    document.dirty = unsaved;
+    document.savedContentSignature = unsaved ? null : document.contentSignature;
+    document.dirty =
+      document.contentSignature !== document.savedContentSignature;
     if (document.dirty) {
       scheduleDraft(document);
     }
@@ -895,7 +904,7 @@ export const useWorkspace = (
       return false;
     }
     const content = document.content;
-    const revision = document.revision;
+    const contentSignature = document.contentSignature;
     const performSave = async () => {
       try {
         const file = await desktop.saveFile({
@@ -925,10 +934,11 @@ export const useWorkspace = (
         document.title = fileTitle(file.path);
         document.modifiedAt = file.modifiedAt;
         document.savedContent = content;
+        document.savedContentSignature = contentSignature;
         document.recovered = false;
         document.unsavedCopy = false;
         document.dirty =
-          document.revision !== revision || document.content !== content;
+          document.contentSignature !== document.savedContentSignature;
         if (document.dirty) {
           scheduleDraft(document);
         } else {
@@ -1316,22 +1326,20 @@ export const useWorkspace = (
       const currentScenes = new Map(
         document.presentation!.slides.map((slide) => [slide.id, slide.scene]),
       );
-      if (entry.kind === "slides") {
-        // A removed page must retain child edits and local history made after insertion.
-        const source = direction === "undo" ? entry.after : entry.before;
-        source.slides = source.slides.map((slide) => ({
-          ...slide,
-          scene: currentScenes.get(slide.id) ?? slide.scene,
-        }));
-        source.runtime = new Map(
-          source.slides.flatMap((slide) => {
-            const runtime =
-              document.slideRuntime!.get(slide.id) ??
-              source.runtime.get(slide.id);
-            return runtime ? [[slide.id, runtime] as const] : [];
-          }),
-        );
-      }
+      // A removed page must retain child edits and local history made after insertion.
+      const source = direction === "undo" ? entry.after : entry.before;
+      source.slides = source.slides.map((slide) => ({
+        ...slide,
+        scene: currentScenes.get(slide.id) ?? slide.scene,
+      }));
+      source.runtime = new Map(
+        source.slides.flatMap((slide) => {
+          const runtime =
+            document.slideRuntime!.get(slide.id) ??
+            source.runtime.get(slide.id);
+          return runtime ? [[slide.id, runtime] as const] : [];
+        }),
+      );
       document.presentation!.slides = target.slides.map((slide) => ({
         ...slide,
         scene: currentScenes.get(slide.id) ?? slide.scene,
@@ -1784,13 +1792,13 @@ export const useWorkspace = (
                 appState: {
                   currentItemFontFamily: preferences.defaultFontFamily,
                   fontRegistry: {
-                    ...editor?.getAppState().fontRegistry,
+                    ...editor.getAppState().fontRegistry,
                     ...registry,
                   },
                   fontTopPicks: update.editorPreferences.fontTopPicks,
                   colorTopPicks: getPreferenceColorTopPicks(
                     update.editorPreferences,
-                    editor?.getAppState().colorTopPicks,
+                    editor.getAppState().colorTopPicks,
                   ),
                 },
                 captureUpdate: CaptureUpdateAction.NEVER,
@@ -2312,7 +2320,9 @@ export const useWorkspace = (
       await openDocuments([file], true, removalVersion.current, canOpen);
       assertActive();
       assertCommandAvailable();
-      const document = documentsRef.current.find((item) => item.path === path);
+      const document = documentsRef.current.find(
+        (item) => item.path === file.path,
+      );
       if (!document) {
         throw new CanvasCommandError(
           "OPEN_FAILED",

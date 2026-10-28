@@ -769,6 +769,78 @@ test("session only persists authorized files and follows renamed paths", async (
   assert.deepEqual(reopened.getSession(), storage.getSession());
 });
 
+for (const metadata of ["recent-files.json", "session.json"]) {
+  test(`a committed move keeps its path and copy baseline when ${metadata} cannot be persisted`, async (t) => {
+    const { base, root, storage, create } = await fixture(t);
+    const original = await create("a.excalidraw", "original");
+    await fs.utimes(original.path, 1_600_000_000, 1_600_000_002);
+    original.modifiedAt = (await fs.stat(original.path)).mtimeMs;
+    await storage.recordOpenedFile(original.path);
+    const lastOpenedAt = storage.recentFiles.get(original.path);
+    await storage.setSession({
+      paths: [original.path],
+      activePath: original.path,
+    });
+    await storage.createFolder("moved");
+    const destination = path.join(root, "moved", "a.excalidraw");
+    t.mock.method(fs, "link", async () => {
+      throw Object.assign(new Error("cross-device"), { code: "EXDEV" });
+    });
+    const utimes = fs.utimes;
+    t.mock.method(fs, "utimes", (candidate, atime, mtime) =>
+      utimes(
+        candidate,
+        atime,
+        candidate === destination ? 1_600_000_002.000002 : mtime,
+      ),
+    );
+    const failure = Object.assign(new Error("Metadata write failed"), {
+      code: "EIO",
+    });
+    const rename = fs.rename;
+    const metadataWrite = t.mock.method(fs, "rename", (source, target) => {
+      if (target === path.join(base, "userData", metadata)) {
+        throw failure;
+      }
+      return rename(source, target);
+    });
+    const warning = t.mock.method(console, "warn", () => {});
+
+    const moved = await storage.moveFile(original.path, "moved");
+    assert.equal(moved.path, destination);
+    assert.equal(moved.content, "original");
+    assert.equal(await fs.readFile(destination, "utf8"), "original");
+    await assert.rejects(fs.stat(original.path), { code: "ENOENT" });
+    assert.deepEqual(storage.getSession(), {
+      paths: [destination],
+      activePath: destination,
+    });
+    assert.equal(storage.authorized.has(original.path), false);
+    assert.equal(storage.authorized.has(destination), true);
+    assert.equal(storage.recentFiles.has(original.path), false);
+    assert.equal(storage.recentFiles.get(destination), lastOpenedAt);
+    assert.notEqual(moved.modifiedAt, original.modifiedAt);
+    assert.equal(warning.mock.callCount(), 1);
+    assert.ok(warning.mock.calls[0].arguments.includes(failure));
+
+    metadataWrite.mock.restore();
+    await assert.rejects(
+      storage.saveFile({
+        ...request(original, "wrong baseline"),
+        path: destination,
+        expectedModifiedAt: original.modifiedAt + 0.00025,
+      }),
+      { code: "EXTERNAL_MODIFICATION" },
+    );
+    const saved = await storage.saveFile({
+      ...request(original, "saved after move"),
+      path: destination,
+    });
+    assert.equal(saved.content, "saved after move");
+    assert.equal(warning.mock.callCount(), 1);
+  });
+}
+
 test("drafts are UUID scoped, reloadable and cannot delete arbitrary files", async (t) => {
   const { storage } = await fixture(t);
   const draft = {
@@ -784,6 +856,39 @@ test("drafts are UUID scoped, reloadable and cannot delete arbitrary files", asy
   assert.throws(() => storage.writeDraft({ ...draft, id: "../../escape" }));
   await storage.deleteDraft(draft.id);
   assert.deepEqual(await storage.listDrafts(), []);
+});
+
+test("invalid draft JSON values do not hide valid recovery drafts", async (t) => {
+  const { storage } = await fixture(t);
+  const draft = {
+    id: randomUUID(),
+    path: null,
+    title: "recoverable",
+    content: "draft",
+    modifiedAt: Date.now(),
+  };
+  await storage.writeDraft(draft);
+  for (const content of ["null", "false", "0", '"text"', "[]", "{}", "{"]) {
+    await fs.writeFile(storage.draftPath(randomUUID()), content);
+  }
+  assert.deepEqual(await storage.listDrafts(), [draft]);
+});
+
+test("draft listing still reports real read errors", async (t) => {
+  const { storage } = await fixture(t);
+  const target = storage.draftPath(randomUUID());
+  await fs.writeFile(target, "null");
+  const failure = Object.assign(new Error("Draft read denied"), {
+    code: "EACCES",
+  });
+  const readFile = fs.readFile;
+  t.mock.method(fs, "readFile", (candidate, ...args) => {
+    if (candidate === target) {
+      throw failure;
+    }
+    return readFile(candidate, ...args);
+  });
+  await assert.rejects(storage.listDrafts(), (error) => error === failure);
 });
 
 test("an opened document whose parent disappears still saves a detached recovery draft", async (t) => {

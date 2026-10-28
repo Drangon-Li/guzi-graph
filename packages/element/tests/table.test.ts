@@ -1,14 +1,27 @@
 import { FONT_FAMILY } from "@excalidraw/common";
 
+import { Scene } from "../src/Scene";
+import { syncInvalidIndices } from "../src/fractionalIndex";
+import {
+  redrawTextBoundingBox,
+  getBoundTextPadding,
+  computeContainerDimensionForBoundText,
+} from "../src/textElement";
+
 import { newElementWith } from "../src/mutateElement";
 import { duplicateElements } from "../src/duplicate";
-import { layoutRichText, normalizeRichText } from "../src/richText";
+import {
+  layoutRichText,
+  normalizeRichText,
+  richTextFromPlainText,
+} from "../src/richText";
 import {
   canMergeTableCells,
   createTableData,
   createTableElements,
   deleteTableAxis,
   getTableCellAt,
+  getTableMember,
   getTableRoot,
   insertTableAxis,
   isTableRoot,
@@ -23,7 +36,10 @@ import {
 } from "../src/table";
 
 import type { TableData, TableRoot } from "../src/table";
-import type { ExcalidrawTextElement } from "../src/types";
+import type {
+  ExcalidrawTextElement,
+  NonDeletedExcalidrawElement,
+} from "../src/types";
 
 const range = { row: 0, column: 0, endRow: 1, endColumn: 1 };
 const expectCompleteGrid = (data: TableData) => {
@@ -254,11 +270,11 @@ it("keeps native border and font edits across structure regeneration", () => {
           strokeWidth: 4,
         }),
   );
-  const regenerated = updateTableElements(
-    edited,
-    edited.find(isTableRoot)!,
-    (data) => insertTableAxis(data, "row", 1),
-  );
+  const regenerated = updateTableElements(edited, edited.find(isTableRoot)!, {
+    type: "insert",
+    axis: "row",
+    index: 1,
+  });
   const root = regenerated.find(isTableRoot)!;
   const cell = root.customData.table.cells.find((cell) => cell.row === 1)!;
   expect(cell).toMatchObject({
@@ -399,3 +415,292 @@ it("keeps unstyled HTML text on cell defaults and inherits nested inline colors"
     { text: " tail" },
   ]);
 });
+
+it("preserves non-table cell properties when regenerating existing elements", () => {
+  const table = createTableElements(createTableData(1, 1), 0, 0);
+  const edited = table.elements.map<NonDeletedExcalidrawElement>((element) =>
+    newElementWith(
+      { ...element, created: 123 },
+      {
+        link: "https://example.com/cell",
+        locked: true,
+        seed: 456,
+        customData: { ...element.customData, annotation: { value: "keep" } },
+        boundElements: [
+          ...(element.boundElements ?? []),
+          { id: "bound-arrow", type: "arrow" },
+        ],
+      },
+    ),
+  );
+  const regenerated = updateTableElements(
+    edited,
+    edited.find(isTableRoot)!,
+    (data) => ({
+      ...data,
+      columns: [200],
+    }),
+  );
+  for (const original of edited) {
+    const updated = regenerated.find((element) => element.id === original.id)!;
+    expect(updated).toMatchObject({
+      link: original.link,
+      locked: original.locked,
+      created: original.created,
+      seed: original.seed,
+      customData: { annotation: original.customData!.annotation },
+    });
+    expect(updated.boundElements).toHaveLength(original.boundElements!.length);
+    expect(updated.boundElements).toEqual(
+      expect.arrayContaining([...original.boundElements!]),
+    );
+  }
+});
+
+it("imports underline tags, CSS declarations and nested inherited marks", () => {
+  const data = tableDataFromHTML(
+    '<style>.underlined{text-decoration:underline}</style><table><tr><td><u>Tag<span> nested</span></u> plain<span style="text-decoration:underline">CSS<b> bold</b></span><span style="text-decoration-line:underline"> line</span><span class="underlined"> sheet</span></td><td style="text-decoration:underline">Cell<span> inherited</span></td></tr></table>',
+    document,
+  )!;
+  expect(data.cells[0].richText?.paragraphs[0].runs).toEqual([
+    { text: "Tag nested", underline: true },
+    { text: " plain" },
+    { text: "CSS", underline: true },
+    { text: " bold", bold: true, underline: true },
+    { text: " line sheet", underline: true },
+  ]);
+  expect(data.cells[1].richText?.paragraphs[0].runs).toEqual([
+    { text: "Cell inherited", underline: true },
+  ]);
+});
+
+it.each(
+  (["row", "column"] as const).flatMap((axis) =>
+    (["insert", "delete"] as const).flatMap((type) =>
+      [0, 1].map((index) => ({ axis, type, index })),
+    ),
+  ),
+)(
+  "keeps cell identities through $type $axis at $index",
+  ({ axis, type, index }) => {
+    const data = createTableData(3, 3);
+    data.cells.forEach((cell) => {
+      cell.text = `${cell.row},${cell.column}`;
+    });
+    const table = createTableElements(data, 0, 0);
+    const originalIds = new Set(table.elements.map((element) => element.id));
+    const updated = updateTableElements(table.elements, table.root, {
+      type,
+      axis,
+      index,
+    });
+    for (const original of table.elements) {
+      const member = getTableMember(original);
+      if (!member) {
+        continue;
+      }
+      const next = updated.find((element) => element.id === original.id)!;
+      const removed = type === "delete" && member[axis] === index;
+      expect(next.isDeleted).toBe(removed);
+      if (removed) {
+        expect(next.boundElements).toBeNull();
+        if (next.type === "text") {
+          expect(next.containerId).toBeNull();
+        }
+        continue;
+      }
+      const position =
+        member[axis] +
+        (type === "insert"
+          ? member[axis] >= index
+            ? 1
+            : 0
+          : member[axis] > index
+          ? -1
+          : 0);
+      expect(getTableMember(next)).toEqual({ ...member, [axis]: position });
+      if (next.type === "text" && original.type === "text") {
+        expect(next.originalText).toBe(original.originalText);
+        expect(next.containerId).toBe(original.containerId);
+      }
+    }
+    if (type === "insert") {
+      const inserted = updated.filter(
+        (element) => getTableMember(element)?.[axis] === index,
+      );
+      expect(inserted).toHaveLength(6);
+      expect(inserted.every((element) => !originalIds.has(element.id))).toBe(
+        true,
+      );
+    }
+  },
+);
+
+it.each(["row", "column"] as const)(
+  "keeps merged cell identity when inserting through or deleting the start of its %s span",
+  (axis) => {
+    const data = createTableData(3, 3);
+    data.cells[4].text = "Merged content";
+    const merged = mergeTableCells(data, {
+      row: 1,
+      column: 1,
+      endRow: 2,
+      endColumn: 2,
+    });
+    const table = createTableElements(merged, 0, 0);
+    for (const type of ["insert", "delete"] as const) {
+      const index = type === "insert" ? 2 : 1;
+      const updated = updateTableElements(table.elements, table.root, {
+        type,
+        axis,
+        index,
+      });
+      const label = table.elements.find(
+        (element) =>
+          element.type === "text" && element.originalText === "Merged content",
+      )!;
+      const next = updated.find((element) => element.id === label.id)!;
+      expect(next).toMatchObject({
+        isDeleted: false,
+        originalText: "Merged content",
+        ...(label.type === "text" ? { containerId: label.containerId } : {}),
+      });
+      if (label.type === "text") {
+        expect(
+          updated.find((element) => element.id === label.containerId)
+            ?.isDeleted,
+        ).toBe(false);
+      }
+      expect(getTableMember(next)).toEqual(getTableMember(label));
+      const root = updated.find(isTableRoot)!;
+      expect(
+        getTableCellAt(root.customData.table, 1, 1)?.[
+          axis === "row" ? "rowSpan" : "columnSpan"
+        ],
+      ).toBe(type === "insert" ? 3 : 1);
+    }
+  },
+);
+
+it.each(["row", "column"] as const)(
+  "keeps identities when appending or refusing to delete the only %s",
+  (axis) => {
+    const table = createTableElements(createTableData(1, 1), 0, 0);
+    for (const type of ["insert", "delete"] as const) {
+      const index = type === "insert" ? 1 : 0;
+      const updated = updateTableElements(table.elements, table.root, {
+        type,
+        axis,
+        index,
+      });
+      for (const original of table.elements) {
+        const next = updated.find((element) => element.id === original.id)!;
+        expect(next.isDeleted).toBe(false);
+        expect(getTableMember(next)).toEqual(getTableMember(original));
+      }
+    }
+  },
+);
+
+it("keeps historical deleted cells deleted when shifting live cell identities", () => {
+  const table = createTableElements(createTableData(2, 2), 0, 0);
+  const historical = createTableElements(createTableData(1, 1), 0, 0)
+    .elements.filter((element) => getTableMember(element))
+    .map((element) => ({
+      ...element,
+      isDeleted: true as const,
+      groupIds: table.root.groupIds,
+    }));
+  const updated = updateTableElements(
+    [...historical, ...table.elements],
+    table.root,
+    { type: "insert", axis: "row", index: 0 },
+  );
+  historical.forEach((element) =>
+    expect(updated.find((candidate) => candidate.id === element.id)).toBe(
+      element,
+    ),
+  );
+  expect(
+    updated
+      .filter(
+        (element) => !element.isDeleted && getTableMember(element)?.row === 0,
+      )
+      .every((element) => !historical.some((old) => old.id === element.id)),
+  ).toBe(true);
+});
+
+it.each([false, true])(
+  "keeps table padding and wrapped text geometry during native bounding box redraw (rich=%s)",
+  (rich) => {
+    const data = createTableData(1, 1);
+    data.columns[0] = 80;
+    data.cells[0].text = "Multiple words that wrap across lines";
+    if (rich) {
+      data.cells[0].richText = richTextFromPlainText(data.cells[0].text);
+    }
+    const table = createTableElements(data, 100, 100);
+    const elements = syncInvalidIndices(table.elements);
+    const scene = new Scene(elements);
+    const label = elements.find((element) => element.type === "text")!;
+    const background = elements.find(
+      (element) => getTableMember(element)?.role === "background",
+    )!;
+    const original = { ...label };
+    redrawTextBoundingBox(label, background, scene);
+    expect(label).toMatchObject({
+      x: original.x,
+      y: original.y,
+      width: original.width,
+      height: original.height,
+      text: original.text,
+    });
+    expect(background.height).toBe(table.root.height);
+  },
+);
+
+it.each([false, true])(
+  "keeps table text expansion consistent with its padding on repeated redraw (rich=%s)",
+  (rich) => {
+    const data = createTableData(1, 1);
+    if (rich) {
+      data.cells[0].richText = richTextFromPlainText("");
+    }
+    const table = createTableElements(data, 100, 100);
+    const elements = syncInvalidIndices(table.elements);
+    const scene = new Scene(elements);
+    const label = elements.find((element) => element.type === "text")!;
+    const background = elements.find(
+      (element) => getTableMember(element)?.role === "background",
+    )!;
+    if (label.type !== "text" || background.type !== "rectangle") {
+      throw new Error("Expected table cell and label");
+    }
+    const text = "One\nTwo\nThree\nFour\nFive\nSix";
+    scene.mutateElement(label, {
+      originalText: text,
+      ...(rich ? { richText: richTextFromPlainText(text) } : {}),
+    });
+    redrawTextBoundingBox(label, background, scene);
+    const expandedHeight = background.height;
+    expect(expandedHeight).toBe(
+      computeContainerDimensionForBoundText(
+        label.height,
+        background.type,
+        getBoundTextPadding(background),
+      ),
+    );
+    expect(expandedHeight).toBeGreaterThanOrEqual(label.height + 16);
+    const geometry = {
+      x: label.x,
+      y: label.y,
+      width: label.width,
+      height: label.height,
+    };
+    for (let index = 0; index < 3; index++) {
+      redrawTextBoundingBox(label, background, scene);
+      expect(background.height).toBe(expandedHeight);
+      expect(label).toMatchObject(geometry);
+    }
+  },
+);

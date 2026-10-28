@@ -325,6 +325,11 @@ describe("desktop document workspace", () => {
       document,
       api,
       edit,
+      captureScene: (next: SceneSnapshot) =>
+        act(() => {
+          scene = next;
+          hook.result.current.capture(document, scene);
+        }),
       setState: (update: Partial<SceneSnapshot["appState"]>) => {
         scene = { ...scene, appState: { ...scene.appState, ...update } };
       },
@@ -801,6 +806,53 @@ describe("desktop document workspace", () => {
       ),
     );
     expect(desktop.readFile).toHaveBeenCalledWith("/drawings/known.excalidraw");
+  });
+
+  it("opens a canvas alias using the canonical path returned by storage", async () => {
+    const hook = await mount();
+    const path = "/private/var/folders/drawings/known.excalidraw";
+    const alias = "/var/folders/drawings/known.excalidraw";
+    vi.mocked(desktop.readFile).mockResolvedValue(
+      disk(path, createSceneTracker()(snapshot())),
+    );
+
+    const opened = await sendMountedPlugin(hook, "open_canvas", {
+      path: alias,
+    });
+
+    expect(opened.error).toBeUndefined();
+    expect(opened.result).toMatchObject({
+      documentId: hook.result.current.documents[0].id,
+      path,
+      initialized: true,
+    });
+    expect(hook.result.current.documents).toHaveLength(1);
+    expect(desktop.readFile).toHaveBeenCalledWith(alias);
+  });
+
+  it("reuses the canonical canvas when its alias is opened again", async () => {
+    const hook = await mount();
+    const path = "/private/var/folders/drawings/known.excalidraw";
+    const alias = "/var/folders/drawings/known.excalidraw";
+    vi.mocked(desktop.readFile).mockResolvedValue(
+      disk(path, createSceneTracker()(snapshot())),
+    );
+    const first = await sendMountedPlugin(hook, "open_canvas", { path });
+    expect(first.error).toBeUndefined();
+    const documentId = hook.result.current.documents[0].id;
+
+    const reopened = await sendMountedPlugin(hook, "open_canvas", {
+      path: alias,
+    });
+
+    expect(reopened.error).toBeUndefined();
+    expect(reopened.result).toMatchObject({
+      documentId,
+      path,
+      initialized: true,
+    });
+    expect(hook.result.current.documents).toHaveLength(1);
+    expect(desktop.readFile).toHaveBeenLastCalledWith(alias);
   });
 
   it("does not open a canvas after the pending plugin request is cancelled", async () => {
@@ -2731,6 +2783,78 @@ describe("desktop document workspace", () => {
     expect(document.revision).toBe(revision);
     expect(desktop.saveFile).not.toHaveBeenCalled();
   });
+
+  it("returns clean after save, edit and undo despite runtime metadata and deleted cells", async () => {
+    const hook = await mount();
+    const item = addDocument(hook);
+    item.edit(2);
+    vi.mocked(desktop.saveFile).mockImplementation(async (request) =>
+      disk("/drawings/undo.excalidraw", request.content),
+    );
+    await act(async () => {
+      expect(await hook.result.current.requestSave(item.document)).toBe(true);
+    });
+    const saved = item.document.savedContent;
+    item.edit(3);
+    expect(item.document.dirty).toBe(true);
+    const restored = snapshot(2);
+    item.captureScene({
+      ...restored,
+      elements: [
+        { ...restored.elements[0], version: 10, versionNonce: 20, updated: 30 },
+        { ...restored.elements[0], id: "deleted-cell", isDeleted: true },
+      ],
+    });
+    expect(item.document.dirty).toBe(false);
+    expect(item.document.content).not.toBe(saved);
+    expect(item.document.savedContent).toBe(saved);
+    expect(JSON.parse(item.document.content).elements).toHaveLength(2);
+    item.edit(3);
+    expect(item.document.dirty).toBe(true);
+  });
+
+  it.each([false, true])(
+    "compares actual content after a pending save (undo=%s)",
+    async (undo) => {
+      const hook = await mount();
+      const item = addDocument(hook);
+      item.edit(2);
+      let finish!: (file: DiskDocument) => void;
+      vi.mocked(desktop.saveFile).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      let saving!: Promise<boolean>;
+      act(() => {
+        saving = hook.result.current.requestSave(item.document);
+      });
+      const submitted = vi.mocked(desktop.saveFile).mock.calls[0][0].content;
+      item.edit(3);
+      if (undo) {
+        const restored = snapshot(2);
+        item.captureScene({
+          ...restored,
+          elements: [
+            {
+              ...restored.elements[0],
+              version: 10,
+              versionNonce: 20,
+              updated: 30,
+            },
+          ],
+        });
+      }
+      await act(async () => {
+        finish(disk("/drawings/async.excalidraw", submitted));
+        expect(await saving).toBe(true);
+      });
+      expect(item.document.dirty).toBe(!undo);
+      expect(item.document.savedContent).toBe(submitted);
+      expect(item.document.content).not.toBe(submitted);
+    },
+  );
 
   it("binds an async save to its original document and preserves edits made during save", async () => {
     const hook = await mount();

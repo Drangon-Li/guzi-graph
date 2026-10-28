@@ -1,6 +1,7 @@
 import {
   colorToHex,
   FONT_FAMILY,
+  TABLE_CELL_PADDING,
   getFontString,
   getLineHeight,
   randomId,
@@ -11,6 +12,7 @@ import { newElement, newTextElement } from "./newElement";
 import { newElementWith } from "./mutateElement";
 import { isTextElement } from "./typeChecks";
 import { wrapText } from "./textWrapping";
+import { getTextHeight } from "./textMeasurements";
 import {
   layoutRichText,
   richTextFromPlainText,
@@ -47,6 +49,11 @@ export type TableData = {
   rows: number[];
   columns: number[];
   cells: TableCell[];
+};
+export type TableStructureOperation = {
+  type: "insert" | "delete";
+  axis: "row" | "column";
+  index: number;
 };
 export type TableRange = {
   row: number;
@@ -233,6 +240,7 @@ const tableChildren = (
   data: TableData,
   previous: readonly ExcalidrawElement[] = [],
   renderEnvironment?: RenderEnvironment,
+  previousCells?: ReadonlyMap<string, TableCell>,
 ): NonDeletedExcalidrawElement[] => {
   const groupIds = root.groupIds;
   const center = pointFrom(root.x + root.width / 2, root.y + root.height / 2);
@@ -251,18 +259,25 @@ const tableChildren = (
     const member = (role: TableMember["role"]) => ({
       tableCell: { row: cell.row, column: cell.column, role },
     });
+    const previousCell = previousCells
+      ? previousCells.get(`${cell.row}:${cell.column}`)
+      : cell;
     const old = (role: TableMember["role"]) =>
+      previousCell &&
       previous.find((element) => {
         const info = getTableMember(element);
         return (
           !element.isDeleted &&
           info?.role === role &&
-          info.row === cell.row &&
-          info.column === cell.column
+          info.row === previousCell.row &&
+          info.column === previousCell.column
         );
       });
+    const oldBackground = old("background");
+    const oldText = old("text");
     const background = {
       ...newElement({
+        ...oldBackground,
         type: "rectangle",
         x: position[0] - width / 2,
         y: position[1] - height / 2,
@@ -279,17 +294,19 @@ const tableChildren = (
         strokeStyle: cell.strokeStyle ?? "solid",
         roughness: root.roughness,
         roundness: null,
-        customData: member("background"),
+        customData: { ...oldBackground?.customData, ...member("background") },
       }),
-      id: old("background")?.id ?? randomId(),
+      id: oldBackground?.id ?? randomId(),
     };
     const fontFamily = cell.fontFamily;
     const text = newTextElement({
+      ...(oldText && isTextElement(oldText) ? oldText : {}),
       x,
       y,
       text: cell.text,
       fontSize: cell.fontSize,
       fontFamily,
+      lineHeight: getLineHeight(fontFamily),
       textAlign: cell.textAlign,
       verticalAlign: "middle",
       containerId: background.id,
@@ -297,11 +314,11 @@ const tableChildren = (
       groupIds,
       frameId: root.frameId,
       opacity: root.opacity,
-      customData: member("text"),
+      customData: { ...oldText?.customData, ...member("text") },
       autoResize: false,
       renderEnvironment,
     });
-    const labelWidth = Math.max(1, width - 16);
+    const labelWidth = Math.max(1, width - TABLE_CELL_PADDING * 2);
     const wrapped = wrapText(
       cell.text,
       getFontString(text),
@@ -321,7 +338,7 @@ const tableChildren = (
       : null;
     const labelHeight =
       richLayout?.height ??
-      wrapped.split("\n").length * text.fontSize * text.lineHeight;
+      getTextHeight(wrapped, text.fontSize, text.lineHeight);
     const label = {
       ...newElementWith(text, {
         x: position[0] - labelWidth / 2,
@@ -334,12 +351,12 @@ const tableChildren = (
         richText: cell.richText,
         paragraphSpacing: cell.paragraphSpacing,
       }),
-      id: old("text")?.id ?? text.id,
+      id: oldText?.id ?? text.id,
     };
     return [
       newElementWith(background, {
         boundElements: [
-          ...(old("background")?.boundElements?.filter(
+          ...(oldBackground?.boundElements?.filter(
             (binding) => binding.type !== "text",
           ) ?? []),
           { type: "text", id: label.id },
@@ -358,7 +375,8 @@ const fitTableData = (
   for (const cell of data.cells) {
     const width = Math.max(
       1,
-      sum(data.columns.slice(cell.column, cell.column + cell.columnSpan)) - 16,
+      sum(data.columns.slice(cell.column, cell.column + cell.columnSpan)) -
+        TABLE_CELL_PADDING * 2,
     );
     const lineHeight = getLineHeight(cell.fontFamily);
     const contentHeight = cell.richText
@@ -375,19 +393,23 @@ const fitTableData = (
           width,
           renderEnvironment,
         ).height
-      : wrapText(
-          cell.text,
-          getFontString({
-            fontSize: cell.fontSize,
-            fontFamily: cell.fontFamily,
-          }),
-          width,
-          renderEnvironment,
-        ).split("\n").length *
-        cell.fontSize *
-        lineHeight;
+      : getTextHeight(
+          wrapText(
+            cell.text,
+            getFontString({
+              fontSize: cell.fontSize,
+              fontFamily: cell.fontFamily,
+            }),
+            width,
+            renderEnvironment,
+          ),
+          cell.fontSize,
+          lineHeight,
+        );
     const extra =
-      contentHeight + 16 - sum(rows.slice(cell.row, cell.row + cell.rowSpan));
+      contentHeight +
+      TABLE_CELL_PADDING * 2 -
+      sum(rows.slice(cell.row, cell.row + cell.rowSpan));
     if (extra > 0) {
       rows[cell.row + cell.rowSpan - 1] += extra;
     }
@@ -425,13 +447,35 @@ export const createTableElements = (
 export const updateTableElements = (
   elements: readonly ExcalidrawElement[],
   root: TableRoot,
-  transform: (data: TableData) => TableData,
+  transform: ((data: TableData) => TableData) | TableStructureOperation,
   renderEnvironment?: RenderEnvironment,
 ): ExcalidrawElement[] => {
-  const data = fitTableData(
-    transform(readTableData(root, elements)),
-    renderEnvironment,
-  );
+  const previousData = readTableData(root, elements);
+  let previousCells: Map<string, TableCell> | undefined;
+  let transformed: TableData;
+  if (typeof transform === "function") {
+    transformed = transform(previousData);
+  } else {
+    const { type, axis, index } = transform;
+    if (
+      type === "delete" &&
+      previousData[axis === "row" ? "rows" : "columns"].length <= 1
+    ) {
+      return [...elements];
+    }
+    transformed =
+      type === "insert"
+        ? insertTableAxis(previousData, axis, index)
+        : deleteTableAxis(previousData, axis, index);
+    previousCells = new Map();
+    for (const cell of previousData.cells) {
+      const next = transformTableCellAxis(cell, transform);
+      if (next) {
+        previousCells.set(`${next.row}:${next.column}`, cell);
+      }
+    }
+  }
+  const data = fitTableData(transformed, renderEnvironment);
   const nextRoot = newElementWith(root, {
     width: sum(data.columns),
     height: sum(data.rows),
@@ -441,7 +485,13 @@ export const updateTableElements = (
     (element) =>
       getTableMember(element) && element.groupIds[0] === root.groupIds[0],
   );
-  const generated = tableChildren(nextRoot, data, children, renderEnvironment);
+  const generated = tableChildren(
+    nextRoot,
+    data,
+    children,
+    renderEnvironment,
+    previousCells,
+  );
   const byId = new Map(generated.map((element) => [element.id, element]));
   const result = elements.map((element) => {
     if (element.id === root.id) {
@@ -579,12 +629,32 @@ export const styleTableCells = (
   ),
 });
 
+const transformTableCellAxis = (
+  cell: TableCell,
+  { type, axis, index }: TableStructureOperation,
+): TableCell | null => {
+  const span = axis === "row" ? "rowSpan" : "columnSpan";
+  if (type === "insert") {
+    return cell[axis] >= index
+      ? { ...cell, [axis]: cell[axis] + 1 }
+      : cell[axis] + cell[span] > index
+      ? { ...cell, [span]: cell[span] + 1 }
+      : cell;
+  }
+  if (cell[axis] > index) {
+    return { ...cell, [axis]: cell[axis] - 1 };
+  }
+  if (cell[axis] + cell[span] <= index) {
+    return cell;
+  }
+  return cell[span] > 1 ? { ...cell, [span]: cell[span] - 1 } : null;
+};
+
 export const insertTableAxis = (
   data: TableData,
   axis: "row" | "column",
   index: number,
 ): TableData => {
-  const span = axis === "row" ? "rowSpan" : "columnSpan";
   const sizes = axis === "row" ? "rows" : "columns";
   const next = {
     ...data,
@@ -593,12 +663,8 @@ export const insertTableAxis = (
       data[sizes][Math.max(0, index - 1)] ?? (axis === "row" ? 48 : 144),
       ...data[sizes].slice(index),
     ],
-    cells: data.cells.map((cell) =>
-      cell[axis] >= index
-        ? { ...cell, [axis]: cell[axis] + 1 }
-        : cell[axis] + cell[span] > index
-        ? { ...cell, [span]: cell[span] + 1 }
-        : cell,
+    cells: data.cells.map(
+      (cell) => transformTableCellAxis(cell, { type: "insert", axis, index })!,
     ),
   };
   for (
@@ -633,7 +699,6 @@ export const deleteTableAxis = (
   axis: "row" | "column",
   index: number,
 ): TableData => {
-  const span = axis === "row" ? "rowSpan" : "columnSpan";
   const sizes = axis === "row" ? "rows" : "columns";
   if (data[sizes].length <= 1) {
     return data;
@@ -642,13 +707,12 @@ export const deleteTableAxis = (
     ...data,
     [sizes]: data[sizes].filter((_, position) => position !== index),
     cells: data.cells.flatMap((cell) => {
-      if (cell[axis] > index) {
-        return [{ ...cell, [axis]: cell[axis] - 1 }];
-      }
-      if (cell[axis] + cell[span] <= index) {
-        return [cell];
-      }
-      return cell[span] > 1 ? [{ ...cell, [span]: cell[span] - 1 }] : [];
+      const next = transformTableCellAxis(cell, {
+        type: "delete",
+        axis,
+        index,
+      });
+      return next ? [next] : [];
     }),
   };
 };
@@ -731,6 +795,10 @@ const readHTMLRichText = (
       ...((element.tagName === "I" ||
         element.tagName === "EM" ||
         style.fontStyle === "italic") && { italic: true }),
+      ...((element.tagName === "U" ||
+        /\bunderline\b/.test(
+          `${style.textDecoration} ${style.textDecorationLine}`,
+        )) && { underline: true }),
       ...(style.backgroundColor && {
         background: style.backgroundColor,
       }),
@@ -826,6 +894,8 @@ export const tableDataFromHTML = (
           "font-style",
           "color",
           "text-align",
+          "text-decoration",
+          "text-decoration-line",
         ]) {
           const value = ownStyle.getPropertyValue(property);
           if (value) {

@@ -123,7 +123,7 @@ const validateScene = (scene: unknown) => {
   }
 };
 
-const validatePresentation = (value: unknown): value is Presentation => {
+function validatePresentation(value: unknown): asserts value is Presentation {
   if (
     !isRecord(value) ||
     value.type !== "guzi-presentation" ||
@@ -155,8 +155,7 @@ const validatePresentation = (value: unknown): value is Presentation => {
       validateBounds(slide.bounds);
     }
   }
-  return true;
-};
+}
 
 const assertRestoredElements = (
   source: ExcalidrawInitialDataState,
@@ -193,9 +192,7 @@ export const parsePresentation = async (
   if (!isRecord(value) || value.type !== "guzi-presentation") {
     return null;
   }
-  if (!validatePresentation(value)) {
-    return invalid();
-  }
+  validatePresentation(value);
   const { Blob } = ownerWindow as Window & typeof globalThis;
   const slides: PresentationSlide[] = [];
   for (const slide of value.slides) {

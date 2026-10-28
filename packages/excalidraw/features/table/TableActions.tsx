@@ -1,12 +1,16 @@
 import { useState } from "react";
 
 import { getFontSizePresets } from "@excalidraw/common";
-import { CaptureUpdateAction } from "@excalidraw/element";
+import {
+  CaptureUpdateAction,
+  fixBindingsAfterDeletion,
+  isArrowElement,
+  isNonDeletedElement,
+  updateBoundElements,
+} from "@excalidraw/element";
 import {
   canMergeTableCells,
-  deleteTableAxis,
   getTableCellAt,
-  insertTableAxis,
   isTableRoot,
   mergeTableCells,
   readTableData,
@@ -17,7 +21,6 @@ import {
 
 import type {
   TableCell,
-  TableData,
   TableRange,
   TableRoot,
 } from "@excalidraw/element/table";
@@ -191,13 +194,40 @@ const TableEditor = ({
     selectedRanges.set(app, ranges);
     setRange(next);
   };
-  const apply = (transform: (data: TableData) => TableData) => {
-    const elements = updateTableElements(
-      app.scene.getElementsIncludingDeleted(),
+  const apply = (transform: Parameters<typeof updateTableElements>[2]) => {
+    const previous = app.scene.getElementsIncludingDeleted();
+    let elements = updateTableElements(
+      previous,
       root,
       transform,
       app.renderEnvironment,
     );
+    const nextById = new Map(elements.map((element) => [element.id, element]));
+    const deleted = previous.filter(
+      (element) => !element.isDeleted && nextById.get(element.id)?.isDeleted,
+    );
+    if (deleted.length) {
+      const deletedIds = new Set(deleted.map((element) => element.id));
+      elements = elements.map((element) =>
+        isArrowElement(element) &&
+        ((element.startBinding &&
+          deletedIds.has(element.startBinding.elementId)) ||
+          (element.endBinding && deletedIds.has(element.endBinding.elementId)))
+          ? { ...element }
+          : element,
+      );
+      fixBindingsAfterDeletion(elements, deleted);
+    }
+    app.scene.replaceAllElements(elements);
+    for (const element of elements) {
+      if (
+        isNonDeletedElement(element) &&
+        element.groupIds[0] === root.groupIds[0] &&
+        element.boundElements?.some(({ type }) => type === "arrow")
+      ) {
+        updateBoundElements(element, app.scene);
+      }
+    }
     app.syncActionResult({
       elements,
       appState: {
@@ -306,7 +336,7 @@ const TableEditor = ({
           title={label.addRow}
           icon={operationIcon("row")}
           onClick={() =>
-            apply((data) => insertTableAxis(data, "row", selection.endRow + 1))
+            apply({ type: "insert", axis: "row", index: selection.endRow + 1 })
           }
         />
         <IconButton
@@ -316,9 +346,11 @@ const TableEditor = ({
           title={label.addColumn}
           icon={operationIcon("column")}
           onClick={() =>
-            apply((data) =>
-              insertTableAxis(data, "column", selection.endColumn + 1),
-            )
+            apply({
+              type: "insert",
+              axis: "column",
+              index: selection.endColumn + 1,
+            })
           }
         />
         <IconButton
@@ -369,7 +401,7 @@ const TableEditor = ({
               <button
                 type="button"
                 onClick={() =>
-                  apply((data) => insertTableAxis(data, "row", selection.row))
+                  apply({ type: "insert", axis: "row", index: selection.row })
                 }
               >
                 {label.insertRow}
@@ -378,7 +410,7 @@ const TableEditor = ({
                 type="button"
                 disabled={data.rows.length <= 1}
                 onClick={() =>
-                  apply((data) => deleteTableAxis(data, "row", selection.row))
+                  apply({ type: "delete", axis: "row", index: selection.row })
                 }
               >
                 {label.deleteRow}
@@ -386,9 +418,11 @@ const TableEditor = ({
               <button
                 type="button"
                 onClick={() =>
-                  apply((data) =>
-                    insertTableAxis(data, "column", selection.column),
-                  )
+                  apply({
+                    type: "insert",
+                    axis: "column",
+                    index: selection.column,
+                  })
                 }
               >
                 {label.insertColumn}
@@ -397,9 +431,11 @@ const TableEditor = ({
                 type="button"
                 disabled={data.columns.length <= 1}
                 onClick={() =>
-                  apply((data) =>
-                    deleteTableAxis(data, "column", selection.column),
-                  )
+                  apply({
+                    type: "delete",
+                    axis: "column",
+                    index: selection.column,
+                  })
                 }
               >
                 {label.deleteColumn}
