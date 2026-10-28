@@ -3,12 +3,81 @@ const { spawn } = require("node:child_process");
 const { once } = require("node:events");
 const test = require("node:test");
 
+const { options: releaseOptions } = require("./release-update-windows.cjs");
+
 const {
   observeChild,
   commandOutput,
   cleanupStages,
   devToolsEndpoint,
 } = require("./update-windows-e2e.cjs");
+
+test("production Windows validation keeps the installed version separate from the latest Release tag", () => {
+  const base = [
+    "--from",
+    "0.8.2",
+    "--to",
+    "0.8.3",
+    "--artifacts",
+    "output/test",
+  ];
+  const defaults = releaseOptions(base);
+  assert.equal(defaults.latestRelease, "0.8.3");
+  const reused = releaseOptions([...base, "--latest-release", "0.8.4"]);
+  assert.equal(reused.from, "0.8.2");
+  assert.equal(reused.to, "0.8.3");
+  assert.equal(reused.latestRelease, "0.8.4");
+  assert.equal(reused.artifacts, defaults.artifacts);
+});
+
+test("production Windows validation rejects malformed latest Release versions", () => {
+  const base = [
+    "--from",
+    "0.8.2",
+    "--to",
+    "0.8.3",
+    "--artifacts",
+    "output/test",
+  ];
+  for (const version of [
+    "v0.8.4",
+    "0.8.4-beta.1",
+    "0.8.4; echo injected",
+    "0.8",
+    "00.8.4",
+  ]) {
+    assert.throws(() => releaseOptions([...base, "--latest-release", version]));
+  }
+  assert.throws(
+    () => releaseOptions([...base, "--latest-release"]),
+    /requires a value/,
+  );
+  assert.throws(
+    () =>
+      releaseOptions([
+        ...base,
+        "--latest-release",
+        "0.8.4",
+        "--latest-release",
+        "0.8.4",
+      ]),
+    /Duplicate option/,
+  );
+  assert.throws(
+    () =>
+      releaseOptions([
+        "--from",
+        "0.8.3",
+        "--to",
+        "0.8.3",
+        "--artifacts",
+        "output/test",
+        "--latest-release",
+        "0.8.4",
+      ]),
+    /--from must be older/,
+  );
+});
 
 test("DevToolsActivePort identifies the actual endpoint of each restarted browser", () => {
   const first = devToolsEndpoint(

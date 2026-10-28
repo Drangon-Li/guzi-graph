@@ -4,22 +4,42 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const yaml = require("js-yaml");
+const semver = require("semver");
 
 const desktop = path.resolve(__dirname, "..");
 const metadata = require("../package.json");
 const repository = "Drangon-Li/guzi-graph";
-const stableVersion = /^\d+\.\d+\.\d+$/;
+const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const hash = (file, algorithm, encoding = "hex") =>
   crypto.createHash(algorithm).update(fs.readFileSync(file)).digest(encoding);
 
-function assetNames(version) {
-  assert.equal(version, version.trim());
-  assert.match(version, stableVersion, "A stable release version is required");
+function validateVersions(version, windowsVersion) {
+  for (const value of [version, windowsVersion]) {
+    assert.equal(
+      typeof value,
+      "string",
+      "A stable release version is required",
+    );
+    assert.match(value, stableVersion, "A stable release version is required");
+    assert.equal(
+      semver.valid(value),
+      value,
+      "A stable release version is required",
+    );
+  }
+  assert.ok(
+    semver.lte(windowsVersion, version),
+    "Windows release version must not exceed the application version",
+  );
+}
+
+function assetNames(version, windowsVersion = version) {
+  validateVersions(version, windowsVersion);
   return {
     mac: `Excalidraw-Guzi-${version}-arm64.zip`,
     dmg: `Excalidraw-Guzi-${version}-arm64.dmg`,
-    windows: `Excalidraw-Guzi-${version}-win-x64.exe`,
-    unpacked: `Excalidraw-Guzi-${version}-win-x64-unpacked.zip`,
+    windows: `Excalidraw-Guzi-${windowsVersion}-win-x64.exe`,
+    unpacked: `Excalidraw-Guzi-${windowsVersion}-win-x64-unpacked.zip`,
   };
 }
 
@@ -119,9 +139,9 @@ function signMac(directory, version) {
   fs.writeFileSync(path.join(directory, "mac-arm64-appcast.xml"), appcast);
 }
 
-function verifyRelease(directory, version, { checksums = true } = {}) {
-  const names = assetNames(version);
-  const files = [
+function releaseFiles(version, windowsVersion = version) {
+  const names = assetNames(version, windowsVersion);
+  return [
     names.dmg,
     names.mac,
     names.windows,
@@ -130,12 +150,50 @@ function verifyRelease(directory, version, { checksums = true } = {}) {
     "latest.yml",
     "mac-arm64-appcast.xml",
   ];
+}
+
+function verifyChecksums(directory, files, manifestFiles = files) {
+  const content = fs.readFileSync(path.join(directory, "SHA256SUMS"), "utf8");
+  const entries = content
+    .trimEnd()
+    .split("\n")
+    .map((line) => {
+      const match = line.match(/^([a-f0-9]{64})  ([^\r\n]+)$/);
+      assert.ok(match, "Invalid release checksum manifest");
+      return [match[2], match[1]];
+    });
+  assert.deepEqual(
+    entries.map(([name]) => name),
+    [...manifestFiles].sort(),
+    "Incomplete or unexpected release checksum entries",
+  );
+  assert.equal(
+    content,
+    entries.map(([name, digest]) => `${digest}  ${name}\n`).join(""),
+  );
+  const digests = new Map(entries);
+  for (const file of files) {
+    assert.equal(
+      hash(path.join(directory, file), "sha256"),
+      digests.get(file),
+      `Release checksum mismatch: ${file}`,
+    );
+  }
+}
+
+function verifyRelease(
+  directory,
+  version,
+  { checksums = true, windowsVersion = version } = {},
+) {
+  const names = assetNames(version, windowsVersion);
+  const files = releaseFiles(version, windowsVersion);
   for (const file of files)
     assert.ok(
       fs.statSync(path.join(directory, file)).size > 0,
       `Missing release asset: ${file}`,
     );
-  verifyWindows(directory, version);
+  verifyWindows(directory, windowsVersion);
   const appcast = fs.readFileSync(
     path.join(directory, "mac-arm64-appcast.xml"),
     "utf8",
@@ -158,18 +216,15 @@ function verifyRelease(directory, version, { checksums = true } = {}) {
       ),
     "Invalid Mac update signature",
   );
-  const sums =
-    files
-      .sort()
-      .map((name) => `${hash(path.join(directory, name), "sha256")}  ${name}`)
-      .join("\n") + "\n";
-  if (checksums)
-    assert.equal(
-      fs.readFileSync(path.join(directory, "SHA256SUMS"), "utf8"),
-      sums,
-      "Release checksum mismatch",
-    );
-  else fs.writeFileSync(path.join(directory, "SHA256SUMS"), sums);
+  if (checksums) verifyChecksums(directory, files);
+  else {
+    const sums =
+      [...files]
+        .sort()
+        .map((name) => `${hash(path.join(directory, name), "sha256")}  ${name}`)
+        .join("\n") + "\n";
+    fs.writeFileSync(path.join(directory, "SHA256SUMS"), sums);
+  }
   assert.deepEqual(
     fs.readdirSync(directory).sort(),
     [...files, "SHA256SUMS"].sort(),
@@ -255,12 +310,19 @@ async function main() {
         `v${metadata.version}`,
         "Release tag must match package version",
       );
-      verifyWindows(directory, metadata.version);
+      validateVersions(metadata.version, metadata.windowsReleaseVersion);
+      verifyWindows(directory, metadata.windowsReleaseVersion);
       signMac(directory, metadata.version);
-      verifyRelease(directory, metadata.version, { checksums: false });
+      verifyRelease(directory, metadata.version, {
+        checksums: false,
+        windowsVersion: metadata.windowsReleaseVersion,
+      });
       console.log(`Signed and validated ${tag}`);
     } else if (command === "verify") {
-      verifyRelease(directory, metadata.version);
+      validateVersions(metadata.version, metadata.windowsReleaseVersion);
+      verifyRelease(directory, metadata.version, {
+        windowsVersion: metadata.windowsReleaseVersion,
+      });
       console.log(`Validated release ${metadata.version}`);
     } else
       throw new Error(
@@ -275,4 +337,12 @@ async function main() {
 
 if (require.main === module) main();
 
-module.exports = { assetNames, verifyWindows, verifyRelease, hash };
+module.exports = {
+  assetNames,
+  releaseFiles,
+  validateVersions,
+  verifyChecksums,
+  verifyWindows,
+  verifyRelease,
+  hash,
+};

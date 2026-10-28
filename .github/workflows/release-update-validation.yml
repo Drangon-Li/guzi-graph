@@ -3,15 +3,25 @@ name: Published release update validation
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: Platform to validate
+        required: true
+        default: both
+        type: choice
+        options: [both, mac, windows]
       from_version:
         description: Published version to install first
         required: true
         default: "0.8.0"
         type: string
       to_version:
-        description: Expected latest published version
+        description: Expected installed version after the update
         required: true
         default: "0.8.1"
+        type: string
+      latest_release_version:
+        description: Latest public Release tag version (defaults to to_version; Windows only)
+        required: false
         type: string
 
 permissions:
@@ -29,11 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-15
-            platform: mac
-          - os: windows-latest
-            platform: windows
+        include: ${{ fromJSON(inputs.platform == 'both' && '[{"os":"macos-15","platform":"mac"},{"os":"windows-latest","platform":"windows"}]' || inputs.platform == 'mac' && '[{"os":"macos-15","platform":"mac"}]' || '[{"os":"windows-latest","platform":"windows"}]') }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -54,8 +60,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
           GUZI_FROM_VERSION: ${{ inputs.from_version }}
           GUZI_TO_VERSION: ${{ inputs.to_version }}
+          GUZI_LATEST_RELEASE_VERSION: ${{ inputs.latest_release_version || inputs.to_version }}
+          GUZI_PLATFORM: ${{ matrix.platform }}
         run: |
-          node apps/desktop/scripts/release-update-${{ matrix.platform }}.cjs --from "$GUZI_FROM_VERSION" --to "$GUZI_TO_VERSION" --artifacts output/release-update-validation/${{ matrix.platform }}
+          args=(--from "$GUZI_FROM_VERSION" --to "$GUZI_TO_VERSION" --artifacts "output/release-update-validation/$GUZI_PLATFORM")
+          if [ "$GUZI_PLATFORM" = windows ]; then
+            args+=(--latest-release "$GUZI_LATEST_RELEASE_VERSION")
+          fi
+          node "apps/desktop/scripts/release-update-$GUZI_PLATFORM.cjs" "${args[@]}"
 
       - name: Upload update evidence
         if: always()

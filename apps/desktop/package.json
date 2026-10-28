@@ -1,6 +1,7 @@
 {
   "name": "excalidraw-local-desktop",
-  "version": "0.8.3",
+  "version": "0.8.4",
+  "windowsReleaseVersion": "0.8.3",
   "private": true,
   "description": "A local desktop workspace for Excalidraw drawings",
   "author": "Local",
@@ -23,7 +24,7 @@
     "build:dev-ppt": "node scripts/build-channel.cjs dev-ppt",
     "build:test": "node scripts/build-channel.cjs test",
     "test:main": "node scripts/test-main.cjs",
-    "test:packaging": "node --test scripts/packaging.test.cjs scripts/release-assets.test.cjs scripts/prepare-updater.test.cjs scripts/update-windows-e2e.test.cjs",
+    "test:packaging": "node --test scripts/packaging.test.cjs scripts/release-assets.test.cjs scripts/reuse-windows-release.test.cjs scripts/release-workflow.test.cjs scripts/prepare-updater.test.cjs scripts/update-windows-e2e.test.cjs",
     "package:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "package:win:dir": "npm run build && electron-builder --win --x64 --dir --publish never",
     "package:win:test": "npm run build:test && electron-builder --config electron-builder.testing.cjs --win nsis --x64 --publish never",

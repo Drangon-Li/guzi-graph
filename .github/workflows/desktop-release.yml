@@ -12,12 +12,47 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      app_version: ${{ steps.versions.outputs.app_version }}
+      windows_version: ${{ steps.versions.outputs.windows_version }}
+      rebuild_windows: ${{ steps.versions.outputs.rebuild_windows }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.x
+      - name: Require a versioned commit already merged into main
+        id: versions
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const { appendFileSync } = require('node:fs');
+          const { version, windowsReleaseVersion } = require('./apps/desktop/package.json');
+          const stable = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+          assert.match(version, stable, 'App version must be stable');
+          assert.match(windowsReleaseVersion, stable, 'Windows release version must be explicit and stable');
+          assert.equal(process.env.GITHUB_REF_NAME, `v${version}`, 'Tag must match the app version');
+          const app = version.split('.').map(Number);
+          const windows = windowsReleaseVersion.split('.').map(Number);
+          const different = app.findIndex((part, index) => part !== windows[index]);
+          assert.ok(different === -1 || windows[different] < app[different], 'Windows release cannot be newer than the app');
+          appendFileSync(process.env.GITHUB_OUTPUT, `app_version=${version}\nwindows_version=${windowsReleaseVersion}\nrebuild_windows=${version === windowsReleaseVersion}\n`);
+          NODE
   macos:
+    needs: prepare
     uses: ./.github/workflows/desktop-macos.yml
   windows:
+    needs: prepare
+    if: needs.prepare.outputs.rebuild_windows == 'true'
     uses: ./.github/workflows/desktop-windows.yml
   publish:
-    needs: [macos, windows]
+    needs: [prepare, macos, windows]
+    if: always() && needs.prepare.result == 'success' && needs.macos.result == 'success' && ((needs.prepare.outputs.rebuild_windows == 'true' && needs.windows.result == 'success') || (needs.prepare.outputs.rebuild_windows == 'false' && needs.windows.result == 'skipped'))
     runs-on: macos-15
     timeout-minutes: 20
     permissions:
@@ -26,10 +61,6 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
-      - name: Require a versioned commit already merged into main
-        run: |
-          git merge-base --is-ancestor HEAD origin/main
-          node -e 'const p=require("./apps/desktop/package.json"); if (!/^\d+\.\d+\.\d+$/.test(p.version) || process.env.GITHUB_REF_NAME !== "v"+p.version) process.exit(1)'
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.x
@@ -44,9 +75,16 @@ jobs:
           name: Excalidraw-Guzi-macos-arm64
           path: release-assets
       - uses: actions/download-artifact@v4
+        if: needs.prepare.outputs.rebuild_windows == 'true'
         with:
           name: Excalidraw-Guzi-windows-x64
           path: release-assets
+      - name: Reuse the explicitly selected official Windows release
+        if: needs.prepare.outputs.rebuild_windows == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node apps/desktop/scripts/reuse-windows-release.cjs release-assets
       - name: Sign Mac update and verify every release asset
         env:
           SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
