@@ -1088,6 +1088,11 @@ summary::-webkit-details-marker {
     opacity: 0.4;
   }
 }
+@media (max-width: 480px) {
+  .header .nav-online {
+    display: none;
+  }
+}
 @media (max-width: 370px) {
   .wrap {
     width: calc(100% - 40px);
