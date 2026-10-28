@@ -16,9 +16,20 @@ const request = {
 };
 
 function fixture(failure, { hang, event, delays = {} } = {}) {
-  const calls = { destroyed: 0, created: 0, stages: [] };
+  const stageEvents = new EventEmitter();
+  const calls = {
+    destroyed: 0,
+    created: 0,
+    stages: [],
+    waitForStage(stage) {
+      return calls.stages.includes(stage)
+        ? Promise.resolve()
+        : new Promise((resolve) => stageEvents.once(stage, resolve));
+    },
+  };
   const runStage = (stage) => {
     calls.stages.push(stage);
+    stageEvents.emit(stage);
     if (hang === stage || event?.stage === stage) {
       if (event) {
         setImmediate(() => {
@@ -189,12 +200,19 @@ for (const failure of ["load", "decode", "print"]) {
 }
 
 for (const hang of ["load", "decode", "print"]) {
-  test(`PDF aborts a hanging ${hang}, ignores late completion and permits a later export`, async () => {
+  test(`PDF aborts a hanging ${hang}, ignores late completion and permits a later export`, async (t) => {
+    t.mock.timers.enable({ apis: ["Date", "setTimeout"] });
     const { PrintWindow, calls } = fixture(undefined, { hang });
-    await assert.rejects(renderPdf(PrintWindow, request, { timeout: 50 }), {
-      code: "PDF_EXPORT_TIMEOUT",
-      message: `PDF 导出超时（${stageLabels[hang]}），请重试。`,
-    });
+    const rejected = assert.rejects(
+      renderPdf(PrintWindow, request, { timeout: 50 }),
+      {
+        code: "PDF_EXPORT_TIMEOUT",
+        message: `PDF 导出超时（${stageLabels[hang]}），请重试。`,
+      },
+    );
+    await calls.waitForStage(hang);
+    t.mock.timers.tick(50);
+    await rejected;
     assert.equal(calls.destroyed, 1);
     assertReleased(calls);
     await assert.rejects(fs.stat(path.dirname(calls.file)), { code: "ENOENT" });
@@ -244,43 +262,64 @@ for (const name of ["render-process-gone", "destroyed"]) {
   }
 }
 
-test("PDF timeout errors use the selected language for both template and stage", async () => {
+test("PDF timeout errors use the selected language for both template and stage", async (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"] });
   const { PrintWindow, calls } = fixture(undefined, { hang: "decode" });
-  await assert.rejects(
+  const rejected = assert.rejects(
     renderPdf(PrintWindow, request, { timeout: 50, language: "en" }),
     {
       code: "PDF_EXPORT_TIMEOUT",
       message: "PDF export timed out (decoding fonts and images). Try again.",
     },
   );
+  await calls.waitForStage("decode");
+  t.mock.timers.tick(50);
+  await rejected;
   assert.equal(calls.destroyed, 1);
   assertReleased(calls);
 });
 
-test("PDF applies one deadline across load and decode", async () => {
+test("PDF applies one deadline across load and decode", async (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"] });
   const { PrintWindow, calls } = fixture(undefined, {
     delays: { load: 60, decode: 60 },
   });
-  await assert.rejects(renderPdf(PrintWindow, request, { timeout: 100 }), {
-    code: "PDF_EXPORT_TIMEOUT",
-    message: "PDF 导出超时（解码字体与图片），请重试。",
-  });
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  const rejected = assert.rejects(
+    renderPdf(PrintWindow, request, { timeout: 100 }),
+    {
+      code: "PDF_EXPORT_TIMEOUT",
+      message: "PDF 导出超时（解码字体与图片），请重试。",
+    },
+  );
+  await calls.waitForStage("load");
+  t.mock.timers.tick(60);
+  await calls.waitForStage("decode");
+  t.mock.timers.tick(39);
+  assert.equal(calls.destroyed, 0);
+  t.mock.timers.tick(1);
+  await rejected;
+  t.mock.timers.tick(20);
+  await new Promise(setImmediate);
   assert.deepEqual(calls.stages, ["load", "decode"]);
   assert.equal(calls.destroyed, 1);
   assertReleased(calls);
 });
 
-test("aborting one PDF export leaves another active print window intact", async () => {
+test("aborting one PDF export leaves another active print window intact", async (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"] });
   const active = fixture(undefined, { hang: "decode" });
   const activeExport = renderPdf(active.PrintWindow, request);
+  await active.calls.waitForStage("decode");
   const stalled = fixture(undefined, { hang: "load" });
-  await assert.rejects(
+  const rejected = assert.rejects(
     renderPdf(stalled.PrintWindow, request, { timeout: 50 }),
     {
       code: "PDF_EXPORT_TIMEOUT",
     },
   );
+  await stalled.calls.waitForStage("load");
+  t.mock.timers.tick(50);
+  await rejected;
   assert.equal(stalled.calls.destroyed, 1);
   assert.equal(active.calls.destroyed, 0);
   stalled.calls.resume();
@@ -293,11 +332,16 @@ test("aborting one PDF export leaves another active print window intact", async 
 });
 
 test("PDF removes a late temporary directory without creating a window after its deadline", async (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"] });
   const originalMkdtemp = fs.mkdtemp;
   const originalRm = fs.rm;
   let directory;
   let resume;
   let markRemoved;
+  let markCreated;
+  const created = new Promise((resolve) => {
+    markCreated = resolve;
+  });
   const removed = new Promise((resolve) => {
     markRemoved = resolve;
   });
@@ -305,6 +349,7 @@ test("PDF removes a late temporary directory without creating a window after its
     directory = await originalMkdtemp(...args);
     await new Promise((resolve) => {
       resume = resolve;
+      markCreated();
     });
     return directory;
   };
@@ -319,10 +364,16 @@ test("PDF removes a late temporary directory without creating a window after its
     fs.rm = originalRm;
   });
   const { PrintWindow, calls } = fixture();
-  await assert.rejects(renderPdf(PrintWindow, request, { timeout: 50 }), {
-    code: "PDF_EXPORT_TIMEOUT",
-    message: "PDF 导出超时（创建临时目录），请重试。",
-  });
+  const rejected = assert.rejects(
+    renderPdf(PrintWindow, request, { timeout: 50 }),
+    {
+      code: "PDF_EXPORT_TIMEOUT",
+      message: "PDF 导出超时（创建临时目录），请重试。",
+    },
+  );
+  await created;
+  t.mock.timers.tick(50);
+  await rejected;
   resume();
   await removed;
   await assert.rejects(fs.stat(directory), { code: "ENOENT" });
