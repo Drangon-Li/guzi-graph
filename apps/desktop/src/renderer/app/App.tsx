@@ -5,7 +5,6 @@ import { Button, MainMenu, useHandleLibrary } from "@excalidraw/excalidraw";
 import { TextField } from "@excalidraw/excalidraw/components/TextField";
 import {
   CloseIcon,
-  ExcalLogo,
   ExportIcon,
   exportToFileIcon,
   LoadIcon,
@@ -21,6 +20,7 @@ import type { LibraryPersistenceAdapter } from "@excalidraw/excalidraw/data/libr
 import { fileTitle } from "../shared/model/document";
 import { translate } from "../shared/i18n/i18n";
 import { DesktopSelect } from "../shared/ui/DesktopControls";
+import { GuziLogo } from "../shared/ui/GuziLogo";
 import { desktopShortcut } from "../shared/ui/desktopShortcut";
 import { StructuredExportDialog } from "../features/export/StructuredExportDialog";
 import { exportCanvasPdf } from "../features/export/structuredExport";
@@ -479,7 +479,7 @@ const Editor = ({
           <MainMenu.DefaultItems.Preferences />
           <MainMenu.DefaultItems.Help />
           <MainMenu.Separator />
-          <MainMenu.Item icon={ExcalLogo} onSelect={workspace.showProjects}>
+          <MainMenu.Item icon={<GuziLogo />} onSelect={workspace.showProjects}>
             {t("返回项目页")}
           </MainMenu.Item>
           <MainMenu.Item icon={settingsIcon} onSelect={onSettings}>
@@ -795,7 +795,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
           })}
           aria-label={t("返回项目页")}
         >
-          {ExcalLogo}
+          <GuziLogo />
           <span>Excalidraw-Guzi</span>
         </Button>
         <nav

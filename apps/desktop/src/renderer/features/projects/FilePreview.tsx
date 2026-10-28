@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 
 import { getFontString } from "@excalidraw/common";
 import { getNonDeletedElements, loadFromBlob } from "@excalidraw/excalidraw";
-import { ExcalLogo } from "@excalidraw/excalidraw/components/icons";
 import { restoreAppState } from "@excalidraw/excalidraw/data/restore";
 import { Fonts } from "@excalidraw/excalidraw/fonts";
 import { exportScene } from "@excalidraw/excalidraw/scene/export";
@@ -10,6 +9,7 @@ import { exportScene } from "@excalidraw/excalidraw/scene/export";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import { translate } from "../../shared/i18n/i18n";
+import { GuziLogo } from "../../shared/ui/GuziLogo";
 import { parsePresentation } from "../presentation/model";
 import { renderSlideSvg } from "../presentation/renderSlide";
 
@@ -199,7 +199,7 @@ export const FilePreview = ({
         <span
           className={failed ? "desktop-preview-error" : "desktop-preview-empty"}
         >
-          {failed ? translate(language, "预览不可用") : ExcalLogo}
+          {failed ? translate(language, "预览不可用") : <GuziLogo />}
         </span>
       )}
     </div>

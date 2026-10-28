@@ -158,15 +158,21 @@ describe("desktop canvas thumbnails", () => {
       expect(rendered).not.toHaveBeenCalled();
       await act(async () => glyphs());
       await waitFor(() =>
-        expect(view.container.querySelector("img")).not.toBeNull(),
+        expect(
+          view.container.querySelector<HTMLImageElement>(
+            ".desktop-file-preview > img",
+          ),
+        ).not.toBeNull(),
       );
       const [canvas, scale, dimensions] = rendered.mock.calls[0];
       expect(canvas.ownerDocument).toBe(root.ownerDocument);
       expect([...dimensions, scale]).toEqual(expected);
       expect([canvas.width, canvas.height]).toEqual([0, 0]);
-      expect(view.container.querySelector("img")!.src).toMatch(
-        /^data:image\/png/,
-      );
+      expect(
+        view.container.querySelector<HTMLImageElement>(
+          ".desktop-file-preview > img",
+        )!.src,
+      ).toMatch(/^data:image\/png/);
       const [{ type, data, config }] = vi.mocked(exportScene).mock.calls[0];
       expect(type).toBe("canvas");
       expect(data.elements).toHaveLength(2);
@@ -192,7 +198,11 @@ describe("desktop canvas thumbnails", () => {
     view.rerender(<FilePreview file={file} root={root} theme="light" />);
     show();
     await waitFor(() =>
-      expect(view.container.querySelector("img")).not.toBeNull(),
+      expect(
+        view.container.querySelector<HTMLImageElement>(
+          ".desktop-file-preview > img",
+        ),
+      ).not.toBeNull(),
     );
     expect(readFile).toHaveBeenCalledTimes(2);
     view.rerender(
@@ -220,7 +230,11 @@ describe("desktop canvas thumbnails", () => {
     );
     show();
     await waitFor(() =>
-      expect(first.container.querySelector("img")).not.toBeNull(),
+      expect(
+        first.container.querySelector<HTMLImageElement>(
+          ".desktop-file-preview > img",
+        ),
+      ).not.toBeNull(),
     );
     expect(readFile).toHaveBeenCalledTimes(2);
     expect(rendered).toHaveBeenCalledTimes(1);
@@ -243,13 +257,23 @@ describe("desktop canvas thumbnails", () => {
     );
     show();
     await waitFor(() =>
-      expect(view.container.querySelector("img")).not.toBeNull(),
+      expect(
+        view.container.querySelector<HTMLImageElement>(
+          ".desktop-file-preview > img",
+        ),
+      ).not.toBeNull(),
     );
-    const preview = view.container.querySelector("img")!.src;
+    const preview = view.container.querySelector<HTMLImageElement>(
+      ".desktop-file-preview > img",
+    )!.src;
     await act(async () => finish({ content: "old scene" }));
     expect(exportScene).toHaveBeenCalledTimes(1);
     expect(loadFromBlob).toHaveBeenCalledTimes(1);
-    expect(view.container.querySelector("img")!.src).toBe(preview);
+    expect(
+      view.container.querySelector<HTMLImageElement>(
+        ".desktop-file-preview > img",
+      )!.src,
+    ).toBe(preview);
     expect(view.queryByText("预览不可用")).toBeNull();
   });
 });
