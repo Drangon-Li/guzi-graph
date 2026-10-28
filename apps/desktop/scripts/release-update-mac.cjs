@@ -449,14 +449,51 @@ if CommandLine.arguments[1] == "quit" {
   report.before = await snapshot();
   assert.equal(report.before.settings.rootDirectory, drawings);
   assert.deepEqual(report.before.session, session);
-  let settings = await openSettings();
-  await screenshot("old-version-before-check");
-  await settings.getByRole("button", { name: "检查更新", exact: true }).click();
-  report.check = await waitForState("available", 120000);
-  assert.equal(report.check.availableVersion, to);
+  let settings;
+  if (semver.gte(from, "0.8.3")) {
+    report.check = await waitForState("available", 120000);
+    report.checkSource = "startup";
+    assert.equal(report.check.currentVersion, from);
+    assert.equal(report.check.availableVersion, to);
+    const startupPrompt = page.getByRole("dialog", {
+      name: "发现新版本",
+      exact: true,
+    });
+    await startupPrompt.waitFor();
+    await startupPrompt
+      .getByRole("button", { name: "下载更新", exact: true })
+      .waitFor();
+    const startupVersions = await startupPrompt
+      .locator(".desktop-update-versions dd")
+      .allTextContents();
+    assert.deepEqual(startupVersions, [from, to]);
+    report.startupPrompt = { versions: startupVersions, deferred: false };
+    await screenshot("startup-update-available");
+    await startupPrompt
+      .getByRole("button", { name: "稍后更新", exact: true })
+      .click();
+    await startupPrompt.waitFor({ state: "hidden" });
+    report.startupPrompt.deferred = true;
+    settings = await openSettings();
+  } else {
+    settings = await openSettings();
+    await screenshot("old-version-before-check");
+    await settings
+      .getByRole("button", { name: "检查更新", exact: true })
+      .click();
+    report.check = await waitForState("available", 120000);
+    report.checkSource = "manual";
+    assert.equal(report.check.availableVersion, to);
+  }
+  const download = settings.getByRole("button", {
+    name: "下载更新",
+    exact: true,
+  });
+  await download.waitFor();
+  assert.equal(await download.isEnabled(), true);
   await screenshot("update-available");
   progress("downloading-update-through-ui");
-  await settings.getByRole("button", { name: "下载更新", exact: true }).click();
+  await download.click();
   report.download = await waitForState("downloaded", 600000);
   assert.equal(report.download.availableVersion, to);
   await screenshot("update-downloaded");
