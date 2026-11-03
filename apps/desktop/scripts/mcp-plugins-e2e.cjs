@@ -7,6 +7,7 @@ const { _electron } = require("playwright");
 const { COMMANDS } = require("../src/main/plugins.cjs");
 const {
   enableMcpInSettings,
+  pollPage,
   waitForMcpReady,
 } = require("./mcp-settings-ui.cjs");
 
@@ -522,12 +523,15 @@ async function main() {
   assert.equal(restoredService.token, oldToken);
   assert.equal(restoredService.port, oldPort);
   await connect(restoredService);
-  await page.waitForFunction(
+  await pollPage(
+    page,
     async () =>
       (
         await window.desktop.getUserPlugins()
       ).find((entry) => entry.manifest.id === "storage-probe")?.status ===
       "running",
+    undefined,
+    { description: "the restored storage-probe plugin to run" },
   );
   assert.equal(
     (

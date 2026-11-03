@@ -182,10 +182,44 @@ async function tablePoint() {
       y:
         app.state.offsetTop +
         (table.y + table.height / 2 + app.state.scrollY) * app.state.zoom.value,
+      canvas: {
+        left: app.state.offsetLeft,
+        top: app.state.offsetTop,
+        width: app.state.width,
+        height: app.state.height,
+      },
     };
   });
 }
+// Shrinking the window keeps the scroll position, so the table can end up
+// outside the visible canvas and a click at its center would miss it. Scroll
+// it back into view with the wheel, as a user would, before right-clicking.
+async function revealTable() {
+  // keeps the click clear of the toolbar and the zoom/help controls
+  const margin = 120;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { x, y, canvas } = await tablePoint();
+    const centerX = canvas.left + canvas.width / 2;
+    const centerY = canvas.top + canvas.height / 2;
+    const dx = x - centerX;
+    const dy = y - centerY;
+    if (
+      Math.abs(dx) <= canvas.width / 2 - margin &&
+      Math.abs(dy) <= canvas.height / 2 - margin
+    ) {
+      return;
+    }
+    await page.mouse.move(centerX, centerY);
+    await page.mouse.wheel(dx, dy);
+    await until(async () => {
+      const next = await tablePoint();
+      return Math.abs(next.x - x) > 1 || Math.abs(next.y - y) > 1;
+    }, "table scrolled toward the viewport center");
+  }
+  throw new Error("Table could not be scrolled into view");
+}
 async function openTableMenu() {
+  await revealTable();
   const point = await tablePoint();
   await page.mouse.click(point.x, point.y, { button: "right" });
   await page.getByRole("menu").waitFor();
