@@ -608,7 +608,15 @@ if CommandLine.arguments[1] == "quit" {
   await launch();
   report.after = await snapshot();
   assert.equal(report.after.update.currentVersion, to);
-  assert.deepEqual(report.after.settings, report.before.settings);
+  const expectedSettings = { ...report.before.settings };
+  // New defaults may be persisted on upgrade; existing preferences must match.
+  if (
+    semver.gte(to, "0.8.6") &&
+    !Object.hasOwn(expectedSettings, "pinnedFoldersByRoot")
+  ) {
+    expectedSettings.pinnedFoldersByRoot = {};
+  }
+  assert.deepEqual(report.after.settings, expectedSettings);
   assert.deepEqual(report.after.session, report.beforeSave.session);
   assert.equal(digest(document), savedDocumentHash);
   assert.equal(digest(sentinel), sentinelHash);
