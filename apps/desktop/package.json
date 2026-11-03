@@ -38,7 +38,6 @@
     "@modelcontextprotocol/node": "2.1.1",
     "@modelcontextprotocol/server": "2.3.1",
     "electron-updater": "6.8.11",
-    "pdfjs-dist": "6.5.438",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "zod": "4.6.7"
@@ -47,6 +46,7 @@
     "@modelcontextprotocol/client": "2.3.1",
     "electron": "44.7.2",
     "electron-builder": "26.15.3",
+    "pdfjs-dist": "6.5.438",
     "playwright": "1.64.1"
   },
   "build": {
