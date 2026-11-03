@@ -15,6 +15,9 @@ import {
 } from "@excalidraw/excalidraw/tests/test-utils";
 import { getNormalizedZoom } from "@excalidraw/excalidraw/scene/normalize";
 import { convertStickyNoteToSubcanvas } from "@excalidraw/excalidraw/subcanvasActions";
+import { createPasteEvent } from "@excalidraw/excalidraw/clipboard";
+import * as imageFiles from "@excalidraw/excalidraw/data/blob";
+import { mockHTMLImageElement } from "@excalidraw/excalidraw/tests/helpers/mocks";
 
 import type {
   BinaryFiles,
@@ -186,6 +189,234 @@ describe("presentation editor lifecycle", () => {
 
   const ids = (api: ExcalidrawImperativeAPI) =>
     api.getSceneElements().map((element) => element.id);
+
+  const beginDelayedImagePaste = async (api: ExcalidrawImperativeAPI) => {
+    act(() => api.updateScene({ appState: { width: 1280, height: 720 } }));
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    vi.spyOn(imageFiles, "generateIdFromFile").mockImplementation(async () => {
+      await pending;
+      return "delayed-image" as import("@excalidraw/element/types").FileId;
+    });
+    vi.spyOn(imageFiles, "resizeImageFile").mockImplementation(
+      async (file) => file,
+    );
+    mockHTMLImageElement(200, 100);
+    const file = await API.loadFile("./fixtures/deer.png");
+    act(() => api.pasteFromClipboard(createPasteEvent({ files: [file] })));
+    await waitFor(() =>
+      expect(
+        api.getSceneElements().some((element) => element.type === "image"),
+      ).toBe(true),
+    );
+    return finish;
+  };
+
+  it("finishes an in-flight image import on its original slide before switching", async () => {
+    const deck = createPresentation("first", "First");
+    deck.slides.push({ id: "second", title: "Second", scene: {} });
+    const view = await mount(deck);
+    const first = await readyApi();
+    const finish = await beginDelayedImagePaste(first);
+    fireEvent.click(view.getByRole("button", { name: "Select Second" }));
+    await act(async () => finish());
+    const second = await readyApi(first);
+    expect(deck.slides[0].scene.elements).toMatchObject([
+      { type: "image", fileId: "delayed-image", width: 200, height: 100 },
+    ]);
+    expect(deck.slides[0].scene.files?.["delayed-image"]).toMatchObject({
+      id: "delayed-image",
+      dataURL: expect.stringContaining("data:image/png"),
+    });
+    expect(ids(second)).toEqual([]);
+    fireEvent.click(view.getByRole("button", { name: "Select First" }));
+    const reopened = await readyApi(second);
+    expect(reopened.getFiles()["delayed-image"]).toBeDefined();
+    expect(reopened.getSceneElements()[0]).toMatchObject({
+      fileId: "delayed-image",
+    });
+  });
+
+  it("waits for an in-flight image import before serializing a save", async () => {
+    await mount();
+    const first = await readyApi();
+    const finish = await beginDelayedImagePaste(first);
+    const saveFile = vi.fn(async (request: { content: string }) => ({
+      path: "/drawings/images.guzi-presentation",
+      content: request.content,
+      modifiedAt: 123,
+      size: request.content.length,
+    }));
+    root.ownerDocument.defaultView!.desktop.saveFile = saveFile;
+    let saving!: Promise<boolean>;
+    act(() => {
+      saving = workspace.requestSave(canvasDocument);
+    });
+    expect(saveFile).not.toHaveBeenCalled();
+    await act(async () => {
+      finish();
+      await saving;
+    });
+    expect(saveFile).toHaveBeenCalledTimes(1);
+    const saved = JSON.parse(saveFile.mock.calls[0][0].content);
+    expect(saved.slides[0].scene.elements[0].fileId).toBe("delayed-image");
+    expect(saved.slides[0].scene.files["delayed-image"].dataURL).toContain(
+      "data:image/png",
+    );
+  });
+
+  it("saves a complete deck when switching and saving during the same image import", async () => {
+    const deck = createPresentation("first", "First");
+    deck.slides.push({ id: "second", title: "Second", scene: {} });
+    const view = await mount(deck);
+    const first = await readyApi();
+    const finish = await beginDelayedImagePaste(first);
+    const saveFile = vi.fn(async (request: { content: string }) => ({
+      path: "/drawings/images.guzi-presentation",
+      content: request.content,
+      modifiedAt: 123,
+      size: request.content.length,
+    }));
+    root.ownerDocument.defaultView!.desktop.saveFile = saveFile;
+    let saving!: Promise<boolean>;
+    act(() => {
+      workspace.selectSlide(canvasDocument, "second");
+      saving = workspace.requestSave(canvasDocument);
+    });
+    expect(saveFile).not.toHaveBeenCalled();
+    await act(async () => {
+      finish();
+      expect(await saving).toBe(true);
+    });
+    await readyApi(first);
+    const saved = JSON.parse(saveFile.mock.calls[0][0].content);
+    expect(saved.slides[0].scene.elements[0].fileId).toBe("delayed-image");
+    expect(saved.slides[0].scene.files["delayed-image"].dataURL).toContain(
+      "data:image/png",
+    );
+    expect(saved.slides[1].scene.elements).toEqual([]);
+    expect(view.getByRole("button", { name: "Select Second" })).toBeDefined();
+  });
+
+  it("waits for image imports before prompting to close a document", async () => {
+    await mount();
+    const first = await readyApi();
+    const finish = await beginDelayedImagePaste(first);
+    let closing!: Promise<boolean>;
+    act(() => {
+      closing = workspace.closeDocument(canvasDocument.id);
+    });
+    expect(workspace.closePrompt).toBeNull();
+    expect(first.isDestroyed).toBe(false);
+    await act(async () => finish());
+    await waitFor(() => expect(workspace.closePrompt).not.toBeNull());
+    await act(async () => {
+      workspace.closePrompt!.resolve("cancel");
+      expect(await closing).toBe(false);
+    });
+    expect(first.isDestroyed).toBe(false);
+    expect(canvasDocument.getSnapshot!().files["delayed-image"]).toBeDefined();
+  });
+
+  it("keeps a delayed child-canvas image on its original slide when switching", async () => {
+    const note = API.createElement({ type: "stickynote", id: "image-pin" });
+    const converted = convertStickyNoteToSubcanvas([note], note.id, {})!;
+    const deck = createPresentation("first", "First", {
+      elements: converted.elements,
+      appState: { subscenes: converted.scenes },
+    });
+    deck.slides.push({ id: "second", title: "Second", scene: {} });
+    const view = await mount(deck);
+    const first = await readyApi();
+    act(() =>
+      first.updateScene({
+        appState: { selectedElementIds: { "image-pin": true } },
+      }),
+    );
+    fireEvent.click(
+      await view.findByRole("button", { name: "Open subcanvas" }),
+    );
+    await waitFor(() => {
+      expect(canvasDocument.activeEditor?.()).not.toBe(first);
+      expect(canvasDocument.activeEditor?.()?.getAppState().isLoading).toBe(
+        false,
+      );
+    });
+    const child = canvasDocument.activeEditor!()!;
+    const finish = await beginDelayedImagePaste(child);
+    fireEvent.click(view.getByRole("button", { name: "Select Second" }));
+    await act(async () => finish());
+    const second = await readyApi(first);
+    expect(child.isDestroyed).toBe(true);
+    expect(
+      deck.slides[0].scene.appState?.subscenes?.[converted.sceneId].elements,
+    ).toMatchObject([{ type: "image", fileId: "delayed-image" }]);
+    expect(deck.slides[0].scene.files?.["delayed-image"]).toBeDefined();
+    expect(ids(second)).toEqual([]);
+    expect(second.getFiles()["delayed-image"]).toBeUndefined();
+  });
+
+  it("blocks saving newly missing image resources", async () => {
+    await mount();
+    const api = await readyApi();
+    const saveFile = vi.fn();
+    root.ownerDocument.defaultView!.desktop.saveFile = saveFile;
+    act(() =>
+      api.updateScene({
+        elements: [
+          API.createElement({
+            type: "image",
+            fileId: "missing" as import("@excalidraw/element/types").FileId,
+            status: "saved",
+          }),
+        ],
+      }),
+    );
+    await act(async () =>
+      expect(await workspace.requestSave(canvasDocument)).toBe(false),
+    );
+    expect(saveFile).not.toHaveBeenCalled();
+    expect(workspace.error).toContain("图片资源");
+  });
+
+  it("allows a document opened with missing images to be edited and saved", async () => {
+    const deck = createPresentation("first", "First", {
+      elements: [
+        API.createElement({
+          type: "image",
+          fileId:
+            "already-missing" as import("@excalidraw/element/types").FileId,
+          status: "saved",
+        }),
+      ],
+    });
+    await mount(deck);
+    const api = await readyApi();
+    const saveFile = vi.fn(async (request: { content: string }) => ({
+      path: "/drawings/recovered.guzi-presentation",
+      content: request.content,
+      modifiedAt: 123,
+      size: request.content.length,
+    }));
+    root.ownerDocument.defaultView!.desktop.saveFile = saveFile;
+    act(() =>
+      api.updateScene({
+        elements: [
+          ...api.getSceneElements(),
+          API.createElement({ type: "rectangle" }),
+        ],
+      }),
+    );
+    await act(async () =>
+      expect(await workspace.requestSave(canvasDocument)).toBe(true),
+    );
+    expect(saveFile).toHaveBeenCalledTimes(1);
+    expect(
+      JSON.parse(saveFile.mock.calls[0][0].content).slides[0].scene.elements,
+    ).toHaveLength(2);
+  });
 
   it("fits new pages before initialization and restores the saved camera on return", async () => {
     const deck = createPresentation("first", "First");

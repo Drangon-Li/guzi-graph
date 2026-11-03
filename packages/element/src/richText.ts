@@ -1,6 +1,7 @@
 import { getFontString, getVerticalOffset } from "@excalidraw/common";
 
 import { getLineWidth } from "./textMeasurements";
+import { parseTokens } from "./textWrapping";
 
 import type { RenderEnvironment } from "./renderEnvironment";
 import type { ExcalidrawTextElement, FontString } from "./types";
@@ -184,7 +185,12 @@ export const layoutRichText = (
         ? "• "
         : `${counters[list.indent]}. `
       : "";
-    type Glyph = { text: string; run: RichTextRun; width: number };
+    type Glyph = {
+      text: string;
+      run: RichTextRun;
+      width: number;
+      breakAfter?: boolean;
+    };
     const glyphs: Glyph[] = paragraph.runs.flatMap((run) =>
       Array.from(run.text).map((text) => ({
         text,
@@ -196,6 +202,15 @@ export const layoutRichText = (
         ),
       })),
     );
+    // Share Unicode line-break opportunities with ordinary text, across style runs.
+    let tokenEnd = 0;
+    for (const token of parseTokens(
+      glyphs.map((glyph) => glyph.text).join(""),
+      false,
+    )) {
+      tokenEnd += Array.from(token).length;
+      glyphs[tokenEnd - 1].breakAfter = true;
+    }
     let pending: Glyph[] = [];
     let pendingWidth = 0;
     let first = true;
@@ -294,13 +309,13 @@ export const layoutRichText = (
         flush(false);
         continue;
       }
-      if (
+      while (
         pending.length &&
         pendingWidth + glyph.width > Math.max(1, maxWidth - indent)
       ) {
         let breakAt = pending.length;
         for (let i = pending.length - 1; i >= 0; i--) {
-          if (/\s/.test(pending[i].text)) {
+          if (pending[i].breakAfter) {
             breakAt = i + 1;
             break;
           }

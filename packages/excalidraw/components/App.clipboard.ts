@@ -405,106 +405,107 @@ export class AppClipboard {
   };
 
   private pasteClipboardEvent = withBatchedUpdates(
-    async ({
-      event,
-      fromHost = false,
-    }: {
-      event: ClipboardEvent;
-      fromHost?: boolean;
-    }) => {
-      if (!this.app.isInteractionEnabled()) {
+    (options: { event: ClipboardEvent; fromHost?: boolean }) =>
+      this.app.trackImageImport(this.importClipboardEvent(options)),
+  );
+
+  private importClipboardEvent = async ({
+    event,
+    fromHost = false,
+  }: {
+    event: ClipboardEvent;
+    fromHost?: boolean;
+  }) => {
+    if (!this.app.isInteractionEnabled()) {
+      return;
+    }
+
+    const isPlainPaste = !!IS_PLAIN_PASTE;
+
+    if (!fromHost) {
+      // #686
+      const target = this.app.ownerDocument.activeElement;
+      const isExcalidrawActive = this.dependencies
+        .getContainer()
+        ?.contains(target);
+      if (event && !isExcalidrawActive) {
         return;
       }
 
-      const isPlainPaste = !!IS_PLAIN_PASTE;
-
-      if (!fromHost) {
-        // #686
-        const target = this.app.ownerDocument.activeElement;
-        const isExcalidrawActive = this.dependencies
-          .getContainer()
-          ?.contains(target);
-        if (event && !isExcalidrawActive) {
-          return;
-        }
-
-        const elementUnderCursor = this.app.ownerDocument.elementFromPoint(
-          this.app.viewport.lastPosition.x,
-          this.app.viewport.lastPosition.y,
-        );
-        const pasteIntoFocusedPage =
-          this.app.props.desktopIntegration?.elementPastePosition ===
-          "original";
-        if (
-          event &&
-          ((!pasteIntoFocusedPage &&
-            !(
-              elementUnderCursor instanceof
-              this.app.ownerWindow.HTMLCanvasElement
-            )) ||
-            isWritableElement(target) ||
-            isWritableElement(event.target))
-        ) {
-          return;
-        }
-      }
-
-      // must be called in the same frame (thus before any awaits) as the paste
-      // event else some browsers (FF...) will clear the clipboardData
-      // (something something security)
-      const dataTransferList = await parseDataTransferEvent(event);
-
-      const filesList = dataTransferList.getFiles();
-
-      let data = await parseClipboard(dataTransferList, isPlainPaste);
-      // Native paste events expose the PNG, but web custom formats are only
-      // available through the Async Clipboard API.
-      if (
-        event.isTrusted &&
-        !data.elements &&
-        filesList.some(({ file }) => file.type === MIME_TYPES.png)
-      ) {
-        try {
-          const types = await readSystemClipboard(this.app.ownerWindow);
-          const elements = types[MIME_TYPES.excalidrawClipboard];
-          if (typeof elements === "string") {
-            const customData = await parseClipboard(
-              await parseDataTransferEvent(
-                createPasteEvent(
-                  { types: { [MIME_TYPES.excalidrawClipboard]: elements } },
-                  this.app.ownerWindow,
-                ),
-              ),
-              isPlainPaste,
-            );
-            if (customData.elements) {
-              data = customData;
-            }
-          }
-        } catch {
-          // The image remains pasteable when custom clipboard access is denied.
-        }
-      }
-
-      if (this.app.props.onPaste) {
-        try {
-          if ((await this.app.props.onPaste(data, event)) === false) {
-            return;
-          }
-        } catch (error: any) {
-          console.error(error);
-        }
-      }
-
-      await this.insertClipboardContent(data, filesList, isPlainPaste);
-
-      this.app.setActiveTool(
-        { type: this.app.state.preferredSelectionTool.type },
-        { keepSelection: true },
+      const elementUnderCursor = this.app.ownerDocument.elementFromPoint(
+        this.app.viewport.lastPosition.x,
+        this.app.viewport.lastPosition.y,
       );
-      event?.preventDefault();
-    },
-  );
+      const pasteIntoFocusedPage =
+        this.app.props.desktopIntegration?.elementPastePosition === "original";
+      if (
+        event &&
+        ((!pasteIntoFocusedPage &&
+          !(
+            elementUnderCursor instanceof this.app.ownerWindow.HTMLCanvasElement
+          )) ||
+          isWritableElement(target) ||
+          isWritableElement(event.target))
+      ) {
+        return;
+      }
+    }
+
+    // must be called in the same frame (thus before any awaits) as the paste
+    // event else some browsers (FF...) will clear the clipboardData
+    // (something something security)
+    const dataTransferList = await parseDataTransferEvent(event);
+
+    const filesList = dataTransferList.getFiles();
+
+    let data = await parseClipboard(dataTransferList, isPlainPaste);
+    // Native paste events expose the PNG, but web custom formats are only
+    // available through the Async Clipboard API.
+    if (
+      event.isTrusted &&
+      !data.elements &&
+      filesList.some(({ file }) => file.type === MIME_TYPES.png)
+    ) {
+      try {
+        const types = await readSystemClipboard(this.app.ownerWindow);
+        const elements = types[MIME_TYPES.excalidrawClipboard];
+        if (typeof elements === "string") {
+          const customData = await parseClipboard(
+            await parseDataTransferEvent(
+              createPasteEvent(
+                { types: { [MIME_TYPES.excalidrawClipboard]: elements } },
+                this.app.ownerWindow,
+              ),
+            ),
+            isPlainPaste,
+          );
+          if (customData.elements) {
+            data = customData;
+          }
+        }
+      } catch {
+        // The image remains pasteable when custom clipboard access is denied.
+      }
+    }
+
+    if (this.app.props.onPaste) {
+      try {
+        if ((await this.app.props.onPaste(data, event)) === false) {
+          return;
+        }
+      } catch (error: any) {
+        console.error(error);
+      }
+    }
+
+    await this.insertClipboardContent(data, filesList, isPlainPaste);
+
+    this.app.setActiveTool(
+      { type: this.app.state.preferredSelectionTool.type },
+      { keepSelection: true },
+    );
+    event?.preventDefault();
+  };
 
   // TODO rewrite this to paste both text & images at the same time if
   // pasted data contains both

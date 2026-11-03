@@ -36,6 +36,69 @@ const element = (
 });
 
 describe("rich text layout", () => {
+  it("uses CJK break opportunities instead of rewinding to an early English space", () => {
+    const value =
+      "1、well time：墙钟时间，也就是程序启动到程序解锁所有的时间，包括计算、等待文件读写等等，用户时间体感的时间\n2、CPU second：各个线程消耗的 CPU 的时间综合，这里可能比 well time 要高，例如两个进程一起用 cpu 5 秒，那么对应的就是 10 秒的 cpu second。";
+    const text = element(value, {
+      paragraphSpacing: 0.8,
+      richText: richTextFromPlainText(value),
+    });
+    const environment = {
+      createCanvas: () => {
+        throw new Error("Unexpected canvas measurement");
+      },
+      createImage: () => {
+        throw new Error("Unexpected image creation");
+      },
+      textMetrics: {
+        getLineWidth: (value: string) =>
+          Array.from(value).reduce(
+            (width, char) => width + (char.codePointAt(0)! > 127 ? 20 : 10),
+            0,
+          ),
+      },
+    };
+    const layout = layoutRichText(text, 760, environment);
+    expect(layout.lines[0].runs.map((run) => run.text).join("")).toContain(
+      "1、well time：墙钟时间",
+    );
+    expect(layout.lines[0].width).toBeGreaterThan(700);
+    expect(layout.lines).toHaveLength(4);
+    expect(layout.height).toBe(
+      4 * text.fontSize * text.lineHeight + 0.8 * text.fontSize,
+    );
+    const unspaced = layoutRichText(
+      { ...text, paragraphSpacing: 0 },
+      760,
+      environment,
+    );
+    expect(
+      layout.lines.map((line) => line.runs.map((run) => run.text).join("")),
+    ).toEqual(
+      unspaced.lines.map((line) => line.runs.map((run) => run.text).join("")),
+    );
+    expect(layout.height - unspaced.height).toBe(16);
+  });
+
+  it("keeps an English word together across style runs without dropping decomposed text", () => {
+    const text = element("中文 hello café", {
+      richText: {
+        version: 1,
+        paragraphs: [
+          {
+            runs: [{ text: "中文 hel" }, { text: "lo cafe\u0301", bold: true }],
+          },
+        ],
+      },
+    });
+    const layout = layoutRichText(text, 90);
+    expect(
+      layout.lines
+        .flatMap((line) => line.runs)
+        .map((run) => run.text)
+        .join(""),
+    ).toBe("中文 hello cafe\u0301");
+  });
   it("normalizes and restores relative font sizes without merging differently sized runs", async () => {
     const { serializeAsJSON } = await import(
       "@excalidraw/excalidraw/data/json"

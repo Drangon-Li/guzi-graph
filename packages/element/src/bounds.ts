@@ -53,6 +53,7 @@ import {
 } from "./utils";
 import { intersectElementWithLineSegment } from "./collision";
 import { elementOverlapsWithFrame, getContainingFrame } from "./frame";
+import { getSubcanvasPinTitle, isSubcanvasPin } from "./subcanvasPin";
 
 import type { Drawable, Op } from "roughjs/bin/core";
 import type { Point as RoughPoint } from "roughjs/bin/geometry";
@@ -179,6 +180,32 @@ export class ElementBounds {
       ];
     } else if (isLinearElement(element)) {
       bounds = getLinearElementRotatedBounds(element, cx, cy, elementsMap);
+    } else if (isSubcanvasPin(element)) {
+      const title = getSubcanvasPinTitle(element);
+      const left = Math.min(0, title?.x ?? 0);
+      const right = Math.max(element.width, title ? title.x + title.width : 0);
+      const bottom = Math.max(
+        element.height,
+        title ? title.y + title.height : 0,
+      );
+      const corners = [
+        [left, 0],
+        [right, 0],
+        [right, bottom],
+        [left, bottom],
+      ].map(([x, y]) =>
+        pointRotateRads(
+          pointFrom(element.x + x, element.y + y),
+          pointFrom(cx, cy),
+          element.angle,
+        ),
+      );
+      bounds = [
+        Math.min(...corners.map(([x]) => x)),
+        Math.min(...corners.map(([, y]) => y)),
+        Math.max(...corners.map(([x]) => x)),
+        Math.max(...corners.map(([, y]) => y)),
+      ];
     } else if (element.type === "diamond") {
       const [x11, y11] = pointRotateRads(
         pointFrom(cx, y1),

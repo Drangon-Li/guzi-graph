@@ -84,6 +84,11 @@ import {
 } from "../../actions/actionExport";
 
 import {
+  createCaretFollow,
+  getContentEditableCaretRect,
+} from "../../wysiwyg/caretFollow";
+
+import {
   registerRichTextEditor,
   publishRichTextSelectionState,
 } from "./editorBridge";
@@ -898,17 +903,29 @@ export const richTextWysiwyg = ({
       publishSelection();
     }),
   );
+  const caretFollow = createCaretFollow(
+    app,
+    editable,
+    () => {
+      const rect = getContentEditableCaretRect(editable);
+      if (!rect) {
+        return null;
+      }
+      return {
+        left: rect.left - app.state.offsetLeft,
+        right: rect.right - app.state.offsetLeft,
+        top: rect.top - app.state.offsetTop,
+        bottom: rect.bottom - app.state.offsetTop,
+      };
+    },
+    () => editor.isComposing(),
+  );
+  disposers.push(caretFollow.destroy);
   const onBoxScroll = () => {
-    const x = box.scrollLeft;
-    const y = box.scrollTop;
-    if (!x && !y) {
+    if (!box.scrollLeft && !box.scrollTop) {
       return;
     }
     box.scrollLeft = box.scrollTop = 0;
-    app.viewport.translate((state) => ({
-      scrollX: state.scrollX - (x && x + 5) / state.zoom.value,
-      scrollY: state.scrollY - (y && y + 5) / state.zoom.value,
-    }));
   };
   box.addEventListener("scroll", onBoxScroll);
   disposers.push(() => box.removeEventListener("scroll", onBoxScroll));

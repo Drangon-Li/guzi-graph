@@ -238,7 +238,7 @@ const getConstrainedTargetViewport = (
     y: y1,
     width: x2 - x1,
     height: y2 - y1,
-    lockScroll: !!lock.scroll,
+    lockScroll: lock.scroll ?? false,
     lockZoom: !!lock.zoom,
     zoom: viewport.zoom.value,
     overscroll: resolveOverscroll(lock.overscroll),
@@ -312,6 +312,7 @@ type AppViewportDependencies = {
   getContainer: () => HTMLDivElement | null;
   getStylesPanelMode: () => StylesPanelMode;
   isGestureActive: () => boolean;
+  isPointerDown: () => boolean;
 };
 
 const resolveAnimationDuration = (
@@ -432,7 +433,10 @@ export const snapBackToConstraints = (
         const zoom = restingViewport.zoom.value;
         return {
           scrollX: restingViewport.scrollX + (overscrollX * remaining) / zoom,
-          scrollY: restingViewport.scrollY + (overscrollY * remaining) / zoom,
+          scrollY:
+            currentState.scrollConstraints.lockScroll === "x"
+              ? currentState.scrollY
+              : restingViewport.scrollY + (overscrollY * remaining) / zoom,
           zoom: restingViewport.zoom,
         };
       });
@@ -451,6 +455,11 @@ export const snapBackToConstraints = (
 export class AppViewport {
   public lastPosition = { x: 0, y: 0 };
 
+  private revealSelectionFrame: number | null = null;
+  private selectionRevealPending = false;
+  private selectionRevealMountFrames = 0;
+  private isRevealingSelection = false;
+
   private activeTransition: {
     target: Viewport & Pick<AppState, "scrollConstraints">;
   } | null = null;
@@ -464,6 +473,72 @@ export class AppViewport {
    * observing the animations. */
   readonly scrollToContentAnimationKey = Symbol("scrollToContentAnimation");
   readonly snapBackAnimationKey = Symbol("snapBackAnimation");
+  readonly caretFollowAnimationKey = Symbol("caretFollowAnimation");
+  private caretFollowTarget: { scrollX: number; scrollY: number } | null = null;
+  private caretFollowInterrupt: (() => void) | null = null;
+
+  registerCaretFollow = (onInterrupt: () => void) => {
+    this.caretFollowInterrupt = onInterrupt;
+    return () => {
+      this.cancelCaretFollow();
+      if (this.caretFollowInterrupt === onInterrupt) {
+        this.caretFollowInterrupt = null;
+      }
+    };
+  };
+
+  cancelCaretFollow = () => {
+    this.caretFollowTarget = null;
+    AnimationController.cancel(this.caretFollowAnimationKey);
+  };
+
+  /** A text edit owns only a short pan, never the zoom or the editing DOM. */
+  followCaret = (x: number, y: number) => {
+    if (this.activeTransition || this.app.unmounted) {
+      return;
+    }
+    const state = this.app.state;
+    this.caretFollowTarget = {
+      scrollX: state.scrollX + x / state.zoom.value,
+      scrollY: state.scrollY + y / state.zoom.value,
+    };
+    AnimationController.cancel(this.snapBackAnimationKey);
+    AnimationController.cancel(this.caretFollowAnimationKey);
+    const reducedMotion = this.app.ownerWindow.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    AnimationController.start<{ elapsed: number }>(
+      this.caretFollowAnimationKey,
+      ({ deltaTime, state: animationState }) => {
+        if (!this.caretFollowTarget || this.app.unmounted) {
+          return null;
+        }
+        const target = this.caretFollowTarget;
+        const elapsed = (animationState?.elapsed ?? 0) + deltaTime;
+        const blend =
+          reducedMotion || elapsed >= 180 ? 1 : 1 - Math.exp(-deltaTime / 40);
+        this.app.setState((current) => {
+          const next = {
+            ...current,
+            scrollX:
+              current.scrollX + (target.scrollX - current.scrollX) * blend,
+            scrollY:
+              current.scrollY + (target.scrollY - current.scrollY) * blend,
+          };
+          const constrained = current.scrollConstraints
+            ? constrainScrollState(next, 0)
+            : next;
+          return { scrollX: constrained.scrollX, scrollY: constrained.scrollY };
+        });
+        if (blend === 1) {
+          this.caretFollowTarget = null;
+          return null;
+        }
+        return { elapsed };
+      },
+      this.app.ownerWindow,
+    );
+  };
 
   constructor(
     private app: App,
@@ -473,14 +548,18 @@ export class AppViewport {
   get isAnimating() {
     return (
       AnimationController.running(this.scrollToContentAnimationKey) ||
-      AnimationController.running(this.snapBackAnimationKey)
+      AnimationController.running(this.snapBackAnimationKey) ||
+      AnimationController.running(this.caretFollowAnimationKey)
     );
   }
 
   /** Whether a programmatic transition into a locked viewport currently owns
    * user pan/zoom input. */
   get isLockedTransitionPending() {
-    return !!this.activeTransition?.target.scrollConstraints;
+    return (
+      !this.isRevealingSelection &&
+      !!this.activeTransition?.target.scrollConstraints
+    );
   }
 
   invalidateUIOffset = (name: ViewportUIName) => {
@@ -608,6 +687,181 @@ export class AppViewport {
 
   /** How far the sidebar reaches into the canvas (see `getSideInsets`). */
   getSidebarInsets = () => this.getSideInsets(["sidebar", "toolDock"]);
+
+  /** Wait for the newly selected element's properties panel to mount. */
+  revealSelection = () => {
+    this.interruptSelectionReveal();
+    this.selectionRevealPending = true;
+    this.selectionRevealMountFrames = 0;
+    this.scheduleSelectionReveal();
+  };
+
+  resumeSelectionReveal = () => {
+    if (this.selectionRevealPending) {
+      this.scheduleSelectionReveal();
+    }
+  };
+
+  interruptSelectionReveal = () => {
+    this.selectionRevealPending = false;
+    if (this.revealSelectionFrame !== null) {
+      this.app.ownerWindow.cancelAnimationFrame(this.revealSelectionFrame);
+      this.revealSelectionFrame = null;
+    }
+    if (this.isRevealingSelection) {
+      this.cancelTransition();
+      if (!this.app.unmounted) {
+        this.app.setState({ shouldCacheIgnoreZoom: false });
+      }
+    }
+  };
+
+  private scheduleSelectionReveal = () => {
+    if (this.revealSelectionFrame !== null) {
+      this.app.ownerWindow.cancelAnimationFrame(this.revealSelectionFrame);
+    }
+    this.revealSelectionFrame = this.app.ownerWindow.requestAnimationFrame(
+      () => {
+        this.revealSelectionFrame = null;
+        const { state } = this.app;
+        if (
+          state.isLoading ||
+          state.viewModeEnabled ||
+          this.app.props.userToFollow ||
+          state.editingTextElement ||
+          (state.scrollConstraints &&
+            state.scrollConstraints.lockScroll !== "x") ||
+          this.app.unmounted ||
+          !this.app.isInteractionEnabled() ||
+          this.dependencies.isGestureActive() ||
+          this.isAnimating
+        ) {
+          this.selectionRevealPending = false;
+          return;
+        }
+        if (this.dependencies.isPointerDown()) {
+          return;
+        }
+        const elements = this.app.scene.getSelectedElements(state);
+        if (!elements.length) {
+          this.selectionRevealPending = false;
+          return;
+        }
+        const container = this.dependencies.getContainer();
+        const panelNode =
+          container &&
+          (this.querySideUI(container, "stylesPanel") ||
+            this.querySideUI(container, "toolDock"));
+        if (!panelNode) {
+          if (this.selectionRevealMountFrames++ < 2) {
+            this.scheduleSelectionReveal();
+          } else {
+            this.selectionRevealPending = false;
+          }
+          return;
+        }
+        if (
+          panelNode
+            .getAnimations?.()
+            .some(
+              (animation) =>
+                animation.playState === "running" || animation.pending,
+            )
+        ) {
+          this.scheduleSelectionReveal();
+          return;
+        }
+        this.selectionRevealPending = false;
+        const panel =
+          this.getSideUIRect("stylesPanel") || this.getSideUIRect("toolDock");
+        if (!panel || panel.right <= panel.left || panel.bottom <= panel.top) {
+          return;
+        }
+        const [x1, y1, x2, y2] = getCommonBounds(elements);
+        const left = (x1 + state.scrollX) * state.zoom.value;
+        const right = (x2 + state.scrollX) * state.zoom.value;
+        const top = (y1 + state.scrollY) * state.zoom.value;
+        const bottom = (y2 + state.scrollY) * state.zoom.value;
+        if (
+          right <= panel.left ||
+          left >= panel.right ||
+          bottom <= panel.top ||
+          top >= panel.bottom
+        ) {
+          return;
+        }
+        const insets = this.getSideInsets([
+          "stylesPanel",
+          "sidebar",
+          "toolDock",
+        ]);
+        const start = insets.left + 16;
+        const end = state.width - insets.right - 16;
+        if (end <= start) {
+          return;
+        }
+        const center = (left + right) / 2;
+        const dx =
+          right - left > end - start
+            ? clamp(center, start, end) - center
+            : left < start
+            ? start - left
+            : right > end
+            ? end - right
+            : 0;
+        if (!dx) {
+          return;
+        }
+        const from = {
+          scrollX: state.scrollX,
+          scrollY: state.scrollY,
+          zoom: state.zoom,
+        };
+        const target = {
+          ...constrainScrollState({
+            ...state,
+            scrollX: from.scrollX + dx / state.zoom.value,
+          }),
+          scrollConstraints: state.scrollConstraints ?? null,
+        };
+        if (target.scrollX === from.scrollX) {
+          return;
+        }
+        const transition = { target };
+        this.activeTransition = transition;
+        this.isRevealingSelection = true;
+        animateToViewport(
+          from,
+          target,
+          220,
+          this.scrollToContentAnimationKey,
+          this.app.ownerWindow,
+          (update) => {
+            if (this.activeTransition === transition) {
+              this.app.setState((current) => ({
+                ...update,
+                ...constrainScrollState({ ...current, ...update }),
+              }));
+            }
+          },
+          () => {
+            if (this.activeTransition === transition) {
+              this.activeTransition = null;
+              this.isRevealingSelection = false;
+              this.app.setState((current) => ({
+                ...constrainScrollState({
+                  ...current,
+                  ...target,
+                  scrollConstraints: current.scrollConstraints,
+                }),
+                shouldCacheIgnoreZoom: false,
+              }));
+            }
+          },
+        );
+      },
+    );
+  };
 
   /**
    * Resolves user-supplied viewport offsets into concrete per-side pixel
@@ -756,6 +1010,9 @@ export class AppViewport {
    * Navigating stops following a collaborator, as a user's pan does.
    */
   setViewport = (opts: SetViewportOptions | null) => {
+    this.cancelCaretFollow();
+    this.caretFollowInterrupt?.();
+    this.interruptSelectionReveal();
     if (opts === null) {
       this.cancelTransition();
       AnimationController.cancel(this.snapBackAnimationKey);
@@ -870,6 +1127,9 @@ export class AppViewport {
       preserveScrollConstraintsSnapBack?: boolean;
     },
   ) => {
+    this.interruptSelectionReveal();
+    this.cancelCaretFollow();
+    this.caretFollowInterrupt?.();
     if (this.isLockedTransitionPending) {
       return false;
     }
@@ -935,6 +1195,13 @@ export class AppViewport {
     if (this.app.unmounted || this.dependencies.isGestureActive()) {
       return;
     }
+    if (
+      this.app.ownerWindow.matchMedia("(prefers-reduced-motion: reduce)")
+        .matches
+    ) {
+      this.constrain();
+      return;
+    }
     snapBackToConstraints(
       this.app.state,
       (updater) => this.app.setState((state) => updater(state)),
@@ -952,11 +1219,15 @@ export class AppViewport {
   );
 
   private cancelTransition = () => {
+    this.isRevealingSelection = false;
     this.activeTransition = null;
     AnimationController.cancel(this.scrollToContentAnimationKey);
   };
 
   destroy = () => {
+    this.cancelCaretFollow();
+    this.caretFollowInterrupt = null;
+    this.interruptSelectionReveal();
     this.cancelTransition();
     AnimationController.cancel(this.snapBackAnimationKey);
     this.snapBackDebounced.cancel();

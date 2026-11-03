@@ -238,6 +238,7 @@ class DesktopStorage {
       includeInferredStructure: true,
       skipRemoveConfirmation: false,
       skipTrashConfirmation: false,
+      pinnedFoldersByRoot: {},
     };
     this.hiddenPaths = new Set();
     this.session = { paths: [], activePath: null };
@@ -264,6 +265,34 @@ class DesktopStorage {
       }
     };
     const settings = await readJson("settings.json");
+    if (
+      settings?.pinnedFoldersByRoot &&
+      typeof settings.pinnedFoldersByRoot === "object" &&
+      !Array.isArray(settings.pinnedFoldersByRoot)
+    ) {
+      for (const [root, categories] of Object.entries(
+        settings.pinnedFoldersByRoot,
+      )) {
+        if (
+          !path.isAbsolute(root) ||
+          path.resolve(root) !== root ||
+          !Array.isArray(categories)
+        ) {
+          continue;
+        }
+        this.settings.pinnedFoldersByRoot[root] = [
+          ...new Set(
+            categories.filter((category) => {
+              try {
+                return categoryParts(category, this.platform).length > 0;
+              } catch {
+                return false;
+              }
+            }),
+          ),
+        ];
+      }
+    }
     for (const key of [
       "toolPanelDock",
       "toolPanelWidth",
@@ -679,6 +708,42 @@ class DesktopStorage {
     });
   }
 
+  setFolderPinned(category, pinned, rootDirectory) {
+    return this.serialize(async () => {
+      if (rootDirectory !== this.settings.rootDirectory) {
+        throw this.fail("项目根目录已变更，请重新选择。");
+      }
+      if (
+        typeof pinned !== "boolean" ||
+        !categoryParts(category, this.platform).length
+      ) {
+        throw this.fail("分类路径无效。");
+      }
+      await this.categoryDirectory(category);
+      const pins = new Set(
+        this.settings.pinnedFoldersByRoot[rootDirectory] || [],
+      );
+      if (pinned) {
+        pins.add(category);
+      } else {
+        pins.delete(category);
+      }
+      const next = {
+        ...this.settings,
+        pinnedFoldersByRoot: {
+          ...this.settings.pinnedFoldersByRoot,
+          [rootDirectory]: [...pins],
+        },
+      };
+      await atomicWrite(
+        path.join(this.userData, "settings.json"),
+        JSON.stringify(next),
+      );
+      this.settings = next;
+      return this.getSettings();
+    }, "set-folder-pinned");
+  }
+
   async grantFile(candidate) {
     const resolved = this.documentPath(candidate);
     const real = await fs.realpath(resolved).catch(async (error) => {
@@ -943,6 +1008,9 @@ class DesktopStorage {
           }
         });
       }
+      if ((await fs.lstat(current)).isSymbolicLink()) {
+        throw this.fail("目标目录不能是符号链接。");
+      }
       const real = await fs.realpath(current);
       if (!inside(root, real) || !(await fs.stat(real)).isDirectory()) {
         throw this.fail("分类不能越过项目根目录。");
@@ -1097,6 +1165,170 @@ class DesktopStorage {
         path.join(destination, path.basename(source)),
       );
     });
+  }
+
+  moveFolder(category, parentCategory, rootDirectory) {
+    return this.serialize(async () => {
+      if (
+        rootDirectory !== undefined &&
+        rootDirectory !== this.settings.rootDirectory
+      ) {
+        throw this.fail("项目根目录已变更，请重新选择。");
+      }
+      if (!categoryParts(category, this.platform).length) {
+        throw this.fail("不能移动项目根目录。");
+      }
+      const source = await this.categoryDirectory(category);
+      const parent = await this.categoryDirectory(parentCategory);
+      if (inside(source, parent)) {
+        throw this.fail("不能将分类移入自身或其子分类。");
+      }
+      const destination = path.join(parent, path.basename(source));
+      if (source === destination) {
+        return { source, destination };
+      }
+      return this.relocateFolder(source, destination);
+    }, "move-folder");
+  }
+
+  renameFolder(category, name, rootDirectory) {
+    return this.serialize(async () => {
+      if (
+        rootDirectory !== undefined &&
+        rootDirectory !== this.settings.rootDirectory
+      ) {
+        throw this.fail("项目根目录已变更，请重新选择。");
+      }
+      if (!categoryParts(category, this.platform).length) {
+        throw this.fail("不能重命名项目根目录。");
+      }
+      if (categoryParts(name, this.platform).length !== 1) {
+        throw this.fail("请输入有效的分类名称。");
+      }
+      const source = await this.categoryDirectory(category);
+      const destination = path.join(path.dirname(source), name);
+      if (source === destination) {
+        return { source, destination };
+      }
+      return this.relocateFolder(source, destination);
+    }, "rename-folder");
+  }
+
+  async relocateFolder(source, destination) {
+    const verifyTree = async (directory) => {
+      for (const entry of await fs.readdir(directory, {
+        withFileTypes: true,
+      })) {
+        if (entry.isSymbolicLink()) {
+          throw this.fail("不能移动包含符号链接的分类。");
+        }
+        if (entry.isDirectory()) {
+          await verifyTree(path.join(directory, entry.name));
+        }
+      }
+    };
+    await verifyTree(source);
+    try {
+      const existing = await fs.lstat(destination);
+      const sourceStat = await fs.lstat(source);
+      const caseOnly =
+        path.dirname(source) === path.dirname(destination) &&
+        path.basename(source).toLowerCase() ===
+          path.basename(destination).toLowerCase() &&
+        !existing.isSymbolicLink() &&
+        existing.dev === sourceStat.dev &&
+        existing.ino === sourceStat.ino;
+      if (!caseOnly) {
+        throw this.fail("已有同名分类，请选择其他位置。", "NAME_CONFLICT");
+      }
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+    const remap = (candidate) =>
+      typeof candidate === "string" && inside(source, candidate)
+        ? path.join(destination, path.relative(source, candidate))
+        : candidate;
+    const drafts = (await this.listDrafts()).filter(
+      (draft) => draft.path && inside(source, draft.path),
+    );
+    await fs.rename(source, destination);
+    const root = this.settings.rootDirectory;
+    const sourceCategory = path
+      .relative(root, source)
+      .split(path.sep)
+      .join("/");
+    const destinationCategory = path
+      .relative(root, destination)
+      .split(path.sep)
+      .join("/");
+    const pins = this.settings.pinnedFoldersByRoot[root] || [];
+    this.settings = {
+      ...this.settings,
+      pinnedFoldersByRoot: {
+        ...this.settings.pinnedFoldersByRoot,
+        [root]: pins.map((category) =>
+          category === sourceCategory ||
+          category.startsWith(`${sourceCategory}/`)
+            ? `${destinationCategory}${category.slice(sourceCategory.length)}`
+            : category,
+        ),
+      },
+    };
+    this.authorized = new Set([...this.authorized].map(remap));
+    this.copiedVersions = new Map(
+      [...this.copiedVersions].map(([candidate, version]) => [
+        remap(candidate),
+        version,
+      ]),
+    );
+    this.recentFiles = new Map(
+      [...this.recentFiles].map(([candidate, opened]) => [
+        remap(candidate),
+        opened,
+      ]),
+    );
+    this.session = {
+      paths: this.session.paths.map(remap),
+      activePath: remap(this.session.activePath),
+    };
+    const hidden = new Set([...this.hiddenPaths].map(remap));
+    this.hiddenPaths = hidden;
+    const persist = async (task) => {
+      try {
+        await task();
+      } catch (error) {
+        console.warn(
+          "[guzi-storage] moved folder metadata update failed",
+          error,
+        );
+      }
+    };
+    await persist(() => this.persistRecentFiles(this.recentFiles));
+    await persist(() =>
+      atomicWrite(
+        path.join(this.userData, "settings.json"),
+        JSON.stringify(this.settings),
+      ),
+    );
+    await persist(() => this.persistHiddenPaths(hidden));
+    await persist(() =>
+      atomicWrite(
+        path.join(this.userData, "session.json"),
+        JSON.stringify(this.session),
+      ),
+    );
+    for (const draft of drafts) {
+      await persist(() =>
+        atomicWrite(
+          this.draftPath(draft.id),
+          JSON.stringify({ ...draft, path: remap(draft.path) }),
+          { kind: "draft" },
+        ),
+      );
+    }
+    return { source, destination };
   }
 
   removeFile(candidate, mode, trashItem) {

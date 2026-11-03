@@ -56,6 +56,26 @@ describe("selection toolbar placement", () => {
       )?.left,
     ).toBe(580);
   });
+  it("leaves room for table controls above and below the selection", () => {
+    expect(
+      getSelectionToolbarPosition(
+        [200, 200, 400, 300],
+        viewport,
+        { width: 300, height: 44 },
+        { left: 16, right: 16 },
+        32,
+      ),
+    ).toEqual({ left: 410, top: 304 });
+    expect(
+      getSelectionToolbarPosition(
+        [100, 50, 200, 100],
+        viewport,
+        { width: 300, height: 44 },
+        { left: 320, right: 16 },
+        32,
+      ),
+    ).toEqual({ left: 320, top: 212 });
+  });
   it("hides for offscreen, viewport-filling, and insufficient-space selections", () => {
     expect(
       getSelectionToolbarPosition(

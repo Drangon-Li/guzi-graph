@@ -253,20 +253,30 @@ export const PresentationEditor = ({
       onController={(controller) => {
         document.presentationController = controller ?? undefined;
       }}
-      beforePresent={() => workspace.commitText(document)}
+      beforePresent={() => {
+        if (document.hasPendingImages?.()) {
+          return document.flushPendingImages!().then(() =>
+            workspace.commitText(document),
+          );
+        }
+        workspace.commitText(document);
+      }}
       onPresent={(value) => {
         document.presenting = value;
         setPresenting(value);
       }}
       onExportPdf={() => {
-        workspace.commitText(document);
         const ownerDocument = container.current!.ownerDocument;
-        void exportPresentationPdf(
-          deck,
-          document.title,
-          ownerDocument.defaultView!.desktop,
-          ownerDocument,
-        ).catch(workspace.reportError);
+        void (async () => {
+          await document.flushPendingImages?.();
+          workspace.commitText(document);
+          await exportPresentationPdf(
+            deck,
+            document.title,
+            ownerDocument.defaultView!.desktop,
+            ownerDocument,
+          );
+        })().catch(workspace.reportError);
       }}
     >
       <div className="desktop-presentation-canvas" ref={container}>

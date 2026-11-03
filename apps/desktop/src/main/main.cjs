@@ -499,6 +499,31 @@ function installIPC() {
       : storage.chooseRoot(result.filePaths[0]);
   });
   handle("list-projects", () => storage.listProjects());
+  handle("import-pdf", async () => {
+    const result = await dialog.showOpenDialog(
+      ...nativeDialogOptions({
+        title: t("导入 PDF"),
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
+        properties: ["openFile"],
+      }),
+    );
+    if (result.canceled || !result.filePaths[0]) return null;
+    const candidate = result.filePaths[0];
+    const file = await fs.open(candidate, "r");
+    try {
+      const stat = await file.stat();
+      if (!stat.isFile() || stat.size > 128 * 1024 * 1024) {
+        throw new Error(t("请选择不超过 128 MB 的 PDF 文件。"));
+      }
+      const bytes = await file.readFile();
+      return {
+        name: path.basename(candidate),
+        data: Uint8Array.from(bytes).buffer,
+      };
+    } finally {
+      await file.close();
+    }
+  });
   handle("open-files", async () => {
     const result = await dialog.showOpenDialog(
       ...nativeDialogOptions({
@@ -653,6 +678,15 @@ function installIPC() {
   );
   handle("move-file", (candidate, category) =>
     storage.moveFile(candidate, category),
+  );
+  handle("move-folder", (category, parentCategory, rootDirectory) =>
+    storage.moveFolder(category, parentCategory, rootDirectory),
+  );
+  handle("rename-folder", (category, name, rootDirectory) =>
+    storage.renameFolder(category, name, rootDirectory),
+  );
+  handle("set-folder-pinned", (category, pinned, rootDirectory) =>
+    storage.setFolderPinned(category, pinned, rootDirectory),
   );
   handle("create-folder", (category) => storage.createFolder(category));
   handle("reveal-file", async (candidate) => {

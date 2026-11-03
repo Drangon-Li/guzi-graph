@@ -1,5 +1,52 @@
 @use "../../../../../packages/excalidraw/css/theme";
 
+.excalidraw.desktop-shell {
+  .desktop-drag-preview-host {
+    position: fixed;
+    left: -10000px;
+    top: 0;
+    width: 184px;
+    padding: 20px;
+    pointer-events: none;
+  }
+  .desktop-drag-preview {
+    width: 144px;
+    overflow: hidden;
+    border: 1px solid var(--color-primary);
+    border-radius: 10px;
+    background: var(--island-bg-color);
+    color: var(--text-primary-color);
+    box-shadow: 0 8px 20px #0003;
+    transform: rotate(-5deg);
+    .desktop-file-preview {
+      width: 144px;
+      height: 96px;
+    }
+    .desktop-file-preview > img {
+      padding: 8px;
+    }
+    &,
+    * {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+  .desktop-drag-preview-title {
+    padding: 7px 10px 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .desktop-drag-preview-label {
+    padding: 2px 10px 7px;
+    color: var(--color-primary);
+    font-size: 11px;
+    font-weight: 600;
+  }
+}
+
 html,
 body,
 #root {
@@ -317,11 +364,83 @@ body,
     min-height: 0;
     flex: 1;
   }
+  .desktop-category-tree {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    .desktop-category-tree {
+      padding-left: 16px;
+    }
+  }
+  .desktop-category-row {
+    display: flex;
+    align-items: center;
+    border-radius: 8px;
+    > .excalidraw-button {
+      flex: 1;
+      min-width: 0;
+      justify-content: space-between;
+      border-color: transparent;
+      background: none;
+      padding-left: 4px;
+      padding-right: 4px;
+    }
+  }
+  .desktop-category-toggle,
+  .desktop-category-menu {
+    flex-shrink: 0;
+    border: 0;
+    padding: 2px;
+    width: 22px;
+    height: 26px;
+    color: var(--desktop-muted);
+    background: none;
+    cursor: pointer;
+    svg {
+      width: 16px;
+      height: 16px;
+    }
+  }
+  .desktop-drop-target {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+    background: var(--color-surface-primary-container) !important;
+  }
   .desktop-category-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     text-align: left;
+  }
+  .desktop-category-pin {
+    display: flex;
+    margin-left: auto;
+    color: var(--desktop-muted);
+    svg {
+      width: 13px;
+      height: 13px;
+    }
+  }
+  .desktop-category-rename {
+    flex: 1;
+    min-width: 0;
+    padding: 3px 0;
+    input {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+      padding: 4px;
+      border: 1px solid var(--color-primary);
+      border-radius: 4px;
+      background: var(--popup-bg-color);
+      color: inherit;
+      font: inherit;
+    }
+    [role="alert"] {
+      display: block;
+      font-size: 11px;
+      color: var(--color-danger);
+    }
   }
   .desktop-sidebar-hint {
     color: var(--desktop-muted);

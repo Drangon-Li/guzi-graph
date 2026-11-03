@@ -55,7 +55,11 @@ import {
 import { getCreatePath, getRenderEnvironment } from "./renderEnvironment";
 import { getElementAbsoluteCoords, getElementBounds } from "./bounds";
 import { drawImageBorder } from "./imageBorder";
-import { getSubcanvasPinGeometry, isSubcanvasPin } from "./subcanvasPin";
+import {
+  getSubcanvasPinGeometry,
+  getSubcanvasPinTitle,
+  isSubcanvasPin,
+} from "./subcanvasPin";
 import { getUncroppedImageElement } from "./cropElement";
 import { LinearElementEditor } from "./linearElementEditor";
 import {
@@ -110,7 +114,17 @@ const isPendingImageElement = (
   isInitializedImageElement(element) &&
   !renderConfig.imageCache.has(element.fileId);
 
-const getCanvasPadding = (element: ExcalidrawElement) => {
+const getCanvasPadding = (element: ExcalidrawElement, deviceScale = 1) => {
+  if (isSubcanvasPin(element)) {
+    const title = getSubcanvasPinTitle(element);
+    if (title) {
+      return Math.max(
+        20,
+        -title.x * deviceScale + 2,
+        (title.y + title.height - element.height) * deviceScale + 2,
+      );
+    }
+  }
   switch (element.type) {
     case "freedraw":
       return element.strokeWidth * 12;
@@ -248,7 +262,7 @@ const cappedElementCanvasSize = (
   // ~ safari width/height limit based on developer.mozilla.org.
   const WIDTH_HEIGHT_LIMIT = 32767;
 
-  const padding = getCanvasPadding(element);
+  const padding = getCanvasPadding(element, deviceScale);
 
   const [x1, y1, x2, y2] = getElementAbsoluteCoords(element, elementsMap);
   const elementWidth =
@@ -294,7 +308,7 @@ const generateElementCanvas = (
   const environment = getRenderEnvironment(renderConfig.renderEnvironment);
   const canvas = environment.createCanvas();
   const context = canvas.getContext("2d")!;
-  const padding = getCanvasPadding(element);
+  const padding = getCanvasPadding(element, renderConfig.scale);
 
   const { width, height, scale } = cappedElementCanvasSize(
     element,
@@ -498,6 +512,26 @@ const drawElementOnCanvas = (
           path(geometry.paper, true);
           context.fill();
           context.stroke();
+          const title = getSubcanvasPinTitle(
+            element,
+            renderConfig.renderEnvironment,
+          );
+          if (title) {
+            context.font = title.font;
+            context.fillStyle = applyDarkModeFilter(
+              element.strokeColor,
+              renderConfig.theme === THEME.DARK,
+            );
+            context.textAlign = "center";
+            context.textBaseline = "top";
+            title.lines.forEach((line, index) =>
+              context.fillText(
+                line,
+                element.width / 2,
+                title.y + index * title.lineHeight,
+              ),
+            );
+          }
           path(geometry.fold);
           context.stroke();
           path(geometry.stem);
@@ -926,7 +960,7 @@ const drawElementFromCanvas = (
   // (`generateElementCanvas`); the blit's size math needs the same one, so it
   // is the render config's, not the owner window's
   const devicePixelRatio = renderConfig.scale;
-  const padding = getCanvasPadding(element);
+  const padding = getCanvasPadding(element, devicePixelRatio);
   const [x1, y1, x2, y2] = getElementAbsoluteCoords(element, allElementsMap);
   const cx =
     ((x1 + x2) / 2 + positionOffset.x + appState.scrollX) * devicePixelRatio;
@@ -1034,7 +1068,9 @@ const drawElementFromCanvas = (
       const anchorSceneX = anchorCoords?.[0] ?? x1;
       const anchorSceneY = anchorCoords?.[1] ?? y1;
       const anchorPadding =
-        anchor === element ? padding : getCanvasPadding(anchor);
+        anchor === element
+          ? padding
+          : getCanvasPadding(anchor, devicePixelRatio);
       const anchorX =
         (anchorSceneX + positionOffset.x + appState.scrollX) *
           devicePixelRatio -

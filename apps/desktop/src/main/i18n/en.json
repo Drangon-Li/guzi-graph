@@ -1,4 +1,10 @@
 {
+  "不能重命名项目根目录。": "The project root folder cannot be renamed.",
+  "请输入有效的分类名称。": "Enter a valid category name.",
+  "不能移动项目根目录。": "The project root folder cannot be moved.",
+  "不能将分类移入自身或其子分类。": "A category cannot be moved into itself or a descendant.",
+  "不能移动包含符号链接的分类。": "Categories containing symbolic links cannot be moved.",
+  "已有同名分类，请选择其他位置。": "A category with this name already exists. Choose another location.",
   "请输入有效的文件名。": "Enter a valid file name.",
   "分类必须是根目录内的相对路径。": "Categories must use a relative path within the project directory.",
   "分类路径无效。": "Invalid category path.",
@@ -107,5 +113,7 @@
   "当前平台不支持应用内更新。": "This platform does not support in-app updates.",
   "检查更新失败，请稍后重试。": "Could not check for updates. Please try again later.",
   "下载更新失败，请稍后重试。": "Could not download the update. Please try again later.",
-  "安装更新失败，请重新下载后重试。": "Could not install the update. Download it again and retry."
+  "安装更新失败，请重新下载后重试。": "Could not install the update. Download it again and retry.",
+  "导入 PDF": "Import PDF",
+  "请选择不超过 128 MB 的 PDF 文件。": "Choose a PDF file no larger than 128 MB."
 }

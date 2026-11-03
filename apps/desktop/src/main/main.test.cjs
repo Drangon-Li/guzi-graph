@@ -1083,6 +1083,26 @@ test("settings language rebuilds native menus and localizes dialogs and validati
   assert.ok(calls.menu.some(({ label }) => label === "文件"));
 });
 
+test("PDF import reads only the native selection as binary and cancellation is inert", async (t) => {
+  const { base, calls, invoke } = await harness(t);
+  assert.equal(await invoke("import-pdf"), null);
+  const source = path.join(base, "scan.pdf");
+  const bytes = Buffer.from([37, 80, 68, 70, 45, 255, 128, 0]);
+  await fs.writeFile(source, bytes);
+  calls.openResult = { canceled: false, filePaths: [source] };
+  const imported = await invoke("import-pdf");
+  assert.equal(imported.name, "scan.pdf");
+  assert.deepEqual(Buffer.from(imported.data), bytes);
+  assert.deepEqual(Array.from(calls.openDialog.filters[0].extensions), ["pdf"]);
+  assert.deepEqual(await fs.readFile(source), bytes);
+  const oversized = path.join(base, "large.pdf");
+  const file = await fs.open(oversized, "w");
+  await file.truncate(128 * 1024 * 1024 + 1);
+  await file.close();
+  calls.openResult = { canceled: false, filePaths: [oversized] };
+  await assert.rejects(invoke("import-pdf"), /128 MB/);
+});
+
 test("new IPC endpoints reject foreign senders before text, removal or PDF side effects", async (t) => {
   const { calls, handlers, event } = await harness(t);
   for (const endpoint of [

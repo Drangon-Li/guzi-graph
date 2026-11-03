@@ -1,4 +1,6 @@
 import path from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
 
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -12,6 +14,21 @@ const modules = [
   "fractional-indexing",
   "laser-pointer",
 ];
+
+const pdfRoot = path.dirname(
+  createRequire(import.meta.url).resolve("pdfjs-dist/package.json"),
+);
+const pdfAssets = ["cmaps", "standard_fonts", "wasm", "iccs"].flatMap(
+  (directory) =>
+    readdirSync(path.join(pdfRoot, directory)).map((name) => ({
+      fileName: `pdfjs/${directory}/${name}`,
+      source: path.join(pdfRoot, directory, name),
+    })),
+);
+pdfAssets.push({
+  fileName: "pdfjs/LICENSE",
+  source: path.join(pdfRoot, "LICENSE"),
+});
 
 export default defineConfig({
   base: "./",
@@ -49,6 +66,34 @@ export default defineConfig({
     dedupe: ["react", "react-dom", "jotai"],
   },
   plugins: [
+    {
+      name: "desktop-pdf-resources",
+      generateBundle() {
+        for (const asset of pdfAssets) {
+          this.emitFile({
+            type: "asset",
+            fileName: asset.fileName,
+            source: readFileSync(asset.source),
+          });
+        }
+      },
+      configureServer(server) {
+        server.middlewares.use((request, response, next) => {
+          const url = request.url?.split("?")[0];
+          const asset = pdfAssets.find((item) => `/${item.fileName}` === url);
+          if (!asset) {
+            return next();
+          }
+          response.setHeader(
+            "Content-Type",
+            asset.fileName.endsWith(".wasm")
+              ? "application/wasm"
+              : "application/octet-stream",
+          );
+          response.end(readFileSync(asset.source));
+        });
+      },
+    },
     react(),
     svgr(),
     {

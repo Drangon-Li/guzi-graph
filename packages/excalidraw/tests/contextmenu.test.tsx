@@ -65,19 +65,48 @@ describe("context menu keyboard navigation", () => {
     });
     const menu = screen.getByRole("menu");
     const buttons = menu.querySelectorAll("button");
+    const scrollIntoView = vi.fn();
+    buttons.forEach((button) => {
+      button.scrollIntoView = scrollIntoView;
+    });
     fireEvent.keyDown(menu.parentElement!, { key: "ArrowDown" });
     expect(buttons[0]).toHaveFocus();
+    expect(scrollIntoView).toHaveBeenLastCalledWith({
+      block: "nearest",
+      inline: "nearest",
+    });
     fireEvent.keyDown(buttons[0], { key: "ArrowUp" });
     expect(buttons[buttons.length - 1]).toHaveFocus();
     fireEvent.keyDown(buttons[buttons.length - 1], { key: "Home" });
     expect(buttons[0]).toHaveFocus();
     fireEvent.keyDown(buttons[0], { key: "End" });
     expect(buttons[buttons.length - 1]).toHaveFocus();
+    expect(scrollIntoView).toHaveBeenCalledTimes(4);
     fireEvent.keyDown(buttons[buttons.length - 1], { key: "Escape" });
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(h.state.contextMenu).toBeNull();
     expect(h.elements).toHaveLength(0);
   });
+
+  it.each([
+    [800, 480],
+    [320, 300],
+    [10, 0],
+  ])(
+    "limits menu height in a %ipx viewport to %ipx",
+    async (height, maxHeight) => {
+      await render(<Excalidraw handleKeyboardGlobally={true} />);
+      API.setAppState({ height });
+      fireEvent.contextMenu(GlobalTestState.interactiveCanvas, {
+        button: 2,
+        clientX: 1,
+        clientY: 1,
+      });
+      expect(Number.parseFloat(screen.getByRole("menu").style.maxHeight)).toBe(
+        maxHeight,
+      );
+    },
+  );
 
   it("closes on Tab and returns focus to the editor", async () => {
     const view = await render(<Excalidraw handleKeyboardGlobally={true} />);
@@ -177,6 +206,9 @@ describe("contextMenu element", () => {
     ];
 
     expect(contextMenu).not.toBeNull();
+    expect(
+      contextMenu?.querySelector('li[data-testid="subcanvasTitle"]'),
+    ).toBeNull();
     expect(contextMenuOptions?.length).toBe(expectedContextMenuItems.length);
     expectedContextMenuItems.forEach((item) => {
       expect(

@@ -380,13 +380,15 @@ const Break = {
  * their composed variants for wrapping. Any code that needs exact source offsets should
  * keep in mind that this assumes the input text is already NFC-normalized.
  */
-export const parseTokens = (line: string) => {
+export const parseTokens = (line: string, normalize = true) => {
   const breakLineRegex = getLineBreakRegex();
 
   // normalizing to single-codepoint composed chars due to canonical equivalence
   // of multi-codepoint versions for chars like č, で (~ so that we don't break a line in between c and ˇ)
   // filtering due to multi-codepoint chars like 👨‍👩‍👧‍👦, 👩🏽‍🦰
-  return line.normalize("NFC").split(breakLineRegex).filter(Boolean);
+  return (normalize ? line.normalize("NFC") : line)
+    .split(breakLineRegex)
+    .filter(Boolean);
 };
 
 /**

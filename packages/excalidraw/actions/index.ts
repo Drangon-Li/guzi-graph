@@ -1,5 +1,6 @@
 export { actionDeleteSelected } from "./actionDeleteSelected";
 export { actionInsertTable, actionTableProperties } from "./actionTable";
+export { actionSubcanvasTitle } from "./actionSubcanvas";
 export {
   actionBringForward,
   actionBringToFront,

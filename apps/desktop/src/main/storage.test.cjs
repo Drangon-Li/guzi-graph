@@ -481,6 +481,7 @@ test("defaults require explicit project directory selection", async (t) => {
     includeInferredStructure: true,
     skipRemoveConfirmation: false,
     skipTrashConfirmation: false,
+    pinnedFoldersByRoot: {},
   });
   assert.deepEqual(await storage.listProjects(), {
     rootDirectory: null,
@@ -1291,6 +1292,10 @@ test("history paths match project categories under Windows and POSIX path semant
           return candidate;
         },
         stat,
+        lstat: async (candidate) => ({
+          ...(await stat(candidate)),
+          isSymbolicLink: () => false,
+        }),
         readdir: async (directory) =>
           directories.get(directory).map((name) => ({
             name,
@@ -1822,5 +1827,364 @@ test("element color and font size preferences persist and reject invalid shortcu
     await assert.rejects(
       storage.updateSettings({ editorPreferences: invalid }),
     );
+  }
+});
+
+test("moving a category preserves its tree, unsaved drafts and persisted paths", async (t) => {
+  const { root, storage, create } = await fixture(t);
+  await storage.createFolder("work/nested/empty");
+  await storage.createFolder("archive");
+  const first = await create("work/first.excalidraw", "first");
+  const nested = await create("work/nested/second.excalidraw", "second");
+  await fs.writeFile(path.join(root, "work", "attachment.txt"), "attachment");
+  await storage.recordOpenedFile(first.path);
+  await storage.recordOpenedFile(nested.path);
+  await storage.setSession({
+    paths: [first.path, nested.path],
+    activePath: nested.path,
+  });
+  const draft = {
+    id: randomUUID(),
+    path: nested.path,
+    title: "unsaved",
+    content: "dirty",
+    modifiedAt: 456,
+  };
+  await storage.writeDraft(draft);
+  const moved = await storage.moveFolder("work", "archive");
+  assert.deepEqual(moved, {
+    source: path.join(root, "work"),
+    destination: path.join(root, "archive", "work"),
+  });
+  const destination = path.join(
+    moved.destination,
+    "nested",
+    "second.excalidraw",
+  );
+  await assert.rejects(fs.stat(first.path), { code: "ENOENT" });
+  assert.equal(
+    await fs.readFile(path.join(moved.destination, "attachment.txt"), "utf8"),
+    "attachment",
+  );
+  assert.ok(
+    (
+      await fs.stat(path.join(moved.destination, "nested", "empty"))
+    ).isDirectory(),
+  );
+  assert.equal((await storage.listDrafts())[0].path, destination);
+  const saved = await storage.saveFile({
+    ...request(nested, "dirty"),
+    path: destination,
+  });
+  assert.equal(saved.path, destination);
+  const restarted = await new DesktopStorage(storage.userData).initialize();
+  const index = await restarted.listProjects();
+  assert.deepEqual(index.folders, [
+    "archive",
+    "archive/work",
+    "archive/work/nested",
+    "archive/work/nested/empty",
+  ]);
+  assert.equal(index.files.length, 2);
+  assert.ok(
+    index.history.every((file) =>
+      file.path.startsWith(moved.destination + path.sep),
+    ),
+  );
+  assert.deepEqual(restarted.getSession(), {
+    paths: [path.join(moved.destination, "first.excalidraw"), destination],
+    activePath: destination,
+  });
+  assert.equal((await restarted.listDrafts())[0].path, destination);
+  await storage.moveFolder("archive/work", "");
+  assert.equal(await fs.readFile(nested.path, "utf8"), "dirty");
+});
+
+test("moving empty categories rejects collisions, self, descendants and path escapes", async (t) => {
+  const { root, storage } = await fixture(t);
+  await storage.createFolder("work/empty");
+  await storage.createFolder("archive/work");
+  await assert.rejects(storage.moveFolder("work", "archive"), {
+    code: "NAME_CONFLICT",
+  });
+  await assert.rejects(storage.moveFolder("work", "work"));
+  await assert.rejects(storage.moveFolder("work", "work/empty"));
+  await assert.rejects(storage.moveFolder("", "archive"));
+  await assert.rejects(storage.moveFolder("../work", "archive"));
+  await assert.rejects(storage.moveFolder("work", "../archive"));
+  await storage.moveFolder("work/empty", "archive");
+  assert.ok((await fs.stat(path.join(root, "archive", "empty"))).isDirectory());
+  assert.ok((await fs.stat(path.join(root, "work"))).isDirectory());
+  assert.ok((await fs.stat(path.join(root, "archive", "work"))).isDirectory());
+});
+
+test("category moves reject source, destination and nested symbolic links", async (t) => {
+  const { root, storage } = await fixture(t);
+  await storage.createFolder("work/nested");
+  await storage.createFolder("archive");
+  await fs.symlink(path.join(root, "work"), path.join(root, "alias"));
+  await assert.rejects(storage.moveFolder("alias", "archive"));
+  await assert.rejects(storage.moveFolder("archive", "alias"));
+  await fs.symlink(
+    path.join(root, "archive"),
+    path.join(root, "work", "nested", "link"),
+  );
+  await assert.rejects(storage.moveFolder("work", "archive"));
+  assert.ok((await fs.stat(path.join(root, "work", "nested"))).isDirectory());
+});
+
+test("renaming categories preserves attachments, empty descendants, drafts and session paths", async (t) => {
+  const { root, storage, create } = await fixture(t);
+  await storage.createFolder("work/nested/empty");
+  const document = await create("work/nested/drawing.excalidraw", "original");
+  await fs.writeFile(path.join(root, "work", "attachment.txt"), "attachment");
+  await storage.setSession({
+    paths: [document.path],
+    activePath: document.path,
+  });
+  await storage.recordOpenedFile(document.path);
+  const draft = {
+    id: randomUUID(),
+    path: document.path,
+    title: "dirty",
+    content: "dirty",
+    modifiedAt: 123,
+  };
+  await storage.writeDraft(draft);
+  const moved = await storage.renameFolder("work", "renamed");
+  const destination = path.join(
+    root,
+    "renamed",
+    "nested",
+    "drawing.excalidraw",
+  );
+  assert.deepEqual(moved, {
+    source: path.join(root, "work"),
+    destination: path.join(root, "renamed"),
+  });
+  assert.ok(
+    (
+      await fs.stat(path.join(root, "renamed", "nested", "empty"))
+    ).isDirectory(),
+  );
+  assert.equal(
+    await fs.readFile(path.join(root, "renamed", "attachment.txt"), "utf8"),
+    "attachment",
+  );
+  await storage.saveFile({ ...request(document, "dirty"), path: destination });
+  const restarted = await new DesktopStorage(storage.userData).initialize();
+  assert.equal(await fs.readFile(destination, "utf8"), "dirty");
+  assert.equal((await restarted.listDrafts())[0].path, destination);
+  assert.deepEqual(restarted.getSession(), {
+    paths: [destination],
+    activePath: destination,
+  });
+  assert.equal((await restarted.listProjects()).history[0].path, destination);
+});
+
+test("category rename rejects invalid names, collisions and symbolic links and accepts its current name", async (t) => {
+  const { root, storage } = await fixture(t);
+  await storage.createFolder("work/nested");
+  await storage.createFolder("other");
+  for (const name of [
+    "",
+    ".",
+    "..",
+    "../outside",
+    "nested/name",
+    "bad\\name",
+    " bad",
+    "bad ",
+    "bad\0name",
+  ]) {
+    await assert.rejects(storage.renameFolder("work", name));
+  }
+  await assert.rejects(storage.renameFolder("work", "other"), {
+    code: "NAME_CONFLICT",
+  });
+  await assert.rejects(storage.renameFolder("", "renamed"));
+  await assert.rejects(storage.renameFolder("../work", "renamed"));
+  assert.deepEqual(await storage.renameFolder("work", "work"), {
+    source: path.join(root, "work"),
+    destination: path.join(root, "work"),
+  });
+  await fs.symlink(path.join(root, "work"), path.join(root, "alias"));
+  await assert.rejects(storage.renameFolder("alias", "renamed"));
+  await fs.symlink(
+    path.join(root, "other"),
+    path.join(root, "work", "nested", "link"),
+  );
+  await assert.rejects(storage.renameFolder("work", "renamed"));
+  assert.ok((await fs.stat(path.join(root, "work"))).isDirectory());
+});
+
+test("folder pins remain isolated by root, update serially, reject stale roots and survive restart", async (t) => {
+  const { base, root, storage } = await fixture(t);
+  await storage.createFolder("work/nested");
+  await Promise.all([
+    storage.setFolderPinned("work", true, root),
+    storage.setFolderPinned("work/nested", true, root),
+  ]);
+  const other = path.join(base, "other");
+  await fs.mkdir(other);
+  await storage.chooseRoot(other);
+  await storage.createFolder("work");
+  await storage.setFolderPinned("work", true, other);
+  await assert.rejects(storage.setFolderPinned("work", false, root));
+  await storage.chooseRoot(root);
+  await storage.setFolderPinned("work", false, root);
+  const restarted = await new DesktopStorage(storage.userData).initialize();
+  assert.deepEqual(restarted.getSettings().pinnedFoldersByRoot, {
+    [root]: ["work/nested"],
+    [other]: ["work"],
+  });
+  await assert.rejects(storage.setFolderPinned("", true, root));
+  await assert.rejects(storage.setFolderPinned("../work", true, root));
+  await assert.rejects(storage.setFolderPinned("missing", true, root));
+});
+
+test("folder rename and move remap parent and descendant pins while preserving other roots", async (t) => {
+  const { base, root, storage } = await fixture(t);
+  const other = path.join(base, "other");
+  await fs.mkdir(other);
+  await storage.chooseRoot(other);
+  await storage.createFolder("work");
+  await storage.setFolderPinned("work", true, other);
+  await storage.chooseRoot(root);
+  await storage.createFolder("work/nested/empty");
+  await storage.createFolder("archive");
+  for (const category of [
+    "work",
+    "work/nested",
+    "work/nested/empty",
+    "archive",
+  ]) {
+    await storage.setFolderPinned(category, true, root);
+  }
+  await storage.renameFolder("work", "renamed");
+  await storage.moveFolder("renamed", "archive");
+  await storage.renameFolder("archive/renamed/nested", "child");
+  const restarted = await new DesktopStorage(storage.userData).initialize();
+  assert.deepEqual(restarted.getSettings().pinnedFoldersByRoot, {
+    [root]: [
+      "archive/renamed",
+      "archive/renamed/child",
+      "archive/renamed/child/empty",
+      "archive",
+    ],
+    [other]: ["work"],
+  });
+});
+
+test("legacy settings load without rewriting and malformed folder pins are ignored", async (t) => {
+  const { base, root, storage } = await fixture(t);
+  const target = path.join(base, "userData", "settings.json");
+  const legacy = JSON.stringify({ rootDirectory: root, theme: "dark" });
+  await fs.writeFile(target, legacy);
+  const restarted = await new DesktopStorage(storage.userData).initialize();
+  assert.deepEqual(restarted.getSettings().pinnedFoldersByRoot, {});
+  assert.equal(await fs.readFile(target, "utf8"), legacy);
+  await fs.writeFile(
+    target,
+    JSON.stringify({
+      pinnedFoldersByRoot: {
+        relative: ["work"],
+        [root]: ["work", "work", "nested/child", "../escape", "", null],
+      },
+    }),
+  );
+  const restored = await new DesktopStorage(storage.userData).initialize();
+  assert.deepEqual(restored.getSettings().pinnedFoldersByRoot, {
+    [root]: ["work", "nested/child"],
+  });
+});
+
+test("committed category rename remains successful when pin metadata cannot be persisted", async (t) => {
+  const { root, storage } = await fixture(t);
+  await storage.createFolder("work/nested");
+  await storage.setFolderPinned("work/nested", true, root);
+  const rename = fs.rename;
+  t.mock.method(fs, "rename", async (source, destination) => {
+    if (destination === path.join(storage.userData, "settings.json")) {
+      throw Object.assign(new Error("settings denied"), { code: "EACCES" });
+    }
+    return rename(source, destination);
+  });
+  const warning = t.mock.method(console, "warn", () => {});
+  assert.equal(
+    (await storage.renameFolder("work", "renamed")).destination,
+    path.join(root, "renamed"),
+  );
+  assert.ok(
+    (await fs.stat(path.join(root, "renamed", "nested"))).isDirectory(),
+  );
+  assert.deepEqual(storage.getSettings().pinnedFoldersByRoot[root], [
+    "renamed/nested",
+  ]);
+  assert.equal(warning.mock.calls.length, 1);
+});
+
+test("case-only category rename accepts the same inode and persists the new casing", async (t) => {
+  const { root, storage } = await fixture(t);
+  await storage.createFolder("Artical/nested");
+  await storage.setFolderPinned("Artical/nested", true, root);
+  const source = path.join(root, "Artical");
+  const destination = path.join(root, "artical");
+  const lstat = fs.lstat;
+  const stat = t.mock.method(fs, "lstat", (candidate, ...args) =>
+    lstat(candidate === destination ? source : candidate, ...args),
+  );
+  await storage.renameFolder("Artical", "artical");
+  stat.mock.restore();
+  const restarted = await new DesktopStorage(storage.userData).initialize();
+  assert.deepEqual((await restarted.listProjects()).folders, [
+    "artical",
+    "artical/nested",
+  ]);
+  assert.deepEqual(restarted.getSettings().pinnedFoldersByRoot[root], [
+    "artical/nested",
+  ]);
+});
+
+test("queued category mutations reject the original root after a directory switch", async (t) => {
+  const { base, root, storage } = await fixture(t);
+  await storage.createFolder("work");
+  await storage.createFolder("archive");
+  const other = path.join(base, "other");
+  await fs.mkdir(path.join(other, "work"), { recursive: true });
+  await fs.mkdir(path.join(other, "archive"));
+  let release;
+  const blocked = storage.serialize(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  await Promise.resolve();
+  const choosing = storage.chooseRoot(other);
+  // Wait for the directory picker preflight to enqueue its root transaction.
+  while (storage.pendingOperations.size < 2) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  const results = Promise.allSettled([
+    storage.renameFolder("work", "renamed", root),
+    storage.moveFolder("work", "archive", root),
+    storage.setFolderPinned("work", true, root),
+  ]);
+  release();
+  await blocked;
+  await choosing;
+  for (const result of await results) {
+    assert.equal(result.status, "rejected");
+    assert.match(result.reason.message, /根目录已变更/);
+  }
+  for (const directory of [root, other]) {
+    assert.ok((await fs.stat(path.join(directory, "work"))).isDirectory());
+    await assert.rejects(fs.stat(path.join(directory, "renamed")), {
+      code: "ENOENT",
+    });
+    await assert.rejects(fs.stat(path.join(directory, "archive", "work")), {
+      code: "ENOENT",
+    });
   }
 });

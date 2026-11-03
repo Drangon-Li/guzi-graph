@@ -253,7 +253,10 @@ import type {
 
 import type { Mutable, ValueOf } from "@excalidraw/common/utility-types";
 
-import { getSubcanvasId } from "../features/subcanvas/model";
+import {
+  getSubcanvasId,
+  synchronizeSubcanvasTitles,
+} from "../features/subcanvas/model";
 import { convertStickyNoteToSubcanvas } from "../features/subcanvas/operations";
 
 import {
@@ -304,6 +307,7 @@ import {
 import { createRedoAction, createUndoAction } from "../actions/actionHistory";
 import { actionTextAutoResize } from "../actions/actionTextAutoResize";
 import { actionTableProperties } from "../actions/actionTable";
+import { actionSubcanvasTitle } from "../actions/actionSubcanvas";
 import { actionToggleViewMode } from "../actions/actionToggleViewMode";
 import { ActionManager } from "../actions/manager";
 import { actions } from "../actions/register";
@@ -390,6 +394,7 @@ import {
 import { useAppStateValue } from "../hooks/useAppStateValue";
 
 import { TablePropertiesDialog } from "../features/table/TableActions";
+import { SubcanvasTitleDialog } from "../features/subcanvas/SubcanvasTitleDialog";
 
 import ConvertElementTypePopup, {
   getConversionTypeFromElements,
@@ -674,6 +679,40 @@ class App extends React.Component<AppProps, AppState> {
 
   public files: BinaryFiles = {};
   public imageCache: AppClassProperties["imageCache"] = new Map();
+  private pendingImageImports = new Set<Promise<void>>();
+  private imageInitializationQueue: (() => void)[] = [];
+  private activeImageInitializations = 0;
+
+  private queueImageInitialization = <T,>(initialize: () => Promise<T>) =>
+    new Promise<T>((resolve, reject) => {
+      const run = () => {
+        this.activeImageInitializations++;
+        void initialize()
+          .then(resolve, reject)
+          .finally(() => {
+            this.activeImageInitializations--;
+            this.imageInitializationQueue.shift()?.();
+          });
+      };
+      if (this.activeImageInitializations < 4) {
+        run();
+      } else {
+        this.imageInitializationQueue.push(run);
+      }
+    });
+
+  private waitForPendingImages = async () => {
+    while (this.pendingImageImports.size) {
+      await Promise.allSettled(this.pendingImageImports);
+    }
+  };
+
+  public trackImageImport = (task: Promise<void>) => {
+    this.pendingImageImports.add(task);
+    const cleanup = () => this.pendingImageImports.delete(task);
+    void task.then(cleanup, cleanup);
+    return task;
+  };
   private iFrameRefs = new Map<ExcalidrawElement["id"], HTMLIFrameElement>();
   /**
    * Indicates whether the embeddable's url has been validated for rendering.
@@ -731,6 +770,7 @@ class App extends React.Component<AppProps, AppState> {
       this.canvasViewportRef.current ?? this.excalidrawContainerRef.current,
     getStylesPanelMode: () => this.stylesPanelMode,
     isGestureActive: () => gesture.pointers.size >= 2 || this.pan.isActive(),
+    isPointerDown: () => gesture.pointers.size > 0,
   });
   public wheel: AppWheel = new AppWheel(this);
   public selection: AppSelection = new AppSelection(this);
@@ -826,6 +866,8 @@ class App extends React.Component<AppProps, AppState> {
       isDestroyed: false,
       commitEditing: () => this.text.textWysiwygSubmitHandler?.(),
       desktopSave: (saveAs = false) => saveDesktopDocument(this, saveAs),
+      hasPendingImages: () => this.pendingImageImports.size > 0,
+      waitForPendingImages: this.waitForPendingImages,
       pasteFromClipboard: (event) => this.clipboard.pasteFromHost(event),
       updateScene: this.updateScene,
       applyDeltas: this.applyDeltas,
@@ -2691,6 +2733,16 @@ class App extends React.Component<AppProps, AppState> {
                                 }
                               />
                             )}
+                            {this.state.openDialog?.name ===
+                              "subcanvasTitle" && (
+                              <SubcanvasTitleDialog
+                                app={this}
+                                elementId={this.state.openDialog.elementId}
+                                onClose={() =>
+                                  this.setState({ openDialog: null })
+                                }
+                              />
+                            )}
                             <StaticCanvas
                               canvas={this.canvas}
                               rc={this.rc}
@@ -3215,6 +3267,18 @@ class App extends React.Component<AppProps, AppState> {
     let editingTextElement: AppState["editingTextElement"] | null = null;
     if (actionResult.elements) {
       this.scene.replaceAllElements(actionResult.elements);
+      const subscenes =
+        actionResult.appState?.subscenes ?? this.state.subscenes;
+      const synchronized = synchronizeSubcanvasTitles(
+        actionResult.elements,
+        subscenes,
+      );
+      if (synchronized !== subscenes) {
+        actionResult = {
+          ...actionResult,
+          appState: { ...actionResult.appState, subscenes: synchronized },
+        };
+      }
       didUpdate = true;
     }
 
@@ -4378,6 +4442,13 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   componentDidUpdate(prevProps: AppProps, prevState: AppState) {
+    if (
+      this._initialized &&
+      !prevState.isLoading &&
+      prevState.selectedElementIds !== this.state.selectedElementIds
+    ) {
+      this.viewport.revealSelection();
+    }
     if (this._initialized && prevState.openSidebar !== this.state.openSidebar) {
       // Restoring an initially open sidebar must preserve the saved camera.
       this.centerOnSidebarDockResize = true;
@@ -4878,6 +4949,11 @@ class App extends React.Component<AppProps, AppState> {
 
     const wasMultiTouchGesture = gesture.pointers.size >= 2;
     gesture.pointers.delete(event.pointerId);
+    if (event.type === "pointercancel") {
+      this.viewport.interruptSelectionReveal();
+    } else if (event.type === "pointerup" && gesture.pointers.size === 0) {
+      this.viewport.resumeSelectionReveal();
+    }
 
     // the multi-touch viewport gesture just disengaged: release the
     // rubberband that was withheld while it was active
@@ -7743,6 +7819,7 @@ class App extends React.Component<AppProps, AppState> {
   private handleCanvasPointerDown = (
     event: React.PointerEvent<HTMLElement>,
   ) => {
+    this.viewport.interruptSelectionReveal();
     if (
       !this.isInteractionEnabled() &&
       !this.isToolSupported(this.state.activeTool.type)
@@ -10954,7 +11031,17 @@ class App extends React.Component<AppProps, AppState> {
     }
   };
 
-  public insertImages = async (
+  public insertImages = (
+    imageFiles: File[],
+    sceneX: number,
+    sceneY: number,
+  ) => {
+    return this.trackImageImport(
+      this.initializeImages(imageFiles, sceneX, sceneY),
+    );
+  };
+
+  private initializeImages = async (
     imageFiles: File[],
     sceneX: number,
     sceneY: number,
@@ -10971,21 +11058,23 @@ class App extends React.Component<AppProps, AppState> {
 
     // Create, position, insert and select initialized (replacing placeholders)
     const initialized = await Promise.all(
-      placeholders.map(async (placeholder, i) => {
-        try {
-          return await this.initializeImage(
-            placeholder,
-            await normalizeFile(imageFiles[i]),
-          );
-        } catch (error: any) {
-          this.setState({
-            errorMessage: error.message || t("errors.imageInsertError"),
-          });
-          return newElementWith(placeholder as ExcalidrawImageElement, {
-            isDeleted: true,
-          });
-        }
-      }),
+      placeholders.map((placeholder, i) =>
+        this.queueImageInitialization(async () => {
+          try {
+            return await this.initializeImage(
+              placeholder,
+              await normalizeFile(imageFiles[i]),
+            );
+          } catch (error: any) {
+            this.setState({
+              errorMessage: error.message || t("errors.imageInsertError"),
+            });
+            return newElementWith(placeholder as ExcalidrawImageElement, {
+              isDeleted: true,
+            });
+          }
+        }),
+      ),
     );
     const initializedMap = arrayToMap(initialized);
 
@@ -11018,7 +11107,12 @@ class App extends React.Component<AppProps, AppState> {
     });
   };
 
-  private handleAppOnDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+  private handleAppOnDrop = (event: React.DragEvent<HTMLDivElement>) =>
+    this.trackImageImport(this.importDroppedFiles(event));
+
+  private importDroppedFiles = async (
+    event: React.DragEvent<HTMLDivElement>,
+  ) => {
     if (!this.isFileDropEnabled()) {
       return;
     }
@@ -11545,6 +11639,7 @@ class App extends React.Component<AppProps, AppState> {
       CONTEXT_MENU_SEPARATOR,
       actionToggleCropEditor,
       actionTableProperties,
+      actionSubcanvasTitle,
       CONTEXT_MENU_SEPARATOR,
       ...options,
       CONTEXT_MENU_SEPARATOR,

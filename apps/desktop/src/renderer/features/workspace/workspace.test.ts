@@ -192,6 +192,7 @@ describe("desktop document workspace", () => {
     plugin = () => {};
     cancelPlugin = () => {};
     desktop = {
+      importPdf: vi.fn().mockResolvedValue(null),
       getUpdateState: vi.fn(),
       checkStartupUpdate: vi.fn().mockResolvedValue(null),
       checkForUpdates: vi.fn(),
@@ -239,6 +240,9 @@ describe("desktop document workspace", () => {
       removeFile: vi.fn().mockResolvedValue(undefined),
       renameFile: vi.fn(),
       moveFile: vi.fn(),
+      moveFolder: vi.fn(),
+      renameFolder: vi.fn(),
+      setFolderPinned: vi.fn(),
       createFolder: vi.fn(),
       revealFile: vi.fn(),
       getSession: vi.fn().mockResolvedValue({ paths: [], activePath: null }),
@@ -3312,6 +3316,337 @@ describe("desktop document workspace", () => {
     },
   );
 
+  it("moves all open descendants and saves dirty documents at their new paths", async () => {
+    const hook = await mount();
+    const first = addDocument(hook);
+    const second = addDocument(hook);
+    first.document.path = "/drawings/work/first.excalidraw";
+    second.document.path = "/drawings/work/nested/second.excalidraw";
+    first.document.modifiedAt = 123;
+    first.edit(2);
+    second.edit(3);
+    vi.mocked(desktop.moveFolder).mockResolvedValue({
+      source: "/drawings/work",
+      destination: "/drawings/archive/work",
+    });
+    vi.mocked(desktop.saveFile).mockResolvedValue(null);
+    await act(async () => {
+      expect(await hook.result.current.moveFolder("work", "archive")).toBe(
+        true,
+      );
+    });
+    expect(first.document.path).toBe("/drawings/archive/work/first.excalidraw");
+    expect(second.document.path).toBe(
+      "/drawings/archive/work/nested/second.excalidraw",
+    );
+    expect(first.document.dirty).toBe(true);
+    expect(first.document.modifiedAt).toBe(123);
+    await act(async () => {
+      await hook.result.current.requestSave(first.document);
+    });
+    expect(desktop.saveFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/drawings/archive/work/first.excalidraw",
+        expectedModifiedAt: 123,
+      }),
+    );
+    expect(desktop.setSession).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        paths: [first.document.path, second.document.path],
+      }),
+    );
+  });
+
+  it("holds new saves until a folder move finishes", async () => {
+    const hook = await mount();
+    const first = addDocument(hook);
+    first.document.path = "/drawings/work/first.excalidraw";
+    first.edit(2);
+    let complete!: (value: { source: string; destination: string }) => void;
+    vi.mocked(desktop.moveFolder).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    vi.mocked(desktop.saveFile).mockResolvedValue(null);
+    let moving!: Promise<boolean>;
+    let saving!: Promise<boolean>;
+    await act(async () => {
+      moving = hook.result.current.moveFolder("work", "archive");
+      await Promise.resolve();
+      saving = hook.result.current.requestSave(first.document);
+    });
+    expect(desktop.saveFile).not.toHaveBeenCalled();
+    await act(async () => {
+      complete({
+        source: "/drawings/work",
+        destination: "/drawings/archive/work",
+      });
+      await moving;
+      await saving;
+    });
+    expect(desktop.saveFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/drawings/archive/work/first.excalidraw",
+      }),
+    );
+  });
+
+  it("renames descendants and publishes the refreshed index and relocation together", async () => {
+    const hook = await mount();
+    const first = addDocument(hook);
+    first.document.path = "/drawings/work/nested/first.excalidraw";
+    first.edit(2);
+    vi.mocked(desktop.renameFolder).mockResolvedValue({
+      source: "/drawings/work",
+      destination: "/drawings/renamed",
+    });
+    let finishIndex!: (
+      index: Awaited<ReturnType<DesktopAPI["listProjects"]>>,
+    ) => void;
+    vi.mocked(desktop.listProjects).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishIndex = resolve;
+        }),
+    );
+    vi.mocked(desktop.getSettings).mockResolvedValue({
+      ...settings,
+      pinnedFoldersByRoot: { "/drawings": ["renamed", "renamed/nested"] },
+    });
+    let renaming!: Promise<boolean>;
+    act(() => {
+      renaming = hook.result.current.renameFolder("work", "renamed");
+    });
+    await waitFor(() => expect(finishIndex).toBeDefined());
+    expect(hook.result.current.folderRelocation).toBeNull();
+    expect(first.document.path).toBe(
+      "/drawings/renamed/nested/first.excalidraw",
+    );
+    await act(async () => {
+      finishIndex({
+        rootDirectory: "/drawings",
+        files: [],
+        folders: ["renamed", "renamed/nested"],
+        history: [],
+      });
+      expect(await renaming).toBe(true);
+    });
+    expect(hook.result.current.index.folders).toEqual([
+      "renamed",
+      "renamed/nested",
+    ]);
+    expect(hook.result.current.folderRelocation).toMatchObject({
+      id: 1,
+      rootDirectory: "/drawings",
+      source: "work",
+      destination: "renamed",
+    });
+    expect(
+      hook.result.current.settings.pinnedFoldersByRoot?.["/drawings"],
+    ).toEqual(["renamed", "renamed/nested"]);
+    vi.mocked(desktop.saveFile).mockResolvedValue(null);
+    await act(async () => {
+      await hook.result.current.requestSave(first.document);
+    });
+    expect(desktop.saveFile).toHaveBeenCalledWith(
+      expect.objectContaining({ path: first.document.path }),
+    );
+    expect(desktop.setSession).toHaveBeenLastCalledWith(
+      expect.objectContaining({ paths: [first.document.path] }),
+    );
+  });
+
+  it.each([true, false])(
+    "holds saves during category rename and releases the barrier after success=%j",
+    async (succeeds) => {
+      const hook = await mount();
+      const first = addDocument(hook);
+      first.document.path = "/drawings/work/first.excalidraw";
+      first.edit(2);
+      let finish!: () => void;
+      vi.mocked(desktop.renameFolder).mockImplementation(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = () =>
+              succeeds
+                ? resolve({
+                    source: "/drawings/work",
+                    destination: "/drawings/renamed",
+                  })
+                : reject(new Error("rename failed"));
+          }),
+      );
+      vi.mocked(desktop.saveFile).mockResolvedValue(null);
+      let renaming!: Promise<boolean>;
+      let saving!: Promise<boolean>;
+      act(() => {
+        renaming = hook.result.current.renameFolder("work", "renamed");
+      });
+      await waitFor(() => expect(finish).toBeDefined());
+      act(() => {
+        saving = hook.result.current.requestSave(first.document);
+      });
+      expect(desktop.saveFile).not.toHaveBeenCalled();
+      await act(async () => {
+        finish();
+        expect(await renaming).toBe(succeeds);
+        await saving;
+      });
+      expect(first.document.relocating).toBeUndefined();
+      expect(desktop.saveFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: succeeds
+            ? "/drawings/renamed/first.excalidraw"
+            : "/drawings/work/first.excalidraw",
+        }),
+      );
+      if (!succeeds) {
+        expect(hook.result.current.error).toBe("rename failed");
+        expect(hook.result.current.folderRelocation).toBeNull();
+      }
+    },
+  );
+
+  it("waits for existing saves and draft writes before category rename", async () => {
+    const hook = await mount();
+    const first = addDocument(hook);
+    first.document.path = "/drawings/work/first.excalidraw";
+    first.edit(2);
+    let finishSave!: (value: DiskDocument | null) => void;
+    let finishDraft!: () => void;
+    first.document.draftTask = new Promise((resolve) => {
+      finishDraft = resolve;
+    });
+    vi.mocked(desktop.saveFile).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishSave = resolve;
+        }),
+    );
+    vi.mocked(desktop.renameFolder).mockResolvedValue({
+      source: "/drawings/work",
+      destination: "/drawings/renamed",
+    });
+    let saving!: Promise<boolean>;
+    let renaming!: Promise<boolean>;
+    act(() => {
+      saving = hook.result.current.requestSave(first.document);
+      renaming = hook.result.current.renameFolder("work", "renamed");
+    });
+    expect(desktop.renameFolder).not.toHaveBeenCalled();
+    await act(async () => {
+      finishSave(null);
+      await saving;
+    });
+    expect(desktop.renameFolder).not.toHaveBeenCalled();
+    await act(async () => {
+      finishDraft();
+      expect(await renaming).toBe(true);
+    });
+    expect(desktop.renameFolder).toHaveBeenCalledWith(
+      "work",
+      "renamed",
+      "/drawings",
+    );
+  });
+
+  it("preserves a newly selected root when a previous root pin response arrives late", async () => {
+    const hook = await mount();
+    let finishPin!: (value: DesktopSettings) => void;
+    vi.mocked(desktop.setFolderPinned).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishPin = resolve;
+        }),
+    );
+    vi.mocked(desktop.chooseDirectory).mockResolvedValue({
+      ...settings,
+      rootDirectory: "/other",
+      pinnedFoldersByRoot: { "/other": ["other-pin"] },
+    });
+    vi.mocked(desktop.listProjects).mockResolvedValue({
+      rootDirectory: "/other",
+      files: [],
+      folders: [],
+      history: [],
+    });
+    let pinning!: Promise<boolean>;
+    act(() => {
+      pinning = hook.result.current.setFolderPinned("work", true);
+    });
+    await waitFor(() => expect(finishPin).toBeDefined());
+    await act(async () => {
+      await hook.result.current.changeDirectory();
+    });
+    await act(async () => {
+      finishPin({
+        ...settings,
+        pinnedFoldersByRoot: { "/drawings": ["work"] },
+      });
+      expect(await pinning).toBe(true);
+    });
+    expect(desktop.setFolderPinned).toHaveBeenCalledWith(
+      "work",
+      true,
+      "/drawings",
+    );
+    expect(hook.result.current.settings.rootDirectory).toBe("/other");
+    expect(hook.result.current.settings.pinnedFoldersByRoot).toEqual({
+      "/drawings": ["work"],
+      "/other": ["other-pin"],
+    });
+    expect(hook.result.current.index.rootDirectory).toBe("/other");
+  });
+
+  it("keeps a pin made while the renamed project index is still refreshing", async () => {
+    const hook = await mount();
+    vi.mocked(desktop.renameFolder).mockResolvedValue({
+      source: "/drawings/work",
+      destination: "/drawings/renamed",
+    });
+    let finishIndex!: (
+      value: Awaited<ReturnType<DesktopAPI["listProjects"]>>,
+    ) => void;
+    vi.mocked(desktop.listProjects).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishIndex = resolve;
+        }),
+    );
+    vi.mocked(desktop.getSettings).mockResolvedValue({
+      ...settings,
+      pinnedFoldersByRoot: { "/drawings": [] },
+    });
+    vi.mocked(desktop.setFolderPinned).mockResolvedValue({
+      ...settings,
+      pinnedFoldersByRoot: { "/drawings": ["renamed"] },
+    });
+    let renaming!: Promise<boolean>;
+    act(() => {
+      renaming = hook.result.current.renameFolder("work", "renamed");
+    });
+    await waitFor(() => expect(finishIndex).toBeDefined());
+    await act(async () => {
+      expect(await hook.result.current.setFolderPinned("renamed", true)).toBe(
+        true,
+      );
+    });
+    await act(async () => {
+      finishIndex({
+        rootDirectory: "/drawings",
+        files: [],
+        folders: ["renamed"],
+        history: [],
+      });
+      expect(await renaming).toBe(true);
+    });
+    expect(
+      hook.result.current.settings.pinnedFoldersByRoot?.["/drawings"],
+    ).toEqual(["renamed"]);
+  });
+
   it("renames an unsaved tab and uses the name for its first save", async () => {
     const hook = await mount();
     const first = addDocument(hook);
@@ -3584,6 +3919,10 @@ describe("desktop document workspace", () => {
     expect(desktop.confirmClose).not.toHaveBeenCalled();
     hook.rerender({ blocked: false });
     act(() => command("new"));
+    expect(hook.result.current.newCanvasDialog).toBe(true);
+    expect(hook.result.current.documents).toHaveLength(0);
+    act(() => hook.result.current.createCanvas({}, "新画布"));
+    expect(hook.result.current.newCanvasDialog).toBe(false);
     expect(hook.result.current.documents).toHaveLength(1);
   });
 
