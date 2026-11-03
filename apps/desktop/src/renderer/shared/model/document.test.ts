@@ -467,3 +467,81 @@ it("keeps absence and other empty array values distinct from null", () => {
     documentContentSignature(absentBinding),
   );
 });
+
+it("reduces embedded image data to a digest in the retained comparison signature", () => {
+  const image = `data:image/png;base64,${"A".repeat(200_000)}`;
+  const content = (dataURL: string) =>
+    JSON.stringify({
+      ...comparisonScene(),
+      files: {
+        image: {
+          id: "image",
+          dataURL,
+          mimeType: "image/png",
+          created: 1,
+        },
+      },
+    });
+  const signature = documentContentSignature(content(image));
+  expect(signature.length).toBeLessThan(5_000);
+  expect(signature).not.toContain("AAAAAAAA");
+  expect(documentContentSignature(content(image))).toBe(signature);
+  expect(documentContentSignature(content(`${image.slice(0, -1)}B`))).not.toBe(
+    signature,
+  );
+  expect(documentContentSignature(content(`${image}A`))).not.toBe(signature);
+});
+
+it("detects in-place element version changes without re-serializing unchanged scenes", () => {
+  const note = newStickyNoteElement({
+    type: "stickynote",
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+  });
+  const elements = [note];
+  const state: SceneSnapshot = {
+    elements,
+    appState: {
+      ...getDefaultAppState(),
+      width: 1000,
+      height: 800,
+      offsetLeft: 0,
+      offsetTop: 0,
+    },
+    files: {},
+  };
+  const track = createSceneTracker();
+  const first = track(state);
+  expect(track({ ...state, elements: [...elements] })).toBe(first);
+  // Excalidraw mutates elements in place and bumps their version.
+  Object.assign(note, { x: 50, version: note.version + 1 });
+  const moved = track(state);
+  expect(moved).not.toBe(first);
+  expect(JSON.parse(moved).elements[0].x).toBe(50);
+  Object.assign(note, { isDeleted: true, version: note.version + 1 });
+  expect(JSON.parse(track(state)).elements[0].isDeleted).toBe(true);
+});
+
+it("reuses digests of live file objects without changing the signature", () => {
+  const image = `data:image/png;base64,${"C".repeat(50_000)}`;
+  const content = (dataURL: string) =>
+    JSON.stringify({
+      ...comparisonScene(),
+      files: {
+        image: { id: "image", dataURL, mimeType: "image/png", created: 1 },
+      },
+    });
+  const live = { dataURL: image };
+  const baseline = documentContentSignature(content(image));
+  expect(documentContentSignature(content(image), () => live)).toBe(baseline);
+  // A live object that no longer matches the content is never trusted.
+  const changed = `${image.slice(0, -1)}D`;
+  expect(documentContentSignature(content(changed), () => live)).toBe(
+    documentContentSignature(content(changed)),
+  );
+  expect(documentContentSignature(content(changed), () => live)).not.toBe(
+    baseline,
+  );
+});

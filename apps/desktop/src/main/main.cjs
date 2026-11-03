@@ -272,6 +272,14 @@ async function receiveFiles(paths) {
   }
 }
 
+// Hand a Node buffer to IPC as an ArrayBuffer without iterating it byte by
+// byte; reuse the backing store when the buffer owns all of it.
+function toArrayBuffer(bytes) {
+  return bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+    ? bytes.buffer
+    : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
 function nativeDialogOptions(options) {
   return window ? [window, options] : [options];
 }
@@ -518,7 +526,7 @@ function installIPC() {
       const bytes = await file.readFile();
       return {
         name: path.basename(candidate),
-        data: Uint8Array.from(bytes).buffer,
+        data: toArrayBuffer(bytes),
       };
     } finally {
       await file.close();
@@ -644,10 +652,7 @@ function installIPC() {
     const data = await renderPdf(BrowserWindow, request, {
       language: storage.getSettings().language,
     });
-    return data.buffer.slice(
-      data.byteOffset,
-      data.byteOffset + data.byteLength,
-    );
+    return toArrayBuffer(data);
   });
   handle("save-pdf", async (request) => {
     validatePdfRequest(request);

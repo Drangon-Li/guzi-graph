@@ -1,10 +1,106 @@
-const { randomUUID } = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const os = require("node:os");
 const { pathToFileURL } = require("node:url");
 
 const { translate } = require("./i18n/i18n.cjs");
+
+// Electron keeps every partition's session alive until the app quits, so a
+// fresh partition per export would leak one browser context per PDF. Exports
+// share one in-memory partition instead; its restrictive handlers stay
+// installed while any export is active and allow only active temporary pages.
+const PDF_PARTITION = "pdf-export";
+const sessionLeases = new WeakMap();
+
+function leaseSession(printSession, documentURL) {
+  let lease = sessionLeases.get(printSession);
+  if (!lease) {
+    const urls = new Set();
+    lease = { urls };
+    sessionLeases.set(printSession, lease);
+    printSession.setPermissionRequestHandler(
+      (_contents, _permission, callback) => callback(false),
+    );
+    printSession.setPermissionCheckHandler(() => false);
+    printSession.webRequest.onBeforeRequest((details, callback) =>
+      callback({
+        cancel: !urls.has(details.url) && !details.url.startsWith("data:"),
+      }),
+    );
+  }
+  lease.urls.add(documentURL);
+}
+
+function releaseSession(printSession, documentURL) {
+  const lease = sessionLeases.get(printSession);
+  if (!lease) {
+    return;
+  }
+  lease.urls.delete(documentURL);
+  if (lease.urls.size) {
+    return;
+  }
+  sessionLeases.delete(printSession);
+  printSession.setPermissionRequestHandler(null);
+  printSession.setPermissionCheckHandler(null);
+  printSession.webRequest.onBeforeRequest(null);
+}
+
+const escapeHTML = (value) =>
+  value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[character]),
+  );
+
+const svgImage = (svg) =>
+  `<img src="data:image/svg+xml;base64,${Buffer.from(svg).toString(
+    "base64",
+  )}">`;
+
+const PDF_CSP =
+  "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; script-src 'none'; base-uri 'none'; form-action 'none'\">";
+
+// Only the variant that is printed is built: each embedded SVG is base64
+// encoded once, which matters for large drawings with inline images.
+function pdfDocument(request, pageSize) {
+  const title = escapeHTML(request.name);
+  if (!request.pages?.length) {
+    return `<!doctype html><title>${title}</title>${PDF_CSP}<style>@page{size:${
+      pageSize.width
+    }in ${pageSize.height}in;margin:0}html,body{margin:0;width:${
+      pageSize.width
+    }in;height:${
+      pageSize.height
+    }in;overflow:hidden}img{display:block;width:100%;height:100%;object-fit:contain}</style>${svgImage(
+      request.svg,
+    )}`;
+  }
+  const pages = [request, ...request.pages];
+  const pageStyles = pages
+    .map(
+      (page, index) =>
+        `@page canvas${index}{size:${page.width / 96}in ${
+          page.height / 96
+        }in;margin:0}.canvas${index}{page:canvas${index};width:${
+          page.width / 96
+        }in;height:${page.height / 96}in}`,
+    )
+    .join("");
+  const images = pages
+    .map(
+      (page, index) =>
+        `<section class="canvas${index}">${svgImage(page.svg)}</section>`,
+    )
+    .join("");
+  return `<!doctype html><title>${title}</title>${PDF_CSP}<style>${pageStyles}html,body{margin:0}section{break-after:page;overflow:hidden}section:last-child{break-after:auto}img{display:block;width:100%;height:100%;object-fit:contain}</style>${images}`;
+}
 
 function validatePdfRequest(request) {
   if (
@@ -44,6 +140,7 @@ async function renderPdf(
   let printWindow;
   let contents;
   let printSession;
+  let documentURL;
   let stage = "准备页面";
   let failure;
   let rejectStep;
@@ -141,11 +238,11 @@ async function renderPdf(
     });
     check();
     const documentPath = path.join(directory, "drawing.html");
-    const documentURL = pathToFileURL(documentPath).href;
+    documentURL = pathToFileURL(documentPath).href;
     printWindow = new BrowserWindow({
       show: false,
       webPreferences: {
-        partition: `pdf-${randomUUID()}`,
+        partition: PDF_PARTITION,
         contextIsolation: true,
         sandbox: true,
         nodeIntegration: false,
@@ -158,53 +255,11 @@ async function renderPdf(
     printSession = contents.session;
     contents.once("render-process-gone", onRendererGone);
     contents.once("destroyed", onDestroyed);
-    printSession.setPermissionRequestHandler(
-      (_contents, _permission, callback) => callback(false),
-    );
-    printSession.setPermissionCheckHandler(() => false);
-    printSession.webRequest.onBeforeRequest((details, callback) =>
-      callback({
-        cancel: details.url !== documentURL && !details.url.startsWith("data:"),
-      }),
-    );
+    leaseSession(printSession, documentURL);
     contents.setWindowOpenHandler(() => ({ action: "deny" }));
     contents.on("will-attach-webview", preventNavigation);
     contents.on("will-navigate", preventNavigation);
-    const image = Buffer.from(request.svg).toString("base64");
-    const title = request.name.replace(
-      /[&<>"']/g,
-      (character) =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        }[character]),
-    );
-    let html = `<!doctype html><title>${title}</title><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; script-src 'none'; base-uri 'none'; form-action 'none'"><style>@page{size:${pageSize.width}in ${pageSize.height}in;margin:0}html,body{margin:0;width:${pageSize.width}in;height:${pageSize.height}in;overflow:hidden}img{display:block;width:100%;height:100%;object-fit:contain}</style><img src="data:image/svg+xml;base64,${image}">`;
-    if (request.pages?.length) {
-      const pages = [request, ...request.pages];
-      const pageStyles = pages
-        .map(
-          (page, index) =>
-            `@page canvas${index}{size:${page.width / 96}in ${
-              page.height / 96
-            }in;margin:0}.canvas${index}{page:canvas${index};width:${
-              page.width / 96
-            }in;height:${page.height / 96}in}`,
-        )
-        .join("");
-      const images = pages
-        .map(
-          (page, index) =>
-            `<section class="canvas${index}"><img src="data:image/svg+xml;base64,${Buffer.from(
-              page.svg,
-            ).toString("base64")}"></section>`,
-        )
-        .join("");
-      html = `<!doctype html><title>${title}</title><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; script-src 'none'; base-uri 'none'; form-action 'none'"><style>${pageStyles}html,body{margin:0}section{break-after:page;overflow:hidden}section:last-child{break-after:auto}img{display:block;width:100%;height:100%;object-fit:contain}</style>${images}`;
-    }
+    const html = pdfDocument(request, pageSize);
     await run("写入页面", () =>
       fs.writeFile(documentPath, html, { mode: 0o600, flag: "wx" }),
     );
@@ -239,9 +294,7 @@ async function renderPdf(
       }
     } finally {
       if (printSession) {
-        printSession.setPermissionRequestHandler(null);
-        printSession.setPermissionCheckHandler(null);
-        printSession.webRequest.onBeforeRequest(null);
+        releaseSession(printSession, documentURL);
       }
       if (directory) {
         await fs.rm(directory, { recursive: true, force: true });

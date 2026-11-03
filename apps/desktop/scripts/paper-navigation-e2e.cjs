@@ -123,6 +123,35 @@ const editor = async (operation = {}) => page.locator(".desktop-editor-pane.is-a
   }
   return read();
 }, operation);
+// Ring buffer of viewport changes and pointer input. An intermittent horizontal
+// lock jump was seen between two samples, so a failure must show what happened
+// in between rather than only the sampled result.
+const installFrameTrace = () => page.locator(".desktop-editor-pane.is-active").evaluate((mounted) => {
+  const owner = (node) => node?.[Object.keys(node).find((key) => key.startsWith("__reactFiber$"))];
+  let app;
+  for (let fiber = owner(mounted.querySelector(".excalidraw")); fiber; fiber = fiber.return) {
+    if (fiber.stateNode?.viewport && fiber.stateNode?.scene) { app = fiber.stateNode; break; }
+  }
+  if (!app) throw new Error("Cannot locate mounted production editor");
+  const view = mounted.ownerDocument.defaultView;
+  const trace = (view.__paperNavigationTrace = []);
+  const push = (entry) => { trace.push({ t: Math.round(view.performance.now()), ...entry }); if (trace.length > 400) trace.shift(); };
+  let last = "";
+  const frame = () => {
+    const state = app.state;
+    const key = JSON.stringify([state.scrollX, state.scrollY, state.width, state.offsetLeft, state.offsetTop, state.scrollConstraints?.offsets]);
+    if (key !== last) {
+      last = key;
+      push({ kind: "viewport", scrollX: state.scrollX, scrollY: state.scrollY, width: state.width, offsetLeft: state.offsetLeft, offsetTop: state.offsetTop, constraintOffsets: state.scrollConstraints?.offsets ?? null });
+    }
+    view.requestAnimationFrame(frame);
+  };
+  frame();
+  for (const type of ["pointerdown", "pointermove", "pointerup"]) {
+    view.addEventListener(type, (event) => push({ kind: type, x: event.clientX, y: event.clientY, buttons: event.buttons }), { capture: true, passive: true });
+  }
+  view.addEventListener("resize", () => push({ kind: "resize", innerWidth: view.innerWidth, innerHeight: view.innerHeight }));
+});
 const sample = async (label) => {
   const state = await editor();
   report.evidence[label] = state;
@@ -292,6 +321,7 @@ async function main() {
 
   await newDocument();
   await zoomTo(0.6);
+  await installFrameTrace();
   const initial = await atEnd();
   const progress = async (label, expected) => {
     const bar = page.locator(".desktop-editor-pane.is-active [role=progressbar]");
@@ -538,5 +568,6 @@ for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => {
 });
 bounded(main(), 300000, "paper navigation regression").catch(async (error) => {
   report.failure = error.stack; process.exitCode = 1;
+  report.frameTrace = await page?.evaluate(() => window.__paperNavigationTrace ?? null).catch(() => null);
   await page?.screenshot({ path: path.join(artifacts, "failure.png") }).catch(() => {});
 }).finally(stop);

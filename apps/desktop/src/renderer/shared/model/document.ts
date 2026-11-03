@@ -6,6 +6,7 @@ import { cleanAppStateForExport } from "@excalidraw/excalidraw/appState";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 
+import { stringDigest } from "./hash";
 import { fileName } from "./path";
 
 export interface SceneSnapshot {
@@ -14,23 +15,28 @@ export interface SceneSnapshot {
   files: BinaryFiles;
 }
 
-const fileSignatures = new WeakMap<object, string>();
+type FileStamp = readonly [id: string, mimeType: string, dataURL: string];
 
-const fileSignature = (file: BinaryFiles[string]) => {
-  let signature = fileSignatures.get(file);
-  if (signature === undefined) {
-    signature = JSON.stringify([file.id, file.mimeType, file.dataURL]);
-    fileSignatures.set(file, signature);
-  }
-  return signature;
-};
+const sameFiles = (left: readonly FileStamp[], right: readonly FileStamp[]) =>
+  left.length === right.length &&
+  left.every(
+    (file, index) =>
+      file[0] === right[index][0] &&
+      file[1] === right[index][1] &&
+      // Usually the same string instance, so this is a pointer comparison.
+      file[2] === right[index][2],
+  );
 
-// Image strings are compared only when a file object changes; pointer events
-// keep the same objects and never serialize the embedded image data.
+// Called on every editor change (pointer moves included), so the unchanged
+// path compares element stamps and image strings in place: it neither builds a
+// scene-sized signature string nor keeps a second copy of any embedded image.
 export const createSceneTracker = () => {
-  let elementSignature = "";
+  let ids: string[] = [];
+  let versions: number[] = [];
+  let versionNonces: number[] = [];
+  let deleted: boolean[] = [];
   let appStateSignature = "";
-  let referencedFiles: string[] = [];
+  let referencedFiles: FileStamp[] = [];
   let content = "";
   let previousScenes: AppState["subscenes"] | undefined;
   let subsceneSignature = "";
@@ -41,20 +47,31 @@ export const createSceneTracker = () => {
     { signature: string; fileIds: string[] }
   >();
 
+  const elementsChanged = (elements: SceneSnapshot["elements"]) => {
+    if (elements.length !== ids.length) {
+      return true;
+    }
+    for (let index = 0; index < elements.length; index++) {
+      const element = elements[index];
+      if (
+        element.id !== ids[index] ||
+        element.version !== versions[index] ||
+        element.versionNonce !== versionNonces[index] ||
+        element.isDeleted !== deleted[index]
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   return (snapshot: SceneSnapshot) => {
-    const nextElements = JSON.stringify(
-      snapshot.elements.map(({ id, version, versionNonce, isDeleted }) => [
-        id,
-        version,
-        versionNonce,
-        isDeleted,
-      ]),
-    );
+    const changedElements = elementsChanged(snapshot.elements);
     const { subscenes, ...persistentState } = cleanAppStateForExport(
       snapshot.appState,
     );
     const nextAppState = JSON.stringify(persistentState);
-    if (subscenes !== previousScenes || nextElements !== elementSignature) {
+    if (subscenes !== previousScenes || changedElements) {
       const scenes = collectSubcanvasScenes(snapshot.elements, subscenes);
       const signatures: string[] = [];
       const fileIds = new Set<string>();
@@ -93,19 +110,28 @@ export const createSceneTracker = () => {
         fileIds.add(element.fileId);
       }
     }
-    const nextFiles = [...fileIds]
-      .sort()
-      .map((id) => snapshot.files[id] && fileSignature(snapshot.files[id]))
-      .filter((value): value is string => !!value);
+    const nextFiles: FileStamp[] = [];
+    for (const id of [...fileIds].sort()) {
+      const file = snapshot.files[id];
+      if (file) {
+        nextFiles.push([file.id, file.mimeType, file.dataURL]);
+      }
+    }
     if (
-      nextElements !== elementSignature ||
+      changedElements ||
       nextAppState !== appStateSignature ||
       subsceneSignature !== previousSubsceneSignature ||
-      nextFiles.length !== referencedFiles.length ||
-      nextFiles.some((value, index) => value !== referencedFiles[index]) ||
+      !sameFiles(nextFiles, referencedFiles) ||
       !content
     ) {
-      elementSignature = nextElements;
+      if (changedElements) {
+        ids = snapshot.elements.map((element) => element.id);
+        versions = snapshot.elements.map((element) => element.version);
+        versionNonces = snapshot.elements.map(
+          (element) => element.versionNonce,
+        );
+        deleted = snapshot.elements.map((element) => element.isDeleted);
+      }
       appStateSignature = nextAppState;
       previousSubsceneSignature = subsceneSignature;
       referencedFiles = nextFiles;
@@ -132,9 +158,42 @@ type ComparisonScene = {
   appState?: {
     subscenes?: Record<string, { elements: ComparisonElement[] }>;
   };
+  files?: Record<string, { dataURL?: unknown } | null>;
 };
 
-export const documentContentSignature = (content: string) => {
+type KnownFile = { dataURL: string };
+export type KnownFileLookup = (id: string) => KnownFile | undefined;
+
+const knownFileDigests = new WeakMap<
+  KnownFile,
+  { dataURL: string; digest: string }
+>();
+
+// Hashing every image on every edit would cost more than the old full copy,
+// so digests are cached per live file object. The cached digest is used only
+// when that object holds exactly the parsed string (a fast memory compare).
+const fileDigest = (dataURL: string, known: KnownFile | undefined) => {
+  if (!known || known.dataURL !== dataURL) {
+    return stringDigest(dataURL);
+  }
+  let cached = knownFileDigests.get(known);
+  if (!cached || cached.dataURL !== known.dataURL) {
+    cached = { dataURL: known.dataURL, digest: stringDigest(known.dataURL) };
+    knownFileDigests.set(known, cached);
+  }
+  return cached.digest;
+};
+
+/**
+ * Canonical comparison form of a saved document. Runs on every content change
+ * and its result is retained per document, so embedded images are reduced to
+ * digests instead of being copied into the signature. `knownFile` may supply
+ * the live file objects the content was serialized from to reuse digests.
+ */
+export const documentContentSignature = (
+  content: string,
+  knownFile?: KnownFileLookup,
+) => {
   const value = JSON.parse(content) as
     | (ComparisonScene & { type: "excalidraw" })
     | { type: "guzi-presentation"; slides: { scene: ComparisonScene }[] };
@@ -162,6 +221,11 @@ export const documentContentSignature = (content: string) => {
     scene.elements = elements(scene.elements);
     for (const child of Object.values(scene.appState?.subscenes ?? {})) {
       child.elements = elements(child.elements);
+    }
+    for (const [id, file] of Object.entries(scene.files ?? {})) {
+      if (file && typeof file.dataURL === "string") {
+        file.dataURL = fileDigest(file.dataURL, knownFile?.(id));
+      }
     }
   };
   if (value.type === "guzi-presentation") {

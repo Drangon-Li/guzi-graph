@@ -27,7 +27,10 @@ import type {
   SocketId,
 } from "@excalidraw/excalidraw/types";
 
-import { createSceneTracker } from "../../shared/model/document";
+import {
+  createSceneTracker,
+  documentContentSignature,
+} from "../../shared/model/document";
 import { DEFAULT_EDITOR_PREFERENCES } from "../../shared/config/editorPreferences";
 import { Projects } from "../projects/Projects";
 
@@ -1587,10 +1590,12 @@ describe("desktop document workspace", () => {
       finish(disk("/drawings/talk.guzi-presentation", submitted));
       expect(await saving).toBe(true);
     });
-    expect(document.savedContent).toBe(submitted);
+    expect(document.savedContentSignature).toBe(
+      documentContentSignature(submitted),
+    );
     expect(document.dirty).toBe(true);
     expect(
-      JSON.parse(document.savedContent!).slides.map(
+      JSON.parse(submitted).slides.map(
         (slide: any) => slide.scene.elements[0].x,
       ),
     ).toEqual([33, 22]);
@@ -1617,11 +1622,12 @@ describe("desktop document workspace", () => {
     const first = attachSlide(hook, document);
     expect(document.dirty).toBe(false);
     expect(document.initialData.elements![0].x).toBe(11);
-    const saved = document.savedContent;
+    const saved = document.savedContentSignature;
+    expect(saved).toBe(documentContentSignature(document.content));
     act(() => hook.result.current.selectSlide(document, "second"));
     attachSlide(hook, document);
     expect(document.initialData.elements![0].x).toBe(22);
-    expect(document.savedContent).toBe(saved);
+    expect(document.savedContentSignature).toBe(saved);
     expect(document.dirty).toBe(false);
     act(() => hook.result.current.selectSlide(document, "first"));
     const firstAgain = attachSlide(hook, document);
@@ -1629,7 +1635,7 @@ describe("desktop document workspace", () => {
     expect(first.api.commitEditing).toHaveBeenCalled();
     act(() => hook.result.current.selectSlide(document, "second"));
     attachSlide(hook, document);
-    expect(document.savedContent).toBe(saved);
+    expect(document.savedContentSignature).toBe(saved);
     expect(document.dirty).toBe(true);
     act(() => hook.result.current.selectSlide(document, "first"));
     attachSlide(hook, document);
@@ -1657,7 +1663,7 @@ describe("desktop document workspace", () => {
       title: draft.title,
       dirty: true,
       recovered: true,
-      savedContent: null,
+      savedContentSignature: null,
     });
     expect(desktop.writeDraft).toHaveBeenCalledWith({ ...draft, path: null });
     expect(document.presentation!.slides.map((slide) => slide.title)).toEqual([
@@ -1668,7 +1674,7 @@ describe("desktop document workspace", () => {
     attachSlide(hook, document);
     expect(document.initialData.elements![0].x).toBe(22);
     expect(document.dirty).toBe(true);
-    expect(document.savedContent).toBeNull();
+    expect(document.savedContentSignature).toBeNull();
     vi.mocked(desktop.saveFile).mockImplementation(async (request) =>
       disk("/drawings/recovered.guzi-presentation", request.content),
     );
@@ -2117,7 +2123,7 @@ describe("desktop document workspace", () => {
       ))!;
     });
     expect(copy.path).toBeNull();
-    expect(copy.savedContent).toBeNull();
+    expect(copy.savedContentSignature).toBeNull();
     expect(copy.recovered).toBe(false);
     expect(copy.title).toBe("Transformer");
     expect(copy.initialData.scrollToContent).toBe(true);
@@ -2135,7 +2141,7 @@ describe("desktop document workspace", () => {
       getFiles: () => scene.files,
     } as unknown as ExcalidrawImperativeAPI;
     act(() => hook.result.current.initialize(copy, api));
-    expect(copy.savedContent).toBeNull();
+    expect(copy.savedContentSignature).toBeNull();
     expect(copy.dirty).toBe(true);
     await waitFor(() => expect(desktop.writeDraft).toHaveBeenCalled());
     const draft = vi.mocked(desktop.writeDraft).mock.calls.at(-1)![0];
@@ -2166,9 +2172,13 @@ describe("desktop document workspace", () => {
     );
     expect(copy.path).toBe(destination);
     expect(copy.dirty).toBe(false);
-    expect(
-      Object.keys(JSON.parse(copy.savedContent!).appState.subscenes),
-    ).toHaveLength(5);
+    const savedCopy = vi.mocked(desktop.saveFile).mock.calls.at(-1)![0].content;
+    expect(copy.savedContentSignature).toBe(
+      documentContentSignature(savedCopy),
+    );
+    expect(Object.keys(JSON.parse(savedCopy).appState.subscenes)).toHaveLength(
+      5,
+    );
     expect(desktop.readFile).not.toHaveBeenCalled();
     expect(bundledExamples[0].content).toBe(source);
     expect(JSON.parse(source).elements[0].x).not.toBe(scene.elements[0].x);
@@ -2735,7 +2745,9 @@ describe("desktop document workspace", () => {
       }),
     );
     expect(document.dirty).toBe(false);
-    expect(document.content).toBe(document.savedContent);
+    expect(document.content).toBe(
+      vi.mocked(desktop.saveFile).mock.calls.at(-1)![0].content,
+    );
     expect(document.content).toContain("Saved table cell");
     await act(async () => {
       expect(await hook.result.current.closeDocument(document.id)).toBe(true);
@@ -2798,7 +2810,9 @@ describe("desktop document workspace", () => {
     await act(async () => {
       expect(await hook.result.current.requestSave(item.document)).toBe(true);
     });
-    const saved = item.document.savedContent;
+    const saved = vi.mocked(desktop.saveFile).mock.calls.at(-1)![0].content;
+    const savedSignature = item.document.savedContentSignature;
+    expect(savedSignature).toBe(documentContentSignature(saved));
     item.edit(3);
     expect(item.document.dirty).toBe(true);
     const restored = snapshot(2);
@@ -2811,7 +2825,7 @@ describe("desktop document workspace", () => {
     });
     expect(item.document.dirty).toBe(false);
     expect(item.document.content).not.toBe(saved);
-    expect(item.document.savedContent).toBe(saved);
+    expect(item.document.savedContentSignature).toBe(savedSignature);
     expect(JSON.parse(item.document.content).elements).toHaveLength(2);
     item.edit(3);
     expect(item.document.dirty).toBe(true);
@@ -2855,7 +2869,9 @@ describe("desktop document workspace", () => {
         expect(await saving).toBe(true);
       });
       expect(item.document.dirty).toBe(!undo);
-      expect(item.document.savedContent).toBe(submitted);
+      expect(item.document.savedContentSignature).toBe(
+        documentContentSignature(submitted),
+      );
       expect(item.document.content).not.toBe(submitted);
     },
   );

@@ -155,8 +155,10 @@ test("PDF uses one proportional page in inches, a hidden isolated sandbox and de
   calls.request({ url: "data:image/svg+xml;base64,AA==" }, ({ cancel }) =>
     assert.equal(cancel, false),
   );
+  // The temporary page is allowed while loading (see the fixture); once the
+  // export is released the shared session no longer allows the deleted page.
   calls.request({ url: pathToFileURL(calls.file).href }, ({ cancel }) =>
-    assert.equal(cancel, false),
+    assert.equal(cancel, true),
   );
   await assert.rejects(fs.stat(path.dirname(calls.file)), { code: "ENOENT" });
   assert.equal(calls.permissionCheck(), false);
@@ -456,6 +458,66 @@ test("PDF subcanvas pages use separate named page sizes and decode every SVG bef
   assert.match(calls.html, /section:last-child\{break-after:auto\}/);
   assert.equal(calls.print.preferCSSPageSize, true);
   assert.equal(calls.destroyed, 1);
+});
+
+test("PDF exports reuse one session and keep its handlers until the last concurrent export ends", async () => {
+  const handlers = { request: [], permission: [], check: [] };
+  const session = {
+    setPermissionRequestHandler: (handler) => handlers.permission.push(handler),
+    setPermissionCheckHandler: (handler) => handlers.check.push(handler),
+    webRequest: {
+      onBeforeRequest: (handler) => handlers.request.push(handler),
+    },
+  };
+  const partitions = [];
+  const loads = [];
+  class SharedSessionWindow {
+    constructor(options) {
+      partitions.push(options.webPreferences.partition);
+      this.webContents = Object.assign(new EventEmitter(), {
+        session,
+        setWindowOpenHandler: () => {},
+        executeJavaScript: async () => {},
+        printToPDF: async () => Buffer.from("%PDF-shared"),
+      });
+    }
+    loadURL(url) {
+      return new Promise((resolve) => loads.push({ url, resolve }));
+    }
+    isDestroyed() {
+      return false;
+    }
+    destroy() {}
+  }
+  const loaded = async (count) => {
+    while (loads.length < count) {
+      await new Promise(setImmediate);
+    }
+  };
+  const first = renderPdf(SharedSessionWindow, request);
+  await loaded(1);
+  const second = renderPdf(SharedSessionWindow, request);
+  await loaded(2);
+  assert.deepEqual(partitions, ["pdf-export", "pdf-export"]);
+  // Handlers are installed once for the shared session.
+  assert.equal(handlers.request.length, 1);
+  const allow = (url) =>
+    new Promise((resolve) =>
+      handlers.request[0]({ url }, ({ cancel }) => resolve(!cancel)),
+    );
+  assert.equal(await allow(loads[0].url), true);
+  assert.equal(await allow(loads[1].url), true);
+  assert.equal(await allow("https://example.com/"), false);
+  loads[0].resolve();
+  assert.equal((await first).toString(), "%PDF-shared");
+  assert.equal(handlers.request.length, 1);
+  assert.equal(await allow(loads[0].url), false);
+  assert.equal(await allow(loads[1].url), true);
+  loads[1].resolve();
+  assert.equal((await second).toString(), "%PDF-shared");
+  assert.deepEqual(handlers.request.slice(1), [null]);
+  assert.deepEqual(handlers.permission.slice(1), [null]);
+  assert.deepEqual(handlers.check.slice(1), [null]);
 });
 
 test("PDF validates every subcanvas page before opening the print window", () => {

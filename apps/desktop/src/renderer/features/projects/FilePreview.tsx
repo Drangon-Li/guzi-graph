@@ -49,6 +49,9 @@ const loadThumbnailFonts = async (
   );
 };
 
+const thumbnailKey = (file: ProjectFile, theme: "light" | "dark") =>
+  JSON.stringify([file.path, file.modifiedAt, file.size, theme]);
+
 const getThumbnail = (
   file: ProjectFile,
   root: HTMLElement,
@@ -61,8 +64,7 @@ const getThumbnail = (
     cache = createThumbnailCache();
     thumbnails.set(ownerDocument, cache);
   }
-  const key = JSON.stringify([file.path, file.modifiedAt, file.size, theme]);
-  return cache.acquire(key, async (cancelled) => {
+  return cache.acquire(thumbnailKey(file, theme), async (cancelled) => {
     const source = await ownerWindow.desktop.readFile(file.path);
     if (cancelled()) {
       return null;
@@ -160,7 +162,16 @@ export const FilePreview = ({
   const container = useRef<HTMLDivElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const loaded = useRef<{ key: string; root: HTMLElement } | null>(null);
   useEffect(() => {
+    // Project refreshes hand over new file objects. Keep a loaded preview while
+    // its cache key is unchanged instead of blanking and re-decoding it; a
+    // failed or unfinished preview still retries with the fresh entry.
+    const key = thumbnailKey(file, theme);
+    if (loaded.current?.key === key && loaded.current.root === root) {
+      return;
+    }
+    loaded.current = null;
     let disposed = false;
     setPreview(null);
     setFailed(false);
@@ -171,7 +182,12 @@ export const FilePreview = ({
       const thumbnail = getThumbnail(file, root, theme);
       release = thumbnail.release;
       void thumbnail.promise.then(
-        (value) => !disposed && setPreview(value),
+        (value) => {
+          if (!disposed) {
+            loaded.current = { key, root };
+            setPreview(value);
+          }
+        },
         () => !disposed && setFailed(true),
       );
     };

@@ -1,31 +1,55 @@
-const waitForMcpReady = async (page) => {
-  const ready = await page.waitForFunction(async () => {
-    const service = (await window.desktop.getPlugins()).find(
-      (plugin) => plugin.id === "mcp",
-    );
-    if (service?.status === "error") {
-      throw new Error(service.error || "MCP service failed to start.");
+// page.waitForFunction only checks whether the predicate's return value is
+// truthy. An async predicate returns a Promise, which is always truthy, so it
+// resolves on the first poll with whatever the Promise settles to (e.g. false
+// while a service is still starting). Poll async page state explicitly.
+const pollPage = async (
+  page,
+  predicate,
+  arg,
+  { timeout = 30000, interval = 100, description = "page state" } = {},
+) => {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const value = await page.evaluate(predicate, arg);
+    if (value) {
+      return value;
     }
-    if (!service?.enabled || service.status !== "running") return false;
-    let endpoint;
-    try {
-      endpoint = new URL(service.endpoint);
-    } catch {
-      return false;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Timed out after ${timeout}ms waiting for ${description}.`,
+      );
     }
-    return endpoint.protocol === "http:" &&
-      endpoint.hostname === "127.0.0.1" &&
-      endpoint.port === String(service.port) &&
-      endpoint.pathname === "/mcp"
-      ? service
-      : false;
-  });
-  try {
-    return await ready.jsonValue();
-  } finally {
-    await ready.dispose();
+    await new Promise((resolve) => setTimeout(resolve, interval));
   }
 };
+
+const waitForMcpReady = (page, options) =>
+  pollPage(
+    page,
+    async () => {
+      const service = (await window.desktop.getPlugins()).find(
+        (plugin) => plugin.id === "mcp",
+      );
+      if (service?.status === "error") {
+        throw new Error(service.error || "MCP service failed to start.");
+      }
+      if (!service?.enabled || service.status !== "running") return false;
+      let endpoint;
+      try {
+        endpoint = new URL(service.endpoint);
+      } catch {
+        return false;
+      }
+      return endpoint.protocol === "http:" &&
+        endpoint.hostname === "127.0.0.1" &&
+        endpoint.port === String(service.port) &&
+        endpoint.pathname === "/mcp"
+        ? service
+        : false;
+    },
+    undefined,
+    { description: "the MCP service to run", ...options },
+  );
 
 const enableMcpInSettings = async (page, port, { screenshotPath } = {}) => {
   await page.getByRole("button", { name: "设置", exact: true }).click();
@@ -46,4 +70,4 @@ const enableMcpInSettings = async (page, port, { screenshotPath } = {}) => {
   return service;
 };
 
-module.exports = { enableMcpInSettings, waitForMcpReady };
+module.exports = { enableMcpInSettings, pollPage, waitForMcpReady };
