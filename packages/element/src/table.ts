@@ -151,23 +151,52 @@ export const createTableData = (
   ),
 });
 
-export const readTableData = (
-  root: TableRoot,
+const memberKey = (role: TableMember["role"], row: number, column: number) =>
+  `${role}:${row}:${column}`;
+
+/**
+ * Index table members by role and cell in one pass. Keeps the first match for
+ * each key, so lookups behave like the `find` scans they replace without
+ * turning every cell lookup into a scan of the whole table.
+ */
+const indexTableMembers = (
   elements: readonly ExcalidrawElement[],
+  include: (element: ExcalidrawElement, member: TableMember) => boolean,
+) => {
+  const index = new Map<string, ExcalidrawElement>();
+  for (const element of elements) {
+    const member = getTableMember(element);
+    if (
+      !member ||
+      typeof member.row !== "number" ||
+      typeof member.column !== "number" ||
+      !include(element, member)
+    ) {
+      continue;
+    }
+    const key = memberKey(member.role, member.row, member.column);
+    if (!index.has(key)) {
+      index.set(key, element);
+    }
+  }
+  return index;
+};
+
+const readTableDataFromMembers = (
+  root: TableRoot,
+  members: readonly ExcalidrawElement[],
 ): TableData => {
   const data = root.customData.table;
-  const members = elements.filter(
-    (element) => !element.isDeleted && element.groupIds[0] === root.groupIds[0],
+  // Labels must be text elements; a non-text "text" member is skipped like
+  // the original per-cell search did.
+  const index = indexTableMembers(
+    members,
+    (element, member) => member.role !== "text" || isTextElement(element),
   );
   const cells = data.cells.map((cell) => {
-    const background = members.find((element) => {
-      const member = getTableMember(element);
-      return (
-        member?.role === "background" &&
-        member.row === cell.row &&
-        member.column === cell.column
-      );
-    });
+    const background = index.get(
+      memberKey("background", cell.row, cell.column),
+    );
     const current = background
       ? {
           ...cell,
@@ -180,15 +209,7 @@ export const readTableData = (
             : {}),
         }
       : cell;
-    const label = members.find((element) => {
-      const member = getTableMember(element);
-      return (
-        isTextElement(element) &&
-        member?.role === "text" &&
-        member.row === cell.row &&
-        member.column === cell.column
-      );
-    });
+    const label = index.get(memberKey("text", cell.row, cell.column));
     return label && isTextElement(label)
       ? {
           ...current,
@@ -212,27 +233,62 @@ export const readTableData = (
   };
 };
 
-/** Flush native label edits into persistent table data before saving or structural edits. */
+const isLiveMemberOf = (root: TableRoot, element: ExcalidrawElement) =>
+  !element.isDeleted && element.groupIds[0] === root.groupIds[0];
+
+export const readTableData = (
+  root: TableRoot,
+  elements: readonly ExcalidrawElement[],
+): TableData =>
+  readTableDataFromMembers(
+    root,
+    elements.filter((element) => isLiveMemberOf(root, element)),
+  );
+
+/**
+ * Flush native label edits into persistent table data before saving or
+ * structural edits. Runs on every editor change, so it allocates nothing when
+ * the scene has no out-of-sync tables and groups members once for all tables.
+ */
 export const syncTableData = <T extends ExcalidrawElement>(
   elements: readonly T[],
 ): readonly T[] => {
-  let changed = false;
-  const next = elements.map((element) => {
+  let next: T[] | undefined;
+  let groups: Map<string | undefined, ExcalidrawElement[]> | undefined;
+  for (let position = 0; position < elements.length; position++) {
+    const element = elements[position];
     if (!isTableRoot(element)) {
-      return element;
+      continue;
     }
-    const data = readTableData(element, elements);
+    if (!groups) {
+      groups = new Map();
+      for (const candidate of elements) {
+        if (candidate.isDeleted) {
+          continue;
+        }
+        const group = groups.get(candidate.groupIds[0]);
+        if (group) {
+          group.push(candidate);
+        } else {
+          groups.set(candidate.groupIds[0], [candidate]);
+        }
+      }
+    }
+    const data = readTableDataFromMembers(
+      element,
+      groups.get(element.groupIds[0]) ?? [],
+    );
     if (JSON.stringify(data) === JSON.stringify(element.customData.table)) {
-      return element;
+      continue;
     }
-    changed = true;
+    next ??= elements.slice();
     // This is a persistence snapshot; native cell versions already track edits.
-    return {
+    next[position] = {
       ...element,
       customData: { ...element.customData, table: data },
     } as T;
-  });
-  return changed ? next : elements;
+  }
+  return next ?? elements;
 };
 
 const tableChildren = (
@@ -244,6 +300,10 @@ const tableChildren = (
 ): NonDeletedExcalidrawElement[] => {
   const groupIds = root.groupIds;
   const center = pointFrom(root.x + root.width / 2, root.y + root.height / 2);
+  const previousMembers = indexTableMembers(
+    previous,
+    (element) => !element.isDeleted,
+  );
   return data.cells.flatMap((cell) => {
     const x = root.x + sum(data.columns.slice(0, cell.column));
     const y = root.y + sum(data.rows.slice(0, cell.row));
@@ -264,15 +324,9 @@ const tableChildren = (
       : cell;
     const old = (role: TableMember["role"]) =>
       previousCell &&
-      previous.find((element) => {
-        const info = getTableMember(element);
-        return (
-          !element.isDeleted &&
-          info?.role === role &&
-          info.row === previousCell.row &&
-          info.column === previousCell.column
-        );
-      });
+      previousMembers.get(
+        memberKey(role, previousCell.row, previousCell.column),
+      );
     const oldBackground = old("background");
     const oldText = old("text");
     const background = {
@@ -493,11 +547,12 @@ export const updateTableElements = (
     previousCells,
   );
   const byId = new Map(generated.map((element) => [element.id, element]));
+  const childSet = new Set(children);
   const result = elements.map((element) => {
     if (element.id === root.id) {
       return nextRoot;
     }
-    if (!children.includes(element)) {
+    if (!childSet.has(element)) {
       return element;
     }
     const replacement = byId.get(element.id);

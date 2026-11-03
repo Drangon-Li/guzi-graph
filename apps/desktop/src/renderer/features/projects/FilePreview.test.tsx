@@ -217,6 +217,24 @@ describe("desktop canvas thumbnails", () => {
     expect(readFile).toHaveBeenCalledTimes(3);
   });
 
+  it("keeps a loaded preview when a project refresh recreates the same file entry", async () => {
+    const view = render(<FilePreview file={file} root={root} theme="light" />);
+    show();
+    await waitFor(() =>
+      expect(
+        view.container.querySelector(".desktop-file-preview > img"),
+      ).not.toBeNull(),
+    );
+    const image = view.container.querySelector(".desktop-file-preview > img");
+    view.rerender(<FilePreview file={{ ...file }} root={root} theme="light" />);
+    // No intersection is needed: the preview is kept, not reloaded.
+    expect(view.container.querySelector(".desktop-file-preview > img")).toBe(
+      image,
+    );
+    expect(readFile).toHaveBeenCalledTimes(1);
+    expect(rendered).toHaveBeenCalledTimes(1);
+  });
+
   it("evicts a failed font load so the same file can be retried", async () => {
     loadGlyphs.mockRejectedValueOnce(new Error("font unavailable"));
     const first = render(<FilePreview file={file} root={root} theme="light" />);

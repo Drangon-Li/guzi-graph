@@ -20,6 +20,7 @@ import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
   AppState,
+  BinaryFiles,
 } from "@excalidraw/excalidraw/types";
 import type { HistoryCheckpoint } from "@excalidraw/excalidraw/history";
 
@@ -59,6 +60,7 @@ import {
   getPreferenceColorTopPicks,
 } from "../../shared/config/editorPreferences";
 import { translate } from "../../shared/i18n/i18n";
+import { stringDigest } from "../../shared/model/hash";
 import { fileName, isPathInDirectory } from "../../shared/model/path";
 import {
   copyPresentationScene,
@@ -144,7 +146,6 @@ export interface CanvasDocument {
   dirty: boolean;
   revision: number;
   content: string;
-  savedContent: string | null;
   contentSignature: string;
   savedContentSignature: string | null;
   tracker: ReturnType<typeof createSceneTracker>;
@@ -161,6 +162,21 @@ export interface ClosePrompt {
   title: string;
   resolve: (choice: "save" | "discard" | "cancel") => void;
 }
+
+const apiSnapshot = (api: ExcalidrawImperativeAPI): SceneSnapshot => ({
+  elements: api.getSceneElementsIncludingDeleted(),
+  appState: api.getAppState(),
+  files: api.getFiles(),
+});
+
+/** Commit any in-progress text edit in the document's active editor. */
+const flushDocumentEditing = (document: CanvasDocument | undefined) => {
+  if (document?.flushEditing) {
+    document.flushEditing();
+  } else {
+    document?.api?.commitEditing();
+  }
+};
 
 export const useWorkspace = (
   root: HTMLElement,
@@ -283,14 +299,9 @@ export const useWorkspace = (
 
   const activate = (id: string) => {
     if (activeRef.current !== id) {
-      const previous = documentsRef.current.find(
-        (item) => item.id === activeRef.current,
+      flushDocumentEditing(
+        documentsRef.current.find((item) => item.id === activeRef.current),
       );
-      if (previous?.flushEditing) {
-        previous.flushEditing();
-      } else {
-        previous?.api?.commitEditing();
-      }
     }
     activeRef.current = id;
     projectRef.current = false;
@@ -299,14 +310,9 @@ export const useWorkspace = (
   };
 
   const showProjects = () => {
-    const current = documentsRef.current.find(
-      (item) => item.id === activeRef.current,
+    flushDocumentEditing(
+      documentsRef.current.find((item) => item.id === activeRef.current),
     );
-    if (current?.flushEditing) {
-      current.flushEditing();
-    } else {
-      current?.api?.commitEditing();
-    }
     projectRef.current = true;
     refresh();
     saveSession();
@@ -402,7 +408,6 @@ export const useWorkspace = (
       dirty: !!draft,
       revision: 0,
       content: "",
-      savedContent: null,
       contentSignature: "",
       savedContentSignature: null,
       tracker: createSceneTracker(),
@@ -583,7 +588,11 @@ export const useWorkspace = (
     }, 750);
   };
 
-  const recordContent = (document: CanvasDocument, content: string) => {
+  const recordContent = (
+    document: CanvasDocument,
+    content: string,
+    files?: BinaryFiles,
+  ) => {
     if (
       !documentsRef.current.includes(document) ||
       document.removalPhase === "removing"
@@ -594,7 +603,18 @@ export const useWorkspace = (
       return;
     }
     document.content = content;
-    document.contentSignature = documentContentSignature(content);
+    document.contentSignature = documentContentSignature(
+      content,
+      (id) =>
+        files?.[id] ??
+        (document.presentation
+          ? document.presentation.slides.find(
+              (slide) => slide.scene.files?.[id],
+            )?.scene.files?.[id]
+          : document.api && !document.api.isDestroyed
+          ? document.api.getFiles()[id]
+          : undefined),
+    );
     document.revision += 1;
     if (!document.initialized) {
       return;
@@ -621,7 +641,7 @@ export const useWorkspace = (
       slide.scene = snapshot;
       recordContent(document, serializePresentation(document.presentation));
     } else {
-      recordContent(document, sceneContent);
+      recordContent(document, sceneContent, snapshot.files);
     }
   };
 
@@ -629,14 +649,7 @@ export const useWorkspace = (
     if (!document.api || document.api.isDestroyed) {
       return;
     }
-    capture(
-      document,
-      document.getSnapshot?.() ?? {
-        elements: document.api.getSceneElementsIncludingDeleted(),
-        appState: document.api.getAppState(),
-        files: document.api.getFiles(),
-      },
-    );
+    capture(document, document.getSnapshot?.() ?? apiSnapshot(document.api));
   };
 
   const applyFontToCurrentLayer = async (
@@ -714,22 +727,12 @@ export const useWorkspace = (
       document.presentation
         ? document.presentation.slides.map((slide) =>
             slide.id === document.activeSlideId && document.api
-              ? document.getSnapshot?.() ?? {
-                  elements: document.api.getSceneElementsIncludingDeleted(),
-                  appState: document.api.getAppState(),
-                  files: document.api.getFiles(),
-                }
+              ? document.getSnapshot?.() ?? apiSnapshot(document.api)
               : document.slideRuntime?.get(slide.id)?.snapshot ?? slide.scene,
           )
         : [
             document.getSnapshot?.() ??
-              (document.api
-                ? {
-                    elements: document.api.getSceneElementsIncludingDeleted(),
-                    appState: document.api.getAppState(),
-                    files: document.api.getFiles(),
-                  }
-                : document.initialData),
+              (document.api ? apiSnapshot(document.api) : document.initialData),
           ];
     await loadReplacementFont(
       documents.flatMap((document) =>
@@ -882,11 +885,7 @@ export const useWorkspace = (
           scene:
             document.getSnapshot?.() ??
             (document.api && !document.api.isDestroyed
-              ? {
-                  elements: document.api.getSceneElementsIncludingDeleted(),
-                  appState: document.api.getAppState(),
-                  files: document.api.getFiles(),
-                }
+              ? apiSnapshot(document.api)
               : document.initialData),
         },
       ],
@@ -905,7 +904,6 @@ export const useWorkspace = (
     document.missingImageFilesAtOpen = documentMissingImageFiles(document);
     document.initialized = true;
     const unsaved = document.recovered || !!document.unsavedCopy;
-    document.savedContent = unsaved ? null : document.content;
     document.savedContentSignature = unsaved ? null : document.contentSignature;
     document.dirty =
       document.contentSignature !== document.savedContentSignature;
@@ -1008,7 +1006,6 @@ export const useWorkspace = (
         document.path = file.path;
         document.title = fileTitle(file.path);
         document.modifiedAt = file.modifiedAt;
-        document.savedContent = content;
         document.savedContentSignature = contentSignature;
         document.missingImageFilesAtOpen = missingImages;
         document.recovered = false;
@@ -1064,9 +1061,7 @@ export const useWorkspace = (
   };
 
   const commitText = (document: CanvasDocument) => {
-    document.flushEditing
-      ? document.flushEditing()
-      : document.api?.commitEditing();
+    flushDocumentEditing(document);
     captureAPI(document);
   };
 
@@ -1085,13 +1080,7 @@ export const useWorkspace = (
     }
     const snapshot =
       source?.getSnapshot?.() ??
-      (source?.api
-        ? {
-            elements: source.api.getSceneElementsIncludingDeleted(),
-            appState: source.api.getAppState(),
-            files: source.api.getFiles(),
-          }
-        : undefined);
+      (source?.api ? apiSnapshot(source.api) : undefined);
     const pageTitle =
       settingsRef.current.language === "en" ? "Slide 1" : "第 1 页";
     const deck = createPresentation(
@@ -1134,11 +1123,7 @@ export const useWorkspace = (
     const previous = document.slideRuntime!.get(document.activeSlideId);
     document.slideRuntime!.set(document.activeSlideId, {
       children: previous?.children ?? new Map(),
-      snapshot: document.getSnapshot?.() ?? {
-        elements: document.api.getSceneElementsIncludingDeleted(),
-        appState: document.api.getAppState(),
-        files: document.api.getFiles(),
-      },
+      snapshot: document.getSnapshot?.() ?? apiSnapshot(document.api),
       history: document.api.history.checkpoint?.(),
     });
   };
@@ -2204,10 +2189,7 @@ export const useWorkspace = (
       setError("请输入有效的画布名称，不要包含路径或特殊字符。");
       return false;
     }
-    document.flushEditing
-      ? document.flushEditing()
-      : document.api?.commitEditing();
-    captureAPI(document);
+    commitText(document);
     if (document.saving) {
       await document.saving;
     }
@@ -2409,11 +2391,7 @@ export const useWorkspace = (
     const api = document.api!;
     const rootSnapshot: SceneSnapshot =
       !slide || slide.id === document.activeSlideId
-        ? document.getSnapshot?.() ?? {
-            elements: api.getSceneElementsIncludingDeleted(),
-            appState: api.getAppState(),
-            files: api.getFiles(),
-          }
+        ? document.getSnapshot?.() ?? apiSnapshot(api)
         : {
             elements: slide.scene.elements ?? [],
             appState: {
@@ -3250,14 +3228,16 @@ export const useWorkspace = (
           request.arguments.documentId,
         )}:${stringArgument(request.arguments.requestId, "requestId")}`
       : `request:${request.requestId}`;
-    const fingerprint = JSON.stringify(
-      [request.command, request.arguments],
-      (_key, value) =>
+    // Up to 10,000 idempotent requests are remembered and their arguments may
+    // embed images, so keep a digest rather than the canonical JSON itself.
+    const fingerprint = stringDigest(
+      JSON.stringify([request.command, request.arguments], (_key, value) =>
         value && typeof value === "object" && !Array.isArray(value)
           ? Object.fromEntries(
               Object.entries(value).sort(([a], [b]) => a.localeCompare(b)),
             )
           : value,
+      ),
     );
     const previous = pluginRequests.current.get(key);
     if (previous) {

@@ -1,4 +1,5 @@
 const fs = require("node:fs/promises");
+const { constants: fsConstants } = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { AsyncLocalStorage } = require("node:async_hooks");
@@ -26,6 +27,21 @@ const EXPORT_EXTENSIONS = new Set([
   "excalidraw",
   "excalidrawlib",
 ]);
+const PREFERENCE_KEYS = [
+  "toolPanelDock",
+  "toolPanelWidth",
+  "toolPanelPinned",
+  "toolbarTooltips",
+  "selectionToolbar",
+  "stickyNoteMode",
+  "editorPreferences",
+  "stylePresets",
+  "language",
+  "structuredExportFormat",
+  "includeInferredStructure",
+  "skipRemoveConfirmation",
+  "skipTrashConfirmation",
+];
 const inside = (root, target) =>
   target === root ||
   (!path.relative(root, target).startsWith(`..${path.sep}`) &&
@@ -108,6 +124,10 @@ function documentPath(value, language = "zh-CN") {
   return path.resolve(value);
 }
 
+// Node utimes truncates to microseconds; use the midpoint to avoid losing one
+// microsecond when a macOS timestamp is converted through a double.
+const utimeSeconds = (milliseconds) => milliseconds / 1000 + 0.0000005;
+
 const canCopyInsteadOfLink = (error) =>
   ["EXDEV", "ENOSYS", "ENOTSUP", "EOPNOTSUPP"].includes(error.code);
 
@@ -148,11 +168,7 @@ async function atomicWrite(
         if (!canCopyInsteadOfLink(error)) {
           throw error;
         }
-        return fs.copyFile(
-          temporary,
-          target,
-          require("node:fs").constants.COPYFILE_EXCL,
-        );
+        return fs.copyFile(temporary, target, fsConstants.COPYFILE_EXCL);
       });
     } else {
       await fs.rename(temporary, target);
@@ -293,21 +309,7 @@ class DesktopStorage {
         ];
       }
     }
-    for (const key of [
-      "toolPanelDock",
-      "toolPanelWidth",
-      "toolPanelPinned",
-      "toolbarTooltips",
-      "selectionToolbar",
-      "stickyNoteMode",
-      "editorPreferences",
-      "stylePresets",
-      "language",
-      "structuredExportFormat",
-      "includeInferredStructure",
-      "skipRemoveConfirmation",
-      "skipTrashConfirmation",
-    ]) {
+    for (const key of PREFERENCE_KEYS) {
       if (this.validSetting(key, settings?.[key])) {
         this.settings[key] =
           key === "editorPreferences"
@@ -622,6 +624,22 @@ class DesktopStorage {
     return typeof value === "boolean";
   }
 
+  persistSettings(settings) {
+    return atomicWrite(
+      path.join(this.userData, "settings.json"),
+      JSON.stringify(settings),
+      { kind: "settings" },
+    );
+  }
+
+  persistSession(session) {
+    return atomicWrite(
+      path.join(this.userData, "session.json"),
+      JSON.stringify(session),
+      { kind: "session" },
+    );
+  }
+
   async persistHiddenPaths(paths) {
     await atomicWrite(
       path.join(this.userData, "hidden-files.json"),
@@ -649,21 +667,7 @@ class DesktopStorage {
       throw this.fail("请通过目录选择器设置项目目录。");
     }
     const preferences = {};
-    for (const key of [
-      "toolPanelDock",
-      "toolPanelWidth",
-      "toolPanelPinned",
-      "toolbarTooltips",
-      "selectionToolbar",
-      "stickyNoteMode",
-      "editorPreferences",
-      "stylePresets",
-      "language",
-      "structuredExportFormat",
-      "includeInferredStructure",
-      "skipRemoveConfirmation",
-      "skipTrashConfirmation",
-    ]) {
+    for (const key of PREFERENCE_KEYS) {
       if (key in update) {
         if (!this.validSetting(key, update[key])) {
           throw this.fail("设置无效。");
@@ -683,10 +687,7 @@ class DesktopStorage {
           ? { rootDirectory: update.rootDirectory }
           : {}),
       };
-      await atomicWrite(
-        path.join(this.userData, "settings.json"),
-        JSON.stringify(next),
-      );
+      await this.persistSettings(next);
       this.settings = next;
       return this.getSettings();
     });
@@ -699,10 +700,7 @@ class DesktopStorage {
     }
     return this.serialize(async () => {
       const next = { ...this.settings, rootDirectory: root };
-      await atomicWrite(
-        path.join(this.userData, "settings.json"),
-        JSON.stringify(next),
-      );
+      await this.persistSettings(next);
       this.settings = next;
       return this.getSettings();
     });
@@ -735,10 +733,7 @@ class DesktopStorage {
           [rootDirectory]: [...pins],
         },
       };
-      await atomicWrite(
-        path.join(this.userData, "settings.json"),
-        JSON.stringify(next),
-      );
+      await this.persistSettings(next);
       this.settings = next;
       return this.getSettings();
     }, "set-folder-pinned");
@@ -805,40 +800,51 @@ class DesktopStorage {
 
   async listProjects() {
     const rootDirectory = this.settings.rootDirectory;
-    const history = [];
-    for (const [candidate, lastOpenedAt] of this.recentFiles) {
-      try {
-        if (this.hiddenPaths.has(candidate)) {
-          continue;
-        }
-        const target = await this.allowedPath(candidate);
-        const stat = await fs.stat(target);
-        if (!stat.isFile()) {
-          continue;
-        }
-        const relativeParts =
-          rootDirectory && inside(rootDirectory, target)
-            ? path.relative(rootDirectory, target).split(path.sep)
-            : null;
-        history.push({
-          path: target,
-          relativePath: relativeParts ? relativeParts.join("/") : target,
-          name: path.basename(target),
-          category: relativeParts ? relativeParts.slice(0, -1).join("/") : "",
-          modifiedAt: stat.mtimeMs,
-          size: stat.size,
-          lastOpenedAt,
-        });
-      } catch (error) {
-        if (
-          !["ENOENT", "ENOTDIR", "EACCES", "EPERM", "NOT_AUTHORIZED"].includes(
-            error.code,
-          )
-        ) {
-          throw error;
-        }
-      }
-    }
+    // Entries are independent; resolve and stat them concurrently.
+    const history = (
+      await Promise.all(
+        Array.from(this.recentFiles, async ([candidate, lastOpenedAt]) => {
+          try {
+            if (this.hiddenPaths.has(candidate)) {
+              return null;
+            }
+            const target = await this.allowedPath(candidate);
+            const stat = await fs.stat(target);
+            if (!stat.isFile()) {
+              return null;
+            }
+            const relativeParts =
+              rootDirectory && inside(rootDirectory, target)
+                ? path.relative(rootDirectory, target).split(path.sep)
+                : null;
+            return {
+              path: target,
+              relativePath: relativeParts ? relativeParts.join("/") : target,
+              name: path.basename(target),
+              category: relativeParts
+                ? relativeParts.slice(0, -1).join("/")
+                : "",
+              modifiedAt: stat.mtimeMs,
+              size: stat.size,
+              lastOpenedAt,
+            };
+          } catch (error) {
+            if (
+              ![
+                "ENOENT",
+                "ENOTDIR",
+                "EACCES",
+                "EPERM",
+                "NOT_AUTHORIZED",
+              ].includes(error.code)
+            ) {
+              throw error;
+            }
+            return null;
+          }
+        }),
+      )
+    ).filter(Boolean);
     history.sort(
       (a, b) => b.lastOpenedAt - a.lastOpenedAt || a.path.localeCompare(b.path),
     );
@@ -850,33 +856,38 @@ class DesktopStorage {
     }
     const files = [];
     const folders = [];
+    // Siblings are visited concurrently; both lists are sorted afterwards.
     const visit = async (directory, category) => {
       const entries = await fs.readdir(directory, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isSymbolicLink()) {
-          continue;
-        }
-        const absolute = path.join(directory, entry.name);
-        if (entry.isDirectory()) {
-          const relative = category ? `${category}/${entry.name}` : entry.name;
-          folders.push(relative);
-          await visit(absolute, relative);
-        } else if (
-          entry.isFile() &&
-          !this.hiddenPaths.has(absolute) &&
-          DOCUMENT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())
-        ) {
-          const stat = await fs.stat(absolute);
-          files.push({
-            path: absolute,
-            relativePath: category ? `${category}/${entry.name}` : entry.name,
-            name: entry.name,
-            category,
-            modifiedAt: stat.mtimeMs,
-            size: stat.size,
-          });
-        }
-      }
+      await Promise.all(
+        entries.map(async (entry) => {
+          if (entry.isSymbolicLink()) {
+            return;
+          }
+          const absolute = path.join(directory, entry.name);
+          if (entry.isDirectory()) {
+            const relative = category
+              ? `${category}/${entry.name}`
+              : entry.name;
+            folders.push(relative);
+            await visit(absolute, relative);
+          } else if (
+            entry.isFile() &&
+            !this.hiddenPaths.has(absolute) &&
+            DOCUMENT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())
+          ) {
+            const stat = await fs.stat(absolute);
+            files.push({
+              path: absolute,
+              relativePath: category ? `${category}/${entry.name}` : entry.name,
+              name: entry.name,
+              category,
+              modifiedAt: stat.mtimeMs,
+              size: stat.size,
+            });
+          }
+        }),
+      );
     };
     await visit(rootDirectory, "");
     files.sort(
@@ -1038,11 +1049,7 @@ class DesktopStorage {
       if (canCopyInsteadOfLink(error)) {
         copiedTimes = await fs.stat(source);
         await fs
-          .copyFile(
-            source,
-            destination,
-            require("node:fs").constants.COPYFILE_EXCL,
-          )
+          .copyFile(source, destination, fsConstants.COPYFILE_EXCL)
           .catch((copyError) => {
             if (copyError.code === "EEXIST") {
               throw this.fail(
@@ -1052,14 +1059,11 @@ class DesktopStorage {
             }
             throw copyError;
           });
-        // Node utimes truncates to microseconds; use the midpoint to avoid losing
-        // one microsecond when a macOS timestamp is converted through a double.
-        const seconds = (milliseconds) => milliseconds / 1000 + 0.0000005;
         try {
           await fs.utimes(
             destination,
-            seconds(copiedTimes.atimeMs),
-            seconds(copiedTimes.mtimeMs),
+            utimeSeconds(copiedTimes.atimeMs),
+            utimeSeconds(copiedTimes.mtimeMs),
           );
         } catch (timeError) {
           await fs.unlink(destination);
@@ -1083,8 +1087,8 @@ class DesktopStorage {
     if (copiedTimes) {
       await fs.utimes(
         destination,
-        copiedTimes.atimeMs / 1000 + 0.0000005,
-        copiedTimes.mtimeMs / 1000 + 0.0000005,
+        utimeSeconds(copiedTimes.atimeMs),
+        utimeSeconds(copiedTimes.mtimeMs),
       );
       // fs.utimes has microsecond precision. Keep an exact before/after alias
       // for this move so the renderer can retain its pre-move conflict baseline.
@@ -1129,10 +1133,7 @@ class DesktopStorage {
       }
     }
     try {
-      await atomicWrite(
-        path.join(this.userData, "session.json"),
-        JSON.stringify(this.session),
-      );
+      await this.persistSession(this.session);
     } catch (error) {
       console.warn(
         "[guzi-storage] moved document session update failed",
@@ -1306,19 +1307,9 @@ class DesktopStorage {
       }
     };
     await persist(() => this.persistRecentFiles(this.recentFiles));
-    await persist(() =>
-      atomicWrite(
-        path.join(this.userData, "settings.json"),
-        JSON.stringify(this.settings),
-      ),
-    );
+    await persist(() => this.persistSettings(this.settings));
     await persist(() => this.persistHiddenPaths(hidden));
-    await persist(() =>
-      atomicWrite(
-        path.join(this.userData, "session.json"),
-        JSON.stringify(this.session),
-      ),
-    );
+    await persist(() => this.persistSession(this.session));
     for (const draft of drafts) {
       await persist(() =>
         atomicWrite(
@@ -1361,10 +1352,7 @@ class DesktopStorage {
         activePath:
           this.session.activePath === target ? null : this.session.activePath,
       };
-      await atomicWrite(
-        path.join(this.userData, "session.json"),
-        JSON.stringify(next),
-      );
+      await this.persistSession(next);
       this.session = next;
       this.copiedVersions.delete(target);
     });
@@ -1415,11 +1403,7 @@ class DesktopStorage {
         throw this.fail("活动文件不在会话中。");
       }
       const next = { paths: [...new Set(paths)], activePath };
-      await atomicWrite(
-        path.join(this.userData, "session.json"),
-        JSON.stringify(next),
-        { kind: "session" },
-      );
+      await this.persistSession(next);
       this.session = next;
     }, "set-session");
   }
