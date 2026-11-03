@@ -6,6 +6,7 @@ import {
   fixBindingsAfterDeletion,
   isArrowElement,
   isNonDeletedElement,
+  newElementWith,
   updateBoundElements,
 } from "@excalidraw/element";
 import {
@@ -155,6 +156,97 @@ export const getSelectedTableRoot = (
         appState.selectedElementIds,
       );
 
+export const applyTableChange = (
+  app: AppClassProperties,
+  root: TableRoot,
+  transform: Parameters<typeof updateTableElements>[2],
+  options: {
+    captureUpdate?: typeof CaptureUpdateAction[keyof typeof CaptureUpdateAction];
+    previous?: Parameters<typeof updateTableElements>[0];
+    preserveOrigin?: boolean;
+    leadingAxis?: "row" | "column";
+    preserveSelection?: boolean;
+  } = {},
+) => {
+  const previous = options.previous ?? app.scene.getElementsIncludingDeleted();
+  let elements = updateTableElements(
+    previous,
+    root,
+    transform,
+    app.renderEnvironment,
+  );
+  if (options.preserveOrigin) {
+    const nextRoot = elements.find((element) => element.id === root.id)!;
+    const halfWidth = (nextRoot.width - root.width) / 2;
+    const halfHeight = (nextRoot.height - root.height) / 2;
+    const cos = Math.cos(root.angle);
+    const sin = Math.sin(root.angle);
+    const offset = {
+      x: options.leadingAxis === "column" ? -halfWidth * 2 : 0,
+      y: options.leadingAxis === "row" ? -halfHeight * 2 : 0,
+    };
+    const x =
+      (cos - 1) * halfWidth -
+      sin * halfHeight +
+      cos * offset.x -
+      sin * offset.y;
+    const y =
+      sin * halfWidth +
+      (cos - 1) * halfHeight +
+      sin * offset.x +
+      cos * offset.y;
+    elements = elements.map((element) =>
+      element.groupIds[0] === root.groupIds[0]
+        ? newElementWith(element, { x: element.x + x, y: element.y + y })
+        : element,
+    );
+  }
+  const nextById = new Map(elements.map((element) => [element.id, element]));
+  const deleted = previous.filter(
+    (element) => !element.isDeleted && nextById.get(element.id)?.isDeleted,
+  );
+  if (deleted.length) {
+    const deletedIds = new Set(deleted.map((element) => element.id));
+    elements = elements.map((element) =>
+      isArrowElement(element) &&
+      ((element.startBinding &&
+        deletedIds.has(element.startBinding.elementId)) ||
+        (element.endBinding && deletedIds.has(element.endBinding.elementId)))
+        ? { ...element }
+        : element,
+    );
+    fixBindingsAfterDeletion(elements, deleted);
+  }
+  app.scene.replaceAllElements(elements);
+  for (const element of elements) {
+    if (
+      isNonDeletedElement(element) &&
+      element.groupIds[0] === root.groupIds[0] &&
+      element.boundElements?.some(({ type }) => type === "arrow")
+    ) {
+      updateBoundElements(element, app.scene);
+    }
+  }
+  app.syncActionResult({
+    elements,
+    appState: {
+      selectedElementIds: options.preserveSelection
+        ? app.state.selectedElementIds
+        : Object.fromEntries(
+            elements
+              .filter(
+                (element) =>
+                  !element.isDeleted &&
+                  element.groupIds[0] === root.groupIds[0] &&
+                  element.type !== "text",
+              )
+              .map((element) => [element.id, true]),
+          ),
+    },
+    captureUpdate: options.captureUpdate ?? CaptureUpdateAction.IMMEDIATELY,
+  });
+};
+
 const TableEditor = ({
   app,
   appState,
@@ -194,57 +286,8 @@ const TableEditor = ({
     selectedRanges.set(app, ranges);
     setRange(next);
   };
-  const apply = (transform: Parameters<typeof updateTableElements>[2]) => {
-    const previous = app.scene.getElementsIncludingDeleted();
-    let elements = updateTableElements(
-      previous,
-      root,
-      transform,
-      app.renderEnvironment,
-    );
-    const nextById = new Map(elements.map((element) => [element.id, element]));
-    const deleted = previous.filter(
-      (element) => !element.isDeleted && nextById.get(element.id)?.isDeleted,
-    );
-    if (deleted.length) {
-      const deletedIds = new Set(deleted.map((element) => element.id));
-      elements = elements.map((element) =>
-        isArrowElement(element) &&
-        ((element.startBinding &&
-          deletedIds.has(element.startBinding.elementId)) ||
-          (element.endBinding && deletedIds.has(element.endBinding.elementId)))
-          ? { ...element }
-          : element,
-      );
-      fixBindingsAfterDeletion(elements, deleted);
-    }
-    app.scene.replaceAllElements(elements);
-    for (const element of elements) {
-      if (
-        isNonDeletedElement(element) &&
-        element.groupIds[0] === root.groupIds[0] &&
-        element.boundElements?.some(({ type }) => type === "arrow")
-      ) {
-        updateBoundElements(element, app.scene);
-      }
-    }
-    app.syncActionResult({
-      elements,
-      appState: {
-        selectedElementIds: Object.fromEntries(
-          elements
-            .filter(
-              (element) =>
-                !element.isDeleted &&
-                element.groupIds[0] === root.groupIds[0] &&
-                element.type !== "text",
-            )
-            .map((element) => [element.id, true]),
-        ),
-      },
-      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-    });
-  };
+  const apply = (transform: Parameters<typeof updateTableElements>[2]) =>
+    applyTableChange(app, root, transform);
   const style = useStableCallback(
     (value: Parameters<typeof styleTableCells>[2]) =>
       apply((data) => styleTableCells(data, selection, value)),
@@ -488,9 +531,11 @@ const TableEditor = ({
             </div>
             <small>{label.sizeHint}</small>
           </div>
-          {renderAction?.("changeStrokeWidth")}
-          {renderAction?.("changeStrokeStyle")}
-          {renderAction?.("changeSloppiness")}
+          <div className="selected-shape-actions shape-actions-theme-scope table-details-appearance">
+            {renderAction?.("changeStrokeWidth")}
+            {renderAction?.("changeStrokeStyle")}
+            {renderAction?.("changeSloppiness")}
+          </div>
         </>
       ) : (
         <>

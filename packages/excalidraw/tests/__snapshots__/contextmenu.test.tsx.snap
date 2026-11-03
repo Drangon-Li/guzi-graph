@@ -188,6 +188,13 @@ exports[`contextMenu element > right-clicking on a group should select whole gro
         "predicate": [Function],
         "trackEvent": false,
       },
+      {
+        "label": "labels.subcanvasTitle",
+        "name": "subcanvasTitle",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": false,
+      },
       "separator",
       {
         "icon": <svg
@@ -5119,6 +5126,13 @@ exports[`contextMenu element > shows 'Group selection' in context menu for multi
         "predicate": [Function],
         "trackEvent": false,
       },
+      {
+        "label": "labels.subcanvasTitle",
+        "name": "subcanvasTitle",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": false,
+      },
       "separator",
       {
         "icon": <svg
@@ -6400,6 +6414,13 @@ exports[`contextMenu element > shows 'Ungroup selection' in context menu for gro
       {
         "label": "labels.tableProperties",
         "name": "tableProperties",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": false,
+      },
+      {
+        "label": "labels.subcanvasTitle",
+        "name": "subcanvasTitle",
         "perform": [Function],
         "predicate": [Function],
         "trackEvent": false,
@@ -8445,6 +8466,13 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
         "predicate": [Function],
         "trackEvent": false,
       },
+      {
+        "label": "labels.subcanvasTitle",
+        "name": "subcanvasTitle",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": false,
+      },
       "separator",
       {
         "icon": <svg
@@ -9496,6 +9524,13 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
       {
         "label": "labels.tableProperties",
         "name": "tableProperties",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": false,
+      },
+      {
+        "label": "labels.subcanvasTitle",
+        "name": "subcanvasTitle",
         "perform": [Function],
         "predicate": [Function],
         "trackEvent": false,

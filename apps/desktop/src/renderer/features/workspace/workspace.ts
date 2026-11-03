@@ -33,6 +33,7 @@ import {
   fileTitle,
 } from "../../shared/model/document";
 import { handleDesktopEditingCommand } from "../editor/desktopEditing";
+import { findMissingImageFiles } from "../editor/imageIntegrity";
 import {
   appendFontReplacementHistory,
   loadReplacementFont,
@@ -58,7 +59,7 @@ import {
   getPreferenceColorTopPicks,
 } from "../../shared/config/editorPreferences";
 import { translate } from "../../shared/i18n/i18n";
-import { fileName } from "../../shared/model/path";
+import { fileName, isPathInDirectory } from "../../shared/model/path";
 import {
   copyPresentationScene,
   createPresentation,
@@ -134,6 +135,9 @@ export interface CanvasDocument {
   api: ExcalidrawImperativeAPI | null;
   initialized: boolean;
   flushEditing?: () => void;
+  hasPendingImages?: () => boolean;
+  flushPendingImages?: () => Promise<void>;
+  missingImageFilesAtOpen?: Set<string>;
   getSnapshot?: () => SceneSnapshot;
   activeEditor?: () => ExcalidrawImperativeAPI | null;
   replaceAllSceneFonts?: (fontFamily: FontFamilyValues) => void;
@@ -147,6 +151,7 @@ export interface CanvasDocument {
   draftTimer?: number;
   draftTask: Promise<void>;
   saving: Promise<boolean> | null;
+  relocating?: Promise<void>;
   recovered: boolean;
   unsavedCopy?: boolean;
   removalPhase?: "guarding" | "removing";
@@ -173,6 +178,9 @@ export const useWorkspace = (
   const closingRef = useRef(false);
   const openQueue = useRef(Promise.resolve());
   const fileDialogPending = useRef(false);
+  const pendingImageActions = useRef(
+    new WeakMap<CanvasDocument, (() => void)[]>(),
+  );
   const removalVersion = useRef(0);
   const removedPaths = useRef(new Map<string, number>());
   const pendingRemovals = useRef(new Map<string, Promise<void>>());
@@ -193,15 +201,31 @@ export const useWorkspace = (
     includeInferredStructure: true,
     skipRemoveConfirmation: false,
     skipTrashConfirmation: false,
+    pinnedFoldersByRoot: {},
   });
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
-  const [index, setIndex] = useState<ProjectIndex>({
-    rootDirectory: null,
-    files: [],
-    folders: [],
-    history: [],
+  const [{ index, folderRelocation }, setProjects] = useState<{
+    index: ProjectIndex;
+    folderRelocation: null | {
+      id: number;
+      rootDirectory: string;
+      source: string;
+      destination: string;
+    };
+  }>({
+    index: { rootDirectory: null, files: [], folders: [], history: [] },
+    folderRelocation: null,
   });
+  const relocationId = useRef(0);
+  const setIndex = (index: ProjectIndex) =>
+    setProjects((current) => ({
+      index,
+      folderRelocation:
+        index.rootDirectory === current.folderRelocation?.rootDirectory
+          ? current.folderRelocation
+          : null,
+    }));
   const [loading, setLoading] = useState(true);
   const [closing, setClosing] = useState(false);
   const [failure, setFailure] = useState<{
@@ -214,6 +238,8 @@ export const useWorkspace = (
   ) => setFailure({ message, params });
   const [drafts, setDrafts] = useState<RecoveryDraft[]>([]);
   const [closePrompt, setClosePrompt] = useState<ClosePrompt | null>(null);
+  const [newCanvasDialog, setNewCanvasDialog] = useState(false);
+  const [pdfImportDialog, setPdfImportDialog] = useState(false);
   const handlers = useRef({
     command: (_command: DesktopCommand) => {},
     open: (_files: DiskDocument[]) => {},
@@ -290,6 +316,9 @@ export const useWorkspace = (
   const refreshProjects = async () => {
     try {
       const nextIndex = await desktop.listProjects();
+      if (nextIndex.rootDirectory !== settingsRef.current.rootDirectory) {
+        return null;
+      }
       setIndex(nextIndex);
       return nextIndex;
     } catch (failure) {
@@ -535,6 +564,9 @@ export const useWorkspace = (
 
   const scheduleDraft = (document: CanvasDocument) => {
     ownerWindow.clearTimeout(document.draftTimer);
+    if (document.relocating) {
+      return;
+    }
     if (!document.dirty) {
       void deleteDraft(document);
       return;
@@ -842,6 +874,24 @@ export const useWorkspace = (
     refresh();
   };
 
+  const documentMissingImageFiles = (document: CanvasDocument) =>
+    findMissingImageFiles(
+      document.presentation?.slides ?? [
+        {
+          id: document.id,
+          scene:
+            document.getSnapshot?.() ??
+            (document.api && !document.api.isDestroyed
+              ? {
+                  elements: document.api.getSceneElementsIncludingDeleted(),
+                  appState: document.api.getAppState(),
+                  files: document.api.getFiles(),
+                }
+              : document.initialData),
+        },
+      ],
+    );
+
   const initialize = (
     document: CanvasDocument,
     api: ExcalidrawImperativeAPI,
@@ -852,6 +902,7 @@ export const useWorkspace = (
       refresh();
       return;
     }
+    document.missingImageFilesAtOpen = documentMissingImageFiles(document);
     document.initialized = true;
     const unsaved = document.recovered || !!document.unsavedCopy;
     document.savedContent = unsaved ? null : document.content;
@@ -873,11 +924,24 @@ export const useWorkspace = (
     assertAutomationActive?: () => void,
   ): Promise<boolean> => {
     assertAutomationActive?.();
+    if (document.relocating) {
+      await document.relocating;
+      assertAutomationActive?.();
+    }
     if (
       !documentsRef.current.includes(document) ||
       (document.removalPhase && !allowRemovalSave)
     ) {
       return false;
+    }
+    if (document.hasPendingImages?.()) {
+      await document.flushPendingImages?.();
+      assertAutomationActive?.();
+      // The supplied snapshot predates image initialization.
+      snapshot = undefined;
+      if (!documentsRef.current.includes(document)) {
+        return false;
+      }
     }
     if (snapshot) {
       capture(document, snapshot);
@@ -901,6 +965,17 @@ export const useWorkspace = (
     }
     if (!document.initialized) {
       setError("画布正在加载，请稍后保存。");
+      return false;
+    }
+    const missingImages = documentMissingImageFiles(document);
+    if (
+      [...missingImages].some(
+        (id) => !document.missingImageFilesAtOpen?.has(id),
+      )
+    ) {
+      setError(
+        "图片资源尚未完整加载，已阻止保存以免丢失图片。请等待图片导入完成后重试。",
+      );
       return false;
     }
     const content = document.content;
@@ -935,6 +1010,7 @@ export const useWorkspace = (
         document.modifiedAt = file.modifiedAt;
         document.savedContent = content;
         document.savedContentSignature = contentSignature;
+        document.missingImageFilesAtOpen = missingImages;
         document.recovered = false;
         document.unsavedCopy = false;
         document.dirty =
@@ -974,12 +1050,17 @@ export const useWorkspace = (
     return saveDocument(document, saveAs, snapshot);
   };
 
-  const requestSave = (document: CanvasDocument, saveAs = false) => {
+  const requestSave = async (document: CanvasDocument, saveAs = false) => {
+    if (document.hasPendingImages?.()) {
+      await document.flushPendingImages?.();
+    }
     if (!documentsRef.current.includes(document) || document.removalPhase) {
-      return Promise.resolve(false);
+      return false;
     }
     const editor = document.activeEditor?.() ?? document.api;
-    return editor?.desktopSave(saveAs) || Promise.resolve(false);
+    return editor && !editor.isDestroyed
+      ? editor.desktopSave(saveAs)
+      : saveDocument(document, saveAs);
   };
 
   const commitText = (document: CanvasDocument) => {
@@ -991,6 +1072,12 @@ export const useWorkspace = (
 
   const newPresentation = (source?: CanvasDocument) => {
     if (closingRef.current) {
+      return;
+    }
+    if (
+      source &&
+      deferUntilImagesReady(source, () => newPresentation(source))
+    ) {
       return;
     }
     if (source) {
@@ -1056,9 +1143,40 @@ export const useWorkspace = (
     });
   };
 
+  const deferUntilImagesReady = (
+    document: CanvasDocument,
+    action: () => void,
+  ) => {
+    if (!document.hasPendingImages?.()) {
+      return false;
+    }
+    const waiting = pendingImageActions.current.get(document);
+    if (waiting) {
+      waiting.push(action);
+    } else {
+      pendingImageActions.current.set(document, [action]);
+      void document.flushPendingImages!()
+        .then(() => {
+          const next = pendingImageActions.current.get(document);
+          pendingImageActions.current.delete(document);
+          if (
+            documentsRef.current.includes(document) &&
+            !document.removalPhase
+          ) {
+            next?.forEach((action) => action());
+          }
+        })
+        .catch(reportError);
+    }
+    return true;
+  };
+
   const selectSlide = (document: CanvasDocument, id: string) => {
     const slide = document.presentation?.slides.find((item) => item.id === id);
     if (!slide || document.activeSlideId === id || document.presenting) {
+      return;
+    }
+    if (deferUntilImagesReady(document, () => selectSlide(document, id))) {
       return;
     }
     if (
@@ -1299,6 +1417,13 @@ export const useWorkspace = (
     if (document.presenting || history.pending) {
       return true;
     }
+    if (
+      deferUntilImagesReady(document, () =>
+        performPresentationHistory(document, direction),
+      )
+    ) {
+      return true;
+    }
     commitText(document);
     const entry = history[direction].pop();
     if (!entry) {
@@ -1364,6 +1489,13 @@ export const useWorkspace = (
     affectedSlideId?: string,
   ) => {
     if (!document.presentation || document.presenting) {
+      return;
+    }
+    if (
+      deferUntilImagesReady(document, () =>
+        changeSlides(document, change, activeAfter, affectedSlideId),
+      )
+    ) {
       return;
     }
     checkpointSlide(document);
@@ -1546,6 +1678,9 @@ export const useWorkspace = (
     allowRemovalSave = false,
   ) => {
     for (const document of documents) {
+      if (document.hasPendingImages?.()) {
+        await document.flushPendingImages?.();
+      }
       commitText(document);
       if (document.saving) {
         await document.saving;
@@ -1735,6 +1870,7 @@ export const useWorkspace = (
     try {
       const next = await desktop.chooseDirectory();
       if (next) {
+        settingsRef.current = next;
         setSettings(next);
         await refreshProjects();
       }
@@ -1860,6 +1996,149 @@ export const useWorkspace = (
       return false;
     }
   };
+
+  const syncFolderPins = (next: DesktopSettings, rootDirectory: string) => {
+    const current = settingsRef.current;
+    const updated = {
+      ...current,
+      pinnedFoldersByRoot: {
+        ...current.pinnedFoldersByRoot,
+        [rootDirectory]: next.pinnedFoldersByRoot?.[rootDirectory] ?? [],
+      },
+    };
+    settingsRef.current = updated;
+    setSettings(updated);
+  };
+
+  const setFolderPinned = (category: string, pinned: boolean) => {
+    const rootDirectory = settingsRef.current.rootDirectory;
+    if (!rootDirectory) {
+      return Promise.resolve(false);
+    }
+    const task = settingsQueue.current.then(async () => {
+      try {
+        const next = await desktop.setFolderPinned(
+          category,
+          pinned,
+          rootDirectory,
+        );
+        syncFolderPins(next, rootDirectory);
+        return true;
+      } catch (failure) {
+        reportError(failure);
+        return false;
+      }
+    });
+    settingsQueue.current = task.then(() => {});
+    return task;
+  };
+
+  const relocateFolder = async (
+    operation: "move" | "rename",
+    category: string,
+    value: string,
+  ) => {
+    if (closingRef.current || !settingsRef.current.rootDirectory) {
+      return false;
+    }
+    const rootDirectory = settingsRef.current.rootDirectory;
+    const source = `${rootDirectory.replace(/[\\/]+$/, "")}/${category}`;
+    const affected = documentsRef.current.filter(
+      (document) =>
+        document.path &&
+        isPathInDirectory(document.path, source, desktop.platform),
+    );
+    if (affected.some((document) => document.relocating)) {
+      return false;
+    }
+    let release!: () => void;
+    const relocating = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    for (const document of affected) {
+      document.relocating = relocating;
+      ownerWindow.clearTimeout(document.draftTimer);
+    }
+    try {
+      for (const document of affected) {
+        while (document.saving) {
+          await document.saving;
+        }
+        await document.draftTask;
+      }
+      if (
+        closingRef.current ||
+        settingsRef.current.rootDirectory !== rootDirectory
+      ) {
+        return false;
+      }
+      const moved = await (operation === "move"
+        ? desktop.moveFolder(category, value, rootDirectory)
+        : desktop.renameFolder(category, value, rootDirectory));
+      const remap = (candidate: string | null) =>
+        candidate &&
+        isPathInDirectory(candidate, moved.source, desktop.platform)
+          ? `${moved.destination}${candidate.slice(moved.source.length)}`
+          : candidate;
+      for (const document of documentsRef.current) {
+        document.path = remap(document.path);
+      }
+      setDrafts((current) =>
+        current.map((draft) => ({ ...draft, path: remap(draft.path) })),
+      );
+      refresh();
+      await saveSession();
+      try {
+        const syncingSettings = settingsQueue.current.then(async () => {
+          const nextSettings = await desktop.getSettings();
+          syncFolderPins(nextSettings, rootDirectory);
+        });
+        settingsQueue.current = syncingSettings.catch(() => {});
+        const [nextIndex] = await Promise.all([
+          desktop.listProjects(),
+          syncingSettings,
+        ]);
+        if (
+          settingsRef.current.rootDirectory === rootDirectory &&
+          nextIndex.rootDirectory === rootDirectory
+        ) {
+          const relative = (candidate: string) =>
+            candidate
+              .slice(rootDirectory.replace(/[\\/]+$/, "").length + 1)
+              .replace(/\\/g, "/");
+          setProjects({
+            index: nextIndex,
+            folderRelocation: {
+              id: ++relocationId.current,
+              rootDirectory,
+              source: relative(moved.source),
+              destination: relative(moved.destination),
+            },
+          });
+        }
+      } catch (failure) {
+        reportError(failure);
+      }
+      return true;
+    } catch (failure) {
+      reportError(failure);
+      return false;
+    } finally {
+      for (const document of affected) {
+        delete document.relocating;
+        if (document.dirty) {
+          scheduleDraft(document);
+        }
+      }
+      release();
+    }
+  };
+
+  const moveFolder = (category: string, parentCategory: string) =>
+    relocateFolder("move", category, parentCategory);
+
+  const renameFolder = (category: string, name: string) =>
+    relocateFolder("rename", category, name);
 
   const createFolder = async (name: string) => {
     try {
@@ -2297,6 +2576,11 @@ export const useWorkspace = (
           : commandDocument(args.sourceDocumentId);
       if (source) {
         assertCommandAvailable(source);
+        if (source.hasPendingImages?.()) {
+          await source.flushPendingImages?.();
+          assertActive();
+          assertCommandAvailable(source);
+        }
       }
       const document =
         request.command === "create_presentation"
@@ -2335,6 +2619,19 @@ export const useWorkspace = (
         : canvasDescriptor(document);
     }
     const document = commandDocument(args.documentId);
+    if (
+      [
+        "update_presentation",
+        "control_presentation",
+        "export_presentation",
+        "export_canvas",
+        "update_canvas",
+      ].includes(request.command) &&
+      document.hasPendingImages?.()
+    ) {
+      await document.flushPendingImages?.();
+      await waitForCanvas(document, assertActive);
+    }
     captureAPI(document);
     if (
       [
@@ -3063,7 +3360,7 @@ export const useWorkspace = (
       );
       switch (command) {
         case "new":
-          createDocument();
+          setNewCanvasDialog(true);
           break;
         case "new-presentation":
           newPresentation();
@@ -3237,6 +3534,7 @@ export const useWorkspace = (
     projectsVisible: projectRef.current,
     settings,
     index,
+    folderRelocation,
     loading,
     closing,
     error: failure
@@ -3256,6 +3554,24 @@ export const useWorkspace = (
       : null,
     drafts,
     closePrompt,
+    newCanvasDialog,
+    pdfImportDialog,
+    requestNewDocument: () => setNewCanvasDialog(true),
+    closeNewDocument: () => setNewCanvasDialog(false),
+    requestPdfImport: () => setPdfImportDialog(true),
+    closePdfImport: () => setPdfImportDialog(false),
+    createCanvas: (initialData: ExcalidrawInitialDataState, title: string) => {
+      const document = createDocument(initialData);
+      document.title = title;
+      if (initialData.elements?.length) {
+        document.unsavedCopy = true;
+        document.dirty = true;
+      }
+      setNewCanvasDialog(false);
+      setPdfImportDialog(false);
+      refresh();
+      return document;
+    },
     clearError: () => setFailure(null),
     reportError,
     activate,
@@ -3289,6 +3605,9 @@ export const useWorkspace = (
     changeDirectory,
     changeTheme,
     mutateFile,
+    moveFolder,
+    renameFolder,
+    setFolderPinned,
     renameDocument,
     createFolder,
     recover,

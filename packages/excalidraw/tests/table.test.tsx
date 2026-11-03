@@ -88,6 +88,14 @@ it("inserts a persistent table from the toolbar and edits rows, merged cells and
   ).toBe(true);
   expect(screen.queryByLabelText("单元格文字")).toBeNull();
   act(() => h.app.actionManager.executeAction(actionTableProperties, "ui"));
+  const appearance = screen
+    .getByRole("dialog", { name: "表格详细设置" })
+    .querySelector(".table-details-appearance");
+  expect(appearance).toHaveClass(
+    "selected-shape-actions",
+    "shape-actions-theme-scope",
+  );
+  expect(appearance?.querySelectorAll("fieldset")).toHaveLength(3);
   fireEvent.change(screen.getByLabelText("单元格文字"), {
     target: { value: "可编辑" },
   });

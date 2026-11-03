@@ -29,6 +29,26 @@ export const getSubcanvasId = (element: ExcalidrawElement | null | undefined) =>
     ? (element.customData.subcanvas.sceneId as string)
     : null;
 
+export const synchronizeSubcanvasTitles = (
+  elements: readonly ExcalidrawElement[],
+  scenes: SubcanvasScenes,
+) => {
+  let next = scenes;
+  for (const element of elements) {
+    const id = !element.isDeleted && getSubcanvasId(element);
+    const title = element.customData?.subcanvas?.title;
+    if (
+      id &&
+      next[id] &&
+      typeof title === "string" &&
+      next[id].title !== title
+    ) {
+      next = { ...next, [id]: { ...next[id], title } };
+    }
+  }
+  return next;
+};
+
 export const collectSubcanvasScenes = (
   elements: readonly ExcalidrawElement[],
   scenes: SubcanvasScenes = {},

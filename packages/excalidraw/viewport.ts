@@ -83,7 +83,7 @@ export type SetViewportOptions = {
   fit?: "scale-down" | "contain" | "none";
 
   lock?: {
-    /** constraints panning to the target box */
+    /** Constrains panning to the target box, or only its horizontal span. */
     scroll?: ScrollConstraints["lockScroll"];
     /** makes the resolved zoom the minimum zoom */
     zoom?: ScrollConstraints["lockZoom"];
@@ -187,15 +187,18 @@ export const constrainScrollState = (
       offsetRight,
       give,
     ),
-    scrollY: constrainScrollAxis(
-      state.scrollY,
-      scrollConstraints.y,
-      scrollConstraints.height,
-      height / zoomValue,
-      offsetTop,
-      offsetBottom,
-      give,
-    ),
+    scrollY:
+      scrollConstraints.lockScroll === "x"
+        ? state.scrollY
+        : constrainScrollAxis(
+            state.scrollY,
+            scrollConstraints.y,
+            scrollConstraints.height,
+            height / zoomValue,
+            offsetTop,
+            offsetBottom,
+            give,
+          ),
     zoom: { value: zoomValue },
   };
 };

@@ -1808,3 +1808,64 @@ it("keeps existing thumbnails and only refreshes the edited slide", async () => 
     container.querySelector('[data-preview-title="Edited"]'),
   ).toBeInTheDocument();
 });
+
+it("bounds preview rendering and removes queued previews for deleted slides", async () => {
+  vi.useFakeTimers();
+  const props = makeProps();
+  props.presentation.slides = Array.from({ length: 8 }, (_, index) => ({
+    id: `page-${index}`,
+    title: `Page ${index}`,
+    scene: { elements: [] },
+  }));
+  props.activeSlideId = "page-0";
+  const releases: (() => void)[] = [];
+  let active = 0;
+  let maximum = 0;
+  vi.mocked(renderSlideSvg).mockImplementation((slide) => {
+    maximum = Math.max(maximum, ++active);
+    return new Promise((resolve) =>
+      releases.push(() => {
+        active--;
+        resolve(svgFor(slide.title));
+      }),
+    );
+  });
+  const { rerender } = render(<PresentationLayout {...props} />);
+  await act(async () => {
+    vi.advanceTimersByTime(180);
+  });
+  expect(renderSlideSvg).toHaveBeenCalledTimes(2);
+  props.presentation.slides = props.presentation.slides.filter(
+    (slide) => slide.id !== "page-2",
+  );
+  rerender(<PresentationLayout {...props} />);
+  for (let round = 0; round < 4; round++) {
+    await act(async () => releases.splice(0).forEach((release) => release()));
+  }
+  expect(maximum).toBe(2);
+  expect(renderSlideSvg).toHaveBeenCalledTimes(7);
+  expect(
+    vi
+      .mocked(renderSlideSvg)
+      .mock.calls.some(([slide]) => slide.id === "page-2"),
+  ).toBe(false);
+});
+
+it("finishes asynchronous preparation before freezing the slide show", async () => {
+  const props = makeProps();
+  let finish!: () => void;
+  props.beforePresent.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  render(<PresentationLayout {...props} />);
+  fireEvent.click(screen.getByRole("button", { name: "Present" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  props.presentation.slides[1].title = "Images finished";
+  await act(async () => finish());
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(screen.getByText("Images finished")).toBeInTheDocument();
+  expect(props.onPresent).toHaveBeenCalledWith(true);
+});

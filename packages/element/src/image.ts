@@ -36,6 +36,39 @@ export const loadHTMLImageElement = (
   });
 };
 
+const imageLoadQueues = new WeakMap<
+  AppClassProperties["imageCache"],
+  { active: number; waiting: (() => void)[] }
+>();
+
+const queueImageLoad = (
+  cache: AppClassProperties["imageCache"],
+  load: () => Promise<HTMLImageElement>,
+) => {
+  let queue = imageLoadQueues.get(cache);
+  if (!queue) {
+    queue = { active: 0, waiting: [] };
+    imageLoadQueues.set(cache, queue);
+  }
+  const current = queue;
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const run = () => {
+      current.active++;
+      void load()
+        .then(resolve, reject)
+        .finally(() => {
+          current.active--;
+          current.waiting.shift()?.();
+        });
+    };
+    if (current.active < 4) {
+      run();
+    } else {
+      current.waiting.push(run);
+    }
+  });
+};
+
 /** NOTE: updates cache even if already populated with given image. Thus,
  * you should filter out the images upstream if you want to optimize this. */
 export const updateImageCache = async ({
@@ -66,9 +99,8 @@ export const updateImageCache = async ({
                 throw new Error("Only images can be added to ImageCache");
               }
 
-              const imagePromise = loadHTMLImageElement(
-                fileData.dataURL,
-                createImage,
+              const imagePromise = queueImageLoad(imageCache, () =>
+                loadHTMLImageElement(fileData.dataURL, createImage),
               );
               const data = {
                 image: imagePromise,

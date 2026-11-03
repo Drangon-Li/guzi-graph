@@ -38,6 +38,7 @@ export const getSelectionToolbarPosition = (
   >,
   size: { width: number; height: number },
   insets: { left: number; right: number; top?: number; bottom?: number },
+  gap = 12,
 ) => {
   const start = sceneCoordsToViewportCoords(
     { sceneX: bounds[0], sceneY: bounds[1] },
@@ -64,8 +65,8 @@ export const getSelectionToolbarPosition = (
   ) {
     return null;
   }
-  const above = y1 - size.height - 12;
-  const below = y2 + 12;
+  const above = y1 - size.height - gap;
+  const below = y2 + gap;
   // Avoid covering a selection that fills the viewport when neither side fits.
   if (above < topEdge && below + size.height > bottomEdge) {
     return null;
@@ -157,6 +158,10 @@ export const SelectionToolbar = ({
       appState.selectedLinearElement?.isEditing ||
       viewport.cursorButton === "down",
   );
+  const selectedTable = getSelectedTableRoot(
+    elements,
+    appState.selectedElementIds,
+  );
   const offsets = app.viewport.getOffsets();
   const position = hidden
     ? null
@@ -175,6 +180,7 @@ export const SelectionToolbar = ({
           top: offsets.top,
           bottom: offsets.bottom,
         },
+        selectedTable ? 32 : 12,
       );
   const visible = !!position;
   useLayoutEffect(() => {
@@ -206,10 +212,6 @@ export const SelectionToolbar = ({
     getTargetElements(elementsMap, appState),
     elementsMap,
     app,
-  );
-  const selectedTable = getSelectedTableRoot(
-    elements,
-    appState.selectedElementIds,
   );
   return (
     <div

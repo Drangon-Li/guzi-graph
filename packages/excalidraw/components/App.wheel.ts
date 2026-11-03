@@ -88,6 +88,10 @@ export class AppWheel {
           (hasZoomModifier ||
             resolveInputDevice(this.app.state.inputDevice) === "mouse")));
     if (shouldZoom) {
+      this.app.props.desktopIntegration?.onViewportGesture?.(
+        { source: "wheel", phase: "cancel", deltaY: 0 },
+        this.app.state,
+      );
       this.zoomBy(deltaY);
       return;
     }
@@ -100,6 +104,7 @@ export class AppWheel {
         scrollX: hasZoomModifier ? scrollX : scrollX - delta / zoom.value,
         scrollY: hasZoomModifier ? scrollY - delta / zoom.value : scrollY,
       }));
+      this.notifyPan(hasZoomModifier ? delta : 0);
       return;
     }
 
@@ -107,7 +112,17 @@ export class AppWheel {
       scrollX: scrollX - deltaX / zoom.value,
       scrollY: scrollY - deltaY / zoom.value,
     }));
+    this.notifyPan(deltaY);
   });
+
+  private notifyPan = (deltaY: number) => {
+    this.app.setState({}, () => {
+      this.app.props.desktopIntegration?.onViewportGesture?.(
+        { source: "wheel", phase: "move", deltaY },
+        this.app.state,
+      );
+    });
+  };
 
   /**
    * Prevents the browser's own zoom over the non-interactive editor while

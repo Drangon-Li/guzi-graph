@@ -310,8 +310,8 @@ export type ScrollConstraints = {
   y: number;
   width: number;
   height: number;
-  /** when set, panning is constrained so the viewport stays within the box */
-  lockScroll: boolean;
+  /** `true` constrains both axes; `"x"` constrains horizontal panning only. */
+  lockScroll: boolean | "x";
   /** when set, the viewport cannot zoom out below `zoom` */
   lockZoom: boolean;
   /**
@@ -506,6 +506,7 @@ export interface AppState {
     | { name: "commandPalette" }
     | { name: "settings" }
     | { name: "table"; elementId: ExcalidrawElement["id"] }
+    | { name: "subcanvasTitle"; elementId: ExcalidrawElement["id"] }
     | { name: "elementLinkSelector"; sourceElementId: ExcalidrawElement["id"] }
     | {
         name: "charts";
@@ -859,8 +860,16 @@ export type ElementRenderOffsets = ReadonlyMap<
   NonNullable<ElementRenderOverride["offset"]>
 >;
 
+export type ViewportGesture = {
+  source: "pointer" | "wheel";
+  phase: "begin" | "move" | "end" | "cancel";
+  /** Screen pixels moved toward the bottom of the scene. */
+  deltaY: number;
+};
+
 export interface ExcalidrawProps {
   desktopIntegration?: {
+    onViewportGesture?: (gesture: ViewportGesture, state: AppState) => void;
     save: (
       data: {
         elements: readonly ExcalidrawElement[];
@@ -1474,6 +1483,10 @@ export interface ExcalidrawImperativeAPI {
   commitEditing: () => void;
   /** Commit editing and use the optional desktop document save handler. */
   desktopSave: (saveAs?: boolean) => Promise<boolean>;
+  /** Whether pasted or dropped images are still being initialized. */
+  hasPendingImages: () => boolean;
+  /** Finish image imports before a host snapshots or unmounts the editor. */
+  waitForPendingImages: () => Promise<void>;
   /** Paste a native clipboard event forwarded by the host UI. */
   pasteFromClipboard: (event: ClipboardEvent) => void;
   updateScene: InstanceType<typeof App>["updateScene"];

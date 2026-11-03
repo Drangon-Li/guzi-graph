@@ -8,6 +8,9 @@
 
   .context-menu {
     position: relative;
+    box-sizing: border-box;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     border-radius: 4px;
     box-shadow: 0 3px 10px color.adjust(#000, $alpha: -0.8);
     list-style: none;

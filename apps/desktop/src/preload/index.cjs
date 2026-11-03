@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld("desktop", {
   chooseDirectory: () => invoke("choose-directory"),
   listProjects: () => invoke("list-projects"),
   openFiles: () => invoke("open-files"),
+  importPdf: () => invoke("import-pdf"),
   readFile: (path) => invoke("read-file", path),
   recordOpenedFile: (path) => invoke("record-opened-file", path),
   saveFile: (request) => invoke("save-file", request),
@@ -52,6 +53,12 @@ contextBridge.exposeInMainWorld("desktop", {
   removeFile: (path, mode) => invoke("remove-file", path, mode),
   renameFile: (path, name) => invoke("rename-file", path, name),
   moveFile: (path, category) => invoke("move-file", path, category),
+  moveFolder: (category, parentCategory, rootDirectory) =>
+    invoke("move-folder", category, parentCategory, rootDirectory),
+  renameFolder: (category, name, rootDirectory) =>
+    invoke("rename-folder", category, name, rootDirectory),
+  setFolderPinned: (category, pinned, rootDirectory) =>
+    invoke("set-folder-pinned", category, pinned, rootDirectory),
   createFolder: (category) => invoke("create-folder", category),
   revealFile: (path) => invoke("reveal-file", path),
   getSession: () => invoke("get-session"),

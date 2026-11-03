@@ -37,6 +37,10 @@ import { exportPresentationPdf } from "../features/presentation/renderSlide";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
 import { UpdatePanel } from "../features/settings/UpdatePanel";
 import {
+  PaperControls,
+  PdfImportControls,
+} from "../features/paper/PaperControls";
+import {
   DEFAULT_STYLE_PRESETS,
   applyStylePreset,
   getStyleShortcut,
@@ -168,28 +172,38 @@ const ProjectEditModal = ({
   const [value, setValue] = useState(
     edit.kind === "folder"
       ? ""
+      : edit.kind === "moveFolder"
+      ? edit.folder.split("/").slice(0, -1).join("/")
       : edit.kind === "move"
       ? edit.file.category
       : fileTitle(edit.file.name),
   );
+  const [parent, setParent] = useState(
+    edit.kind === "folder" ? edit.parent || "" : "",
+  );
+  const moving = edit.kind === "move" || edit.kind === "moveFolder";
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const title =
     edit.kind === "folder"
       ? t("新建分类")
-      : edit.kind === "move"
+      : moving
       ? t("移动到分类")
       : t("重命名画布");
   const close = () => !busy && onClose();
   const submit = async () => {
-    if (busy || (edit.kind !== "move" && !value.trim())) {
+    if (busy || (!moving && !value.trim())) {
       return;
     }
     setBusy(true);
     setFailed(false);
     const success =
       edit.kind === "folder"
-        ? await workspace.createFolder(value.trim())
+        ? await workspace.createFolder(
+            [parent, value.trim()].filter(Boolean).join("/"),
+          )
+        : edit.kind === "moveFolder"
+        ? await workspace.moveFolder(edit.folder, value)
         : await workspace.mutateFile(edit.kind, edit.file, value.trim());
     setBusy(false);
     if (success) {
@@ -212,7 +226,7 @@ const ProjectEditModal = ({
         }}
       >
         <div className="desktop-modal-body">
-          {edit.kind === "move" ? (
+          {moving ? (
             <div className="desktop-form-label">
               <span>{t("目标文件夹")}</span>
               <DesktopSelect
@@ -222,10 +236,17 @@ const ProjectEditModal = ({
                 onValueChange={setValue}
                 options={[
                   { value: "", label: t("未分类（默认文件夹）") },
-                  ...workspace.index.folders.map((folder) => ({
-                    value: folder,
-                    label: folder,
-                  })),
+                  ...workspace.index.folders
+                    .filter(
+                      (folder) =>
+                        edit.kind !== "moveFolder" ||
+                        (folder !== edit.folder &&
+                          !folder.startsWith(`${edit.folder}/`)),
+                    )
+                    .map((folder) => ({
+                      value: folder,
+                      label: folder,
+                    })),
                 ]}
               />
             </div>
@@ -240,9 +261,29 @@ const ProjectEditModal = ({
               />
             </label>
           )}
+          {edit.kind === "folder" && (
+            <div className="desktop-form-label">
+              <span>{t("父分类")}</span>
+              <DesktopSelect
+                root={root}
+                label={t("父分类")}
+                value={parent}
+                onValueChange={setParent}
+                options={[
+                  { value: "", label: t("未分类（默认文件夹）") },
+                  ...workspace.index.folders.map((folder) => ({
+                    value: folder,
+                    label: folder,
+                  })),
+                ]}
+              />
+            </div>
+          )}
           <p>
             {edit.kind === "folder"
               ? t("分类会在默认文件夹内创建真实文件夹。")
+              : edit.kind === "moveFolder"
+              ? t("分类及其全部内容会移入所选文件夹。")
               : edit.kind === "rename"
               ? t("文件名会同步更新，文件格式保持不变。")
               : t("文件会移入默认文件夹下所选的分类，原位置将不再保留。")}
@@ -261,7 +302,7 @@ const ProjectEditModal = ({
             type="submit"
             onSelect={() => {}}
             className="desktop-primary"
-            disabled={busy || (edit.kind !== "move" && !value.trim())}
+            disabled={busy || (!moving && !value.trim())}
           >
             {busy ? t("处理中…") : t("确定")}
           </Button>
@@ -379,9 +420,12 @@ const Editor = ({
           <MainMenu.Item
             icon={PlusIcon}
             shortcut={desktopShortcut(platform, "N")}
-            onSelect={workspace.newDocument}
+            onSelect={workspace.requestNewDocument}
           >
             {t("新建画布")}
+          </MainMenu.Item>
+          <MainMenu.Item icon={LoadIcon} onSelect={workspace.requestPdfImport}>
+            {t("导入 PDF")}
           </MainMenu.Item>
           <MainMenu.Item
             icon={PlusIcon}
@@ -422,28 +466,33 @@ const Editor = ({
           </MainMenu.Item>
           <MainMenu.Item
             icon={ExportIcon}
-            onSelect={() => {
-              if (document.presentation) {
-                workspace.commitText(document);
-                void exportPresentationPdf(
-                  document.presentation,
-                  document.title,
-                  root.ownerDocument.defaultView!.desktop,
-                  root.ownerDocument,
-                ).catch(workspace.reportError);
-                return;
-              }
-              if (document.api) {
-                document.flushEditing?.();
-                void exportCanvasPdf(
-                  document.api,
-                  document.title,
-                  root.ownerDocument.defaultView!.desktop,
-                  {
-                    snapshot: document.getSnapshot?.(),
-                    ownerDocument: root.ownerDocument,
-                  },
-                ).catch(workspace.reportError);
+            onSelect={async () => {
+              try {
+                await document.flushPendingImages?.();
+                if (document.presentation) {
+                  workspace.commitText(document);
+                  await exportPresentationPdf(
+                    document.presentation,
+                    document.title,
+                    root.ownerDocument.defaultView!.desktop,
+                    root.ownerDocument,
+                  );
+                  return;
+                }
+                if (document.api) {
+                  document.flushEditing?.();
+                  await exportCanvasPdf(
+                    document.api,
+                    document.title,
+                    root.ownerDocument.defaultView!.desktop,
+                    {
+                      snapshot: document.getSnapshot?.(),
+                      ownerDocument: root.ownerDocument,
+                    },
+                  );
+                }
+              } catch (error) {
+                workspace.reportError(error);
               }
             }}
           >
@@ -452,18 +501,24 @@ const Editor = ({
           {!document.presentation && (
             <MainMenu.Item
               icon={ExportIcon}
-              onSelect={() => {
-                if (document.api) {
-                  document.flushEditing?.();
-                  void exportCanvasPdf(
-                    document.api,
-                    document.title,
-                    root.ownerDocument.defaultView!.desktop,
-                    {
-                      includeSubcanvases: true,
-                      ownerDocument: root.ownerDocument,
-                    },
-                  ).catch(workspace.reportError);
+              onSelect={async () => {
+                try {
+                  await document.flushPendingImages?.();
+                  if (document.api) {
+                    document.flushEditing?.();
+                    void exportCanvasPdf(
+                      document.api,
+                      document.title,
+                      root.ownerDocument.defaultView!.desktop,
+                      {
+                        includeSubcanvases: true,
+                        snapshot: document.getSnapshot?.(),
+                        ownerDocument: root.ownerDocument,
+                      },
+                    ).catch(workspace.reportError);
+                  }
+                } catch (error) {
+                  workspace.reportError(error);
                 }
               }}
             >
@@ -655,6 +710,8 @@ export const App = ({ root }: { root: HTMLElement }) => {
     (document) => document.id === workspace.activeId,
   );
   const otherModalOpen =
+    workspace.newCanvasDialog ||
+    workspace.pdfImportDialog ||
     settingsOpen ||
     !!preferencesSection ||
     recoveryOpen ||
@@ -835,7 +892,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
         </nav>
         <Button
           className="desktop-titlebar-new"
-          onSelect={workspace.newDocument}
+          onSelect={workspace.requestNewDocument}
           aria-label={t("新建画布")}
           title={t("新建画布 · {shortcut}", {
             shortcut: desktopShortcut(platform, "N"),
@@ -930,6 +987,26 @@ export const App = ({ root }: { root: HTMLElement }) => {
           </>
         )}
       </div>
+      {workspace.newCanvasDialog && (
+        <Modal
+          root={root}
+          language={workspace.settings.language}
+          title={t("新建画布")}
+          onClose={workspace.closeNewDocument}
+        >
+          <PaperControls workspace={workspace} />
+        </Modal>
+      )}
+      {workspace.pdfImportDialog && (
+        <Modal
+          root={root}
+          language={workspace.settings.language}
+          title={t("导入 PDF")}
+          onClose={workspace.closePdfImport}
+        >
+          <PdfImportControls root={root} workspace={workspace} />
+        </Modal>
+      )}
       {startupUpdateOpen && (
         <Modal
           root={root}
@@ -1086,7 +1163,11 @@ export const App = ({ root }: { root: HTMLElement }) => {
       {edit && (
         <ProjectEditModal
           key={
-            edit.kind === "folder" ? "folder" : `${edit.kind}:${edit.file.path}`
+            edit.kind === "folder"
+              ? `folder:${edit.parent || ""}`
+              : edit.kind === "moveFolder"
+              ? `moveFolder:${edit.folder}`
+              : `${edit.kind}:${edit.file.path}`
           }
           root={root}
           workspace={workspace}

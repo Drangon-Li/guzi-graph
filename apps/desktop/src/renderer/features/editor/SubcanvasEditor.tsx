@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import { Excalidraw, MainMenu } from "@excalidraw/excalidraw";
@@ -19,6 +19,8 @@ import type {
 } from "@excalidraw/excalidraw/subcanvas";
 import type { HistoryCheckpoint } from "@excalidraw/excalidraw/history";
 
+import { PaperPageControls } from "../paper/PaperPageControls";
+
 import {
   appendFontReplacementHistory,
   replaceSnapshotFonts,
@@ -26,6 +28,7 @@ import {
 
 import "./SubcanvasEditor.scss";
 
+import type { PaperGestureHandler } from "../paper/PaperPageControls";
 import type { SceneSnapshot } from "../../shared/model/document";
 import type { CanvasDocument } from "../workspace/workspace";
 
@@ -50,6 +53,14 @@ export const SubcanvasEditor = ({
 }) => {
   const [path, setPath] = useState<string[]>([]);
   const root = useRef<ExcalidrawImperativeAPI | null>(null);
+  const [rootApi, setRootApi] = useState<ExcalidrawImperativeAPI | null>(null);
+  const paperGesture = useRef<PaperGestureHandler | null>(null);
+  const registerPaperGesture = useCallback(
+    (handler: PaperGestureHandler | null) => {
+      paperGesture.current = handler;
+    },
+    [],
+  );
   const child = useRef<ExcalidrawImperativeAPI | null>(null);
   const childReady = useRef(false);
   const scenes = useRef<SubcanvasScenes>({});
@@ -68,6 +79,11 @@ export const SubcanvasEditor = ({
 
   const snapshot = (): SceneSnapshot => {
     const api = root.current!;
+    files.current = { ...files.current, ...api.getFiles() };
+    const childApi = child.current;
+    if (childApi && !childApi.isDestroyed) {
+      files.current = { ...files.current, ...childApi.getFiles() };
+    }
     return {
       elements: api.getSceneElementsIncludingDeleted(),
       appState: { ...api.getAppState(), subscenes: scenes.current },
@@ -148,6 +164,15 @@ export const SubcanvasEditor = ({
   };
 
   const navigate = (nextPath: string[]) => {
+    const api = child.current;
+    if (api?.hasPendingImages?.()) {
+      void api.waitForPendingImages().then(() => {
+        if (!api.isDestroyed && child.current === api) {
+          navigate(nextPath);
+        }
+      });
+      return;
+    }
     if (
       nextPath.length === path.length &&
       nextPath.every((id, index) => id === path[index])
@@ -204,6 +229,18 @@ export const SubcanvasEditor = ({
   };
 
   useEffect(() => {
+    document.hasPendingImages = () =>
+      !!root.current?.hasPendingImages?.() ||
+      !!child.current?.hasPendingImages?.();
+    document.flushPendingImages = async () => {
+      while (document.hasPendingImages?.()) {
+        await Promise.all([
+          root.current?.waitForPendingImages?.(),
+          child.current?.waitForPendingImages?.(),
+        ]);
+      }
+      flushChild();
+    };
     document.flushEditing = () => {
       flushChild();
       flushSync(() => root.current?.commitEditing());
@@ -274,6 +311,8 @@ export const SubcanvasEditor = ({
       });
     };
     return () => {
+      delete document.hasPendingImages;
+      delete document.flushPendingImages;
       delete document.flushEditing;
       delete document.getSnapshot;
       delete document.invalidateSubsceneHistory;
@@ -282,8 +321,15 @@ export const SubcanvasEditor = ({
     };
   });
 
+  const onViewportGesture: PaperGestureHandler = (gesture, state) => {
+    if (!currentId.current && !document.presentation) {
+      paperGesture.current?.(gesture, state);
+    }
+    latest.current.desktopIntegration?.onViewportGesture?.(gesture, state);
+  };
   const integration = {
     ...props.desktopIntegration,
+    onViewportGesture,
     open: () => latest.current.desktopIntegration!.open(),
     subcanvas: { open },
     sceneFontLabel: activeId
@@ -292,6 +338,7 @@ export const SubcanvasEditor = ({
         : "替换当前子画布字体"
       : props.desktopIntegration?.sceneFontLabel,
     save: async (_snapshot: SceneSnapshot, saveAs: boolean) => {
+      await document.flushPendingImages?.();
       flushChild();
       root.current?.commitEditing();
       return (
@@ -312,6 +359,7 @@ export const SubcanvasEditor = ({
           onDuplicate={duplicate}
           onExcalidrawAPI={(api) => {
             root.current = api;
+            setRootApi(api);
             props.onExcalidrawAPI?.(api);
           }}
           onInitialize={(api) => {
@@ -333,6 +381,14 @@ export const SubcanvasEditor = ({
             );
           }}
         />
+        {rootApi && (
+          <PaperPageControls
+            api={rootApi}
+            active={!scene && !document.presentation}
+            language={english ? "en" : "zh-CN"}
+            register={registerPaperGesture}
+          />
+        )}
       </div>
       {scene && activeId && (
         <div className="desktop-subcanvas-overlay">
@@ -424,6 +480,7 @@ export const SubcanvasEditor = ({
                 onDuplicate={duplicate}
                 desktopIntegration={{
                   ...integration,
+                  onViewportGesture: undefined,
                   history: undefined,
                   elementPastePosition: undefined,
                 }}

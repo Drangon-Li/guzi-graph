@@ -90,6 +90,8 @@ describe("desktop inline tab rename interaction", () => {
       activate: vi.fn(),
       openFiles: vi.fn().mockResolvedValue(undefined),
       newDocument: vi.fn(),
+      requestNewDocument: vi.fn(),
+      requestPdfImport: vi.fn(),
       closeDocument: vi.fn(),
       removeFile: vi.fn().mockResolvedValue(true),
       updateSettings: vi.fn().mockResolvedValue(null),
@@ -113,7 +115,7 @@ describe("desktop inline tab rename interaction", () => {
     ["导出 PDF（包含子画布）…", true],
   ] as const)(
     "passes the mounted document to %s",
-    (label, includeSubcanvases) => {
+    async (label, includeSubcanvases) => {
       const ownerWindow = root.ownerDocument.defaultView!;
       const frame = root.ownerDocument.createElement("iframe");
       root.ownerDocument.body.append(frame);
@@ -144,6 +146,13 @@ describe("desktop inline tab rename interaction", () => {
       try {
         render(<App root={root} />, { container: root });
         canvas.flushEditing = vi.fn();
+        let finishImages!: () => void;
+        canvas.flushPendingImages = vi.fn(
+          () =>
+            new Promise<void>((resolve) => {
+              finishImages = resolve;
+            }),
+        );
         canvas.getSnapshot = () => snapshot;
         const menu = vi.mocked(Excalidraw).mock.lastCall![0]
           .children as ReactElement<{ children: ReactNode }>;
@@ -151,15 +160,24 @@ describe("desktop inline tab rename interaction", () => {
           (node) =>
             isValidElement<{ children: ReactNode }>(node) &&
             node.props.children === label,
-        ) as ReactElement<{ onSelect: () => void }>;
-        act(() => item.props.onSelect());
+        ) as ReactElement<{ onSelect: () => Promise<void> }>;
+        let exporting!: Promise<void>;
+        act(() => {
+          exporting = item.props.onSelect();
+        });
+        expect(exportPdf).not.toHaveBeenCalled();
+        expect(canvas.flushEditing).not.toHaveBeenCalled();
+        await act(async () => {
+          finishImages();
+          await exporting;
+        });
         expect(canvas.flushEditing).toHaveBeenCalledTimes(1);
         expect(exportPdf).toHaveBeenCalledWith(
           canvas.api,
           canvas.title,
           ownerDocument.defaultView!.desktop,
           includeSubcanvases
-            ? { includeSubcanvases: true, ownerDocument }
+            ? { includeSubcanvases: true, snapshot, ownerDocument }
             : { snapshot, ownerDocument },
         );
       } finally {
@@ -309,7 +327,7 @@ describe("desktop inline tab rename interaction", () => {
       if (action === "close") {
         expect(workspace.closeDocument).toHaveBeenCalledWith("canvas-id");
       } else if (action === "new") {
-        expect(workspace.newDocument).toHaveBeenCalledTimes(1);
+        expect(workspace.requestNewDocument).toHaveBeenCalledTimes(1);
       } else {
         expect(workspace.activate).toHaveBeenCalledWith("second-id");
       }

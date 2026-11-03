@@ -87,7 +87,20 @@
     margin-top: 0.75rem;
   }
 
-  &--details .table-cell-grid {
-    max-height: 180px;
+  .table-details-appearance {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+
+  &--details {
+    margin: 0;
+    padding: 0;
+    border: none;
+
+    .table-cell-grid {
+      max-height: 180px;
+    }
   }
 }

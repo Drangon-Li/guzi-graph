@@ -50,8 +50,33 @@ type Props = {
   onFit?: () => void;
   onPresent?: (presenting: boolean) => void;
   onController?: (controller: PresentationController | null) => void;
-  beforePresent: () => void;
+  beforePresent: () => void | Promise<void>;
   children: ReactNode;
+};
+
+const previewQueue: (() => void)[] = [];
+let activePreviews = 0;
+const queuePreview = (render: () => Promise<void>, immediate: boolean) => {
+  const run = () => {
+    activePreviews++;
+    void render().finally(() => {
+      activePreviews--;
+      previewQueue.shift()?.();
+    });
+  };
+  if (activePreviews < 2) {
+    run();
+  } else if (immediate) {
+    previewQueue.unshift(run);
+  } else {
+    previewQueue.push(run);
+  }
+  return () => {
+    const index = previewQueue.indexOf(run);
+    if (index >= 0) {
+      previewQueue.splice(index, 1);
+    }
+  };
 };
 
 const SlidePreview = ({
@@ -78,31 +103,41 @@ const SlidePreview = ({
     const node = container.current!;
     const ownerWindow = node.ownerDocument.defaultView!;
     let cancelled = false;
+    let cancelQueued: (() => void) | undefined;
     setFailed(false);
     if (immediate) {
       node.replaceChildren();
     }
     const timer = ownerWindow.setTimeout(
       () => {
-        void renderSlideSvg(
-          { id, title, scene, bounds },
-          width,
-          height,
-          node.ownerDocument,
-          darkMode,
-        ).then(
-          (svg) => {
-            if (!cancelled) {
-              node.replaceChildren(svg);
-            }
-          },
-          () => !cancelled && setFailed(true),
+        cancelQueued = queuePreview(
+          () =>
+            renderSlideSvg(
+              { id, title, scene, bounds },
+              width,
+              height,
+              node.ownerDocument,
+              darkMode,
+            ).then(
+              (svg) => {
+                if (!cancelled) {
+                  node.replaceChildren(svg);
+                }
+              },
+              () => {
+                if (!cancelled) {
+                  setFailed(true);
+                }
+              },
+            ),
+          immediate,
         );
       },
       immediate ? 0 : 180,
     );
     return () => {
       cancelled = true;
+      cancelQueued?.();
       ownerWindow.clearTimeout(timer);
     };
   }, [id, title, scene, bounds, width, height, revision, immediate, darkMode]);
@@ -450,11 +485,24 @@ export const PresentationLayout = (props: Props) => {
     };
   }, [session, active, blocked]);
 
-  const present = (index: number) => {
+  const present = (index: number, prepared = false): void | Promise<void> => {
     if (disabled || !presentation.slides.length) {
       return;
     }
-    latest.current.beforePresent();
+    if (!prepared) {
+      const preparing = latest.current.beforePresent();
+      if (preparing) {
+        return preparing.then(() => {
+          if (
+            root.current &&
+            latest.current.active &&
+            !latest.current.blocked
+          ) {
+            flushSync(() => present(index, true));
+          }
+        });
+      }
+    }
     fullscreenRequest.current = Promise.resolve();
     const ownerDocument = root.current!.ownerDocument;
     const nextSession: Session = {
@@ -524,13 +572,15 @@ export const PresentationLayout = (props: Props) => {
       if (index < 0) {
         throw new Error("找不到要放映的幻灯片。");
       }
+      let starting: void | Promise<void> = undefined;
       flushSync(() => {
         if (sessionRef.current) {
           setPage(index);
         } else {
-          present(index);
+          starting = present(index);
         }
       });
+      await starting;
       await waitForFullscreenTransition(
         ownerDocument,
         fullscreenRequest.current,

@@ -134,6 +134,7 @@ export type ActionName =
   | "addLinearAnchor"
   | "insertTable"
   | "tableProperties"
+  | "subcanvasTitle"
   | "selectAllElementsInFrame"
   | "removeAllElementsFromFrame"
   | "updateFrameRendering"

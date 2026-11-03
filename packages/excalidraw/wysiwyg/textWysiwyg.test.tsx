@@ -51,7 +51,7 @@ import { actionBindText } from "../actions";
 import { actionTextAutoResize } from "../actions/actionTextAutoResize";
 import { getTextAutoResizeHandle } from "../textAutoResizeHandle";
 
-import { CARET_FOLLOW_PADDING } from "./textWysiwyg";
+import { AnimationController } from "../renderer/animation";
 
 const { h } = window;
 
@@ -1303,8 +1303,14 @@ describe("textWysiwyg", () => {
             bottom: statsHeight,
           } as DOMRect);
         updateTextEditor(textarea, text);
-        // the canvas follows the caret once the update's in the app's state
-        await act(() => new Promise((resolve) => setTimeout(resolve)));
+        await act(
+          () => new Promise((resolve) => requestAnimationFrame(resolve)),
+        );
+        await waitFor(() =>
+          expect(
+            AnimationController.running(h.app.viewport.caretFollowAnimationKey),
+          ).toBe(false),
+        );
         return h.app.scene.getElement(
           h.state.editingTextElement!.id,
         ) as ExcalidrawTextElement;
@@ -1344,7 +1350,7 @@ describe("textWysiwyg", () => {
         expect(h.state.scrollX).toBeLessThan(0);
         expect(
           (text.x + text.width + h.state.scrollX) * h.state.zoom.value,
-        ).toBeCloseTo(500 - CARET_FOLLOW_PADDING);
+        ).toBeCloseTo(500 - 20);
       });
 
       it("should find the caret in a bidirectional line where the browser lays it out", async () => {
@@ -1364,7 +1370,7 @@ describe("textWysiwyg", () => {
           const text = await typeAt(450, 100, "hello\nא abcdef", 200);
           expect(
             (text.x + 60 + h.state.scrollX) * h.state.zoom.value,
-          ).toBeCloseTo(500 - CARET_FOLLOW_PADDING);
+          ).toBeCloseTo(500 - 20);
         } finally {
           Range.prototype.getBoundingClientRect = getBoundingClientRect;
         }
@@ -1447,50 +1453,23 @@ describe("textWysiwyg", () => {
       expect(text.x + text.width).toBeCloseTo(x + width);
     });
 
-    it("should pan the canvas instead of scrolling the editor to reveal the caret", () => {
-      API.setAppState({ zoom: { value: 2 as typeof h.state.zoom.value } });
+    it("resets browser reveal scrolling without making a new follow request", () => {
       const editorBox = textarea.parentElement!;
-      const root = textarea.closest<HTMLElement>(".excalidraw")!;
       const { scrollX, scrollY } = h.state;
-      const editorTop = parseFloat(textarea.style.top);
-
-      // what the browser does to reveal a caret below and right of the
-      // editor's box (the canvas area)
       editorBox.scrollTop = 120;
       editorBox.scrollLeft = 40;
       fireEvent.scroll(editorBox);
-
-      // the box is put back, and the canvas pans by the same screen
-      // distance plus room to spare
       expect(editorBox.scrollTop).toBe(0);
       expect(editorBox.scrollLeft).toBe(0);
-      expect(h.state.scrollX).toBe(scrollX - (40 + CARET_FOLLOW_PADDING) / 2);
-      expect(h.state.scrollY).toBe(scrollY - (120 + CARET_FOLLOW_PADDING) / 2);
-      // with the editor on it
-      expect(parseFloat(textarea.style.top)).toBe(
-        editorTop - (120 + CARET_FOLLOW_PADDING),
-      );
-      // the reveal never reaches the root
-      expect(root.scrollTop).toBe(0);
-
-      // a reveal along one axis pans along that axis only
-      const scrolledX = h.state.scrollX;
-      editorBox.scrollTop = 30;
-      fireEvent.scroll(editorBox);
-      expect(h.state.scrollX).toBe(scrolledX);
-      expect(h.state.scrollY).toBe(
-        scrollY -
-          (120 + CARET_FOLLOW_PADDING) / 2 -
-          (30 + CARET_FOLLOW_PADDING) / 2,
-      );
-
-      // with no text being edited, the box is left alone
-      const lastScrollY = h.state.scrollY;
+      expect(h.state.scrollX).toBe(scrollX);
+      expect(h.state.scrollY).toBe(scrollY);
+      expect(
+        AnimationController.running(h.app.viewport.caretFollowAnimationKey),
+      ).toBe(false);
       Keyboard.exitTextEditor(textarea);
       editorBox.scrollTop = 50;
       fireEvent.scroll(editorBox);
       expect(editorBox.scrollTop).toBe(50);
-      expect(h.state.scrollY).toBe(lastScrollY);
       editorBox.scrollTop = 0;
     });
 

@@ -14,6 +14,8 @@ import type {
   ExcalidrawImperativeAPI,
 } from "@excalidraw/excalidraw/types";
 
+import { createPaperPage, A4 } from "../paper/paper";
+
 import { StructuredExportDialog } from "./StructuredExportDialog";
 
 import {
@@ -92,6 +94,59 @@ const decode = (data: ArrayBuffer) => new TextDecoder().decode(data);
 vi.mock("@excalidraw/utils", () => ({ exportScene: vi.fn() }));
 
 describe("desktop structured export", () => {
+  it("exports paper frames in order at their physical sizes without page labels or margins", async () => {
+    const { exportScene } = await import("@excalidraw/utils");
+    const elements = [
+      ...createPaperPage({
+        width: A4.height,
+        height: A4.width,
+        y: 1200,
+        name: "2",
+      }),
+      ...createPaperPage({ ...A4, name: "1" }),
+      element("annotation", "text", { x: 80, y: 80 }),
+    ];
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "794");
+    svg.setAttribute("height", "1123");
+    vi.mocked(exportScene).mockResolvedValue(svg);
+    const api = {
+      commitEditing: vi.fn(),
+      getSceneElements: () => elements,
+      getAppState: () => ({ exportWithDarkMode: true }),
+      getFiles: () => ({}),
+    } as unknown as ExcalidrawImperativeAPI;
+    const savePdf = vi.fn().mockResolvedValue(true);
+    await exportCanvasPdf(api, "Paper", { savePdf } as unknown as DesktopAPI, {
+      ownerDocument: document,
+    });
+    expect(savePdf).toHaveBeenCalledWith(
+      expect.objectContaining({
+        width: A4.width,
+        height: A4.height,
+        pages: [
+          expect.objectContaining({
+            width: A4.height,
+            height: A4.width,
+            title: "2",
+          }),
+        ],
+      }),
+    );
+    const calls = vi.mocked(exportScene).mock.calls.slice(-2);
+    expect(
+      calls.map(([options]) => options.config?.exportingFrame?.name),
+    ).toEqual(["1", "2"]);
+    for (const [options] of calls) {
+      expect(options.config).toMatchObject({
+        padding: 0,
+        theme: "light",
+        canvasBackgroundColor: "#ffffff",
+        exportingFrame: { type: "frame" },
+      });
+      expect(options.data.elements).toContain(elements.at(-1));
+    }
+  });
   it("covers every live ID once, retains original paragraphs and filters deleted data", () => {
     const elements = [
       element("box"),

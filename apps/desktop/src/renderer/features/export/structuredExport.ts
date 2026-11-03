@@ -5,6 +5,8 @@ import { getExportConfigFromAppState } from "@excalidraw/excalidraw/scene/export
 
 import type {
   ExcalidrawElement,
+  ExcalidrawFrameElement,
+  NonDeleted,
   NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
 import type {
@@ -13,6 +15,8 @@ import type {
 } from "@excalidraw/excalidraw/types";
 
 import type { SubcanvasScenes } from "@excalidraw/excalidraw/subcanvas";
+
+import { getPaperPages } from "../paper/paper";
 
 import type { SceneSnapshot } from "../../shared/model/document";
 import type { DesktopAPI } from "../../../shared/desktop-api";
@@ -1124,23 +1128,42 @@ export const exportCanvasPdf = async (
   const files = { ...(options.snapshot?.files ?? api.getFiles()) };
   const { exportScene } = await import("@excalidraw/utils");
   registerCustomFontRegistry(appState.fontRegistry);
-  const svg = await exportScene({
-    type: "svg",
-    data: { elements, appState, files },
-    config: {
-      ...getExportConfigFromAppState(appState),
-      padding: 24,
-      embedScene: false,
-      reuseImages: true,
-      environment: { document: options.ownerDocument },
-    },
-  });
-  const width = Number(svg.getAttribute("width"));
-  const height = Number(svg.getAttribute("height"));
+  const paperFrames = getPaperPages(elements);
+  const exportRoot = (frame: NonDeleted<ExcalidrawFrameElement> | undefined) =>
+    exportScene({
+      type: "svg",
+      data: { elements, appState, files },
+      config: {
+        ...getExportConfigFromAppState(appState),
+        padding: frame ? 0 : 24,
+        ...(frame
+          ? {
+              exportingFrame: frame,
+              theme: "light" as const,
+              canvasBackgroundColor: "#ffffff",
+            }
+          : {}),
+        embedScene: false,
+        reuseImages: true,
+        environment: { document: options.ownerDocument },
+      },
+    });
+  const svg = await exportRoot(paperFrames[0]);
+  const width = paperFrames[0]?.width ?? Number(svg.getAttribute("width"));
+  const height = paperFrames[0]?.height ?? Number(svg.getAttribute("height"));
   if (!(width > 0 && height > 0)) {
     throw new Error("The canvas has invalid PDF dimensions.");
   }
   const pages: NonNullable<Parameters<DesktopAPI["savePdf"]>[0]["pages"]> = [];
+  for (const frame of paperFrames.slice(1)) {
+    const page = await exportRoot(frame);
+    pages.push({
+      title: frame.name ?? undefined,
+      svg: page.outerHTML,
+      width: frame.width,
+      height: frame.height,
+    });
+  }
   if (options.includeSubcanvases) {
     for (const { scene } of collectExportSubcanvases(
       elements,

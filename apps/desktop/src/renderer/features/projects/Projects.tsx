@@ -1,4 +1,11 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { Button } from "@excalidraw/excalidraw";
 import { TextField } from "@excalidraw/excalidraw/components/TextField";
@@ -8,6 +15,7 @@ import {
   DotsHorizontalIcon,
   ExternalLinkIcon,
   PenModeIcon,
+  PinIcon,
   TrashIcon,
   LoadIcon,
   PlusIcon,
@@ -25,7 +33,7 @@ import { desktopShortcut } from "../../shared/ui/desktopShortcut";
 import { FilePreview } from "./FilePreview";
 import { ProjectContextMenu } from "./ProjectContextMenu";
 
-import type { ReactNode } from "react";
+import type { DragEvent, ReactNode } from "react";
 
 import type { ProjectFile, RecentFile } from "../../../shared/desktop-api";
 import type { Workspace } from "../workspace/workspace";
@@ -45,7 +53,8 @@ type FileMenu = {
 };
 
 export type ProjectEdit =
-  | { kind: "folder" }
+  | { kind: "folder"; parent?: string }
+  | { kind: "moveFolder"; folder: string }
   | { kind: "rename" | "move"; file: ProjectFile };
 
 export const Projects = ({
@@ -84,6 +93,44 @@ export const Projects = ({
   const [sort, setSort] = useState("modified");
   const [refreshing, setRefreshing] = useState(false);
   const [menu, setMenu] = useState<FileMenu | null>(null);
+  const [folderMenu, setFolderMenu] = useState<{
+    folder: string;
+    anchor: HTMLButtonElement;
+    left: number;
+    top: number;
+    align: "start" | "end";
+  } | null>(null);
+  const [collapsed, setCollapsed] = useState(new Set<string>());
+  const [renaming, setRenaming] = useState<{
+    folder: string;
+    value: string;
+    pending: boolean;
+    error: boolean;
+  } | null>(null);
+  const renameInput = useRef<HTMLInputElement>(null);
+  const renamePhase = useRef<"idle" | "editing" | "pending">("idle");
+  const renameFocus = useRef<string | null>(null);
+  const renamingFolder = renaming?.folder;
+  const composing = useRef(false);
+  const lastRoot = useRef(workspace.index.rootDirectory);
+  const lastRelocation = useRef<number | null>(null);
+  const [dragging, setDragging] = useState<
+    | { kind: "file"; file: ProjectFile }
+    | { kind: "folder"; folder: string }
+    | null
+  >(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const dragPreview = useRef<{ node: HTMLElement; timer: number } | null>(null);
+  const clearDragPreview = () => {
+    const preview = dragPreview.current;
+    if (preview) {
+      preview.node.ownerDocument.defaultView!.clearTimeout(preview.timer);
+      preview.node.remove();
+      dragPreview.current = null;
+    }
+  };
+  useEffect(() => clearDragPreview, []);
+  const [moving, setMoving] = useState(false);
   const menuId = useId();
   const closeMenu = (restoreFocus = false) => {
     setMenu(null);
@@ -93,6 +140,7 @@ export const Projects = ({
   };
   useEffect(() => {
     setMenu(null);
+    setFolderMenu(null);
   }, [
     active,
     historyVisible,
@@ -101,8 +149,30 @@ export const Projects = ({
     query,
     sort,
     workspace.projectsVisible,
-    workspace.index,
   ]);
+  useEffect(() => setMenu(null), [workspace.index]);
+  useLayoutEffect(() => {
+    if (renamingFolder) {
+      renameInput.current?.focus();
+      renameInput.current?.select();
+    } else if (renameFocus.current) {
+      const folder = renameFocus.current;
+      renameFocus.current = null;
+      Array.from(
+        root.querySelectorAll<HTMLButtonElement>(
+          ".desktop-category-row > button[title]",
+        ),
+      )
+        .find((button) => button.title === folder)
+        ?.focus({ preventScroll: true });
+    }
+  }, [renamingFolder, root]);
+  useEffect(() => {
+    if (!active || !workspace.projectsVisible) {
+      renamePhase.current = "idle";
+      setRenaming(null);
+    }
+  }, [active, workspace.projectsVisible]);
   const files = useMemo(() => {
     const search = query.trim().toLocaleLowerCase();
     const source = historyVisible
@@ -142,6 +212,407 @@ export const Projects = ({
     sort,
     platform,
   ]);
+  useEffect(() => {
+    if (lastRoot.current !== workspace.index.rootDirectory) {
+      lastRoot.current = workspace.index.rootDirectory;
+      setCategory(null);
+      setCollapsed(new Set());
+      setFolderMenu(null);
+      setRenaming(null);
+      renamePhase.current = "idle";
+      return;
+    }
+    const relocation = workspace.folderRelocation;
+    const remap = (path: string) =>
+      relocation &&
+      (path === relocation.source || path.startsWith(`${relocation.source}/`))
+        ? relocation.destination + path.slice(relocation.source.length)
+        : path;
+    const relocated =
+      relocation &&
+      relocation.id !== lastRelocation.current &&
+      relocation.rootDirectory === workspace.index.rootDirectory;
+    if (relocated) {
+      lastRelocation.current = relocation.id;
+      setCollapsed((current) => new Set(Array.from(current, remap)));
+    }
+    setCategory((current) => {
+      const next = current && relocated ? remap(current) : current;
+      return next && !workspace.index.folders.includes(next) ? null : next;
+    });
+    setFolderMenu((current) =>
+      current && !workspace.index.folders.includes(current.folder)
+        ? null
+        : current,
+    );
+  }, [
+    category,
+    workspace.index.rootDirectory,
+    workspace.index.folders,
+    workspace.folderRelocation,
+  ]);
+  const beginRename = (folder: string) => {
+    if (renamePhase.current === "pending") {
+      return;
+    }
+    renamePhase.current = "editing";
+    composing.current = false;
+    setFolderMenu(null);
+    setRenaming({
+      folder,
+      value: folder.split("/").pop()!,
+      pending: false,
+      error: false,
+    });
+  };
+  const finishRename = (folder = renaming?.folder) => {
+    if (
+      renameInput.current?.ownerDocument.activeElement === renameInput.current
+    ) {
+      renameFocus.current = folder || null;
+    }
+    renamePhase.current = "idle";
+    setRenaming(null);
+  };
+  const submitRename = async () => {
+    if (!renaming || renamePhase.current !== "editing") {
+      return;
+    }
+    const edit = renaming;
+    const rootDirectory = workspace.index.rootDirectory;
+    if (edit.value.trim() === edit.folder.split("/").pop()) {
+      finishRename();
+      return;
+    }
+    renamePhase.current = "pending";
+    setRenaming({ ...edit, pending: true, error: false });
+    const succeeded = await workspace.renameFolder(
+      edit.folder,
+      edit.value.trim(),
+    );
+    if (
+      renamePhase.current !== "pending" ||
+      lastRoot.current !== rootDirectory
+    ) {
+      return;
+    }
+    if (succeeded) {
+      finishRename(
+        [...edit.folder.split("/").slice(0, -1), edit.value.trim()].join("/"),
+      );
+    } else {
+      renamePhase.current = "editing";
+      setRenaming({ ...edit, pending: false, error: true });
+      renameInput.current?.focus();
+    }
+  };
+  const canDrop = (target: string) =>
+    !!workspace.index.rootDirectory &&
+    !moving &&
+    !!dragging &&
+    (dragging.kind === "file" ||
+      (target !== dragging.folder &&
+        !target.startsWith(`${dragging.folder}/`)));
+  const dropEvents = (target: string) => ({
+    onDragOver: (event: DragEvent) => {
+      if (canDrop(target)) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = "move";
+        setDropTarget(target);
+      }
+    },
+    onDragLeave: (event: DragEvent) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+        setDropTarget((current) => (current === target ? null : current));
+      }
+    },
+    onDrop: async (event: DragEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearDragPreview();
+      setDropTarget(null);
+      if (!canDrop(target) || !dragging) {
+        return;
+      }
+      const item = dragging;
+      setDragging(null);
+      setMoving(true);
+      try {
+        if (item.kind === "file") {
+          await workspace.mutateFile("move", item.file, target);
+        } else {
+          await workspace.moveFolder(item.folder, target);
+        }
+        setCollapsed((current) => {
+          const next = new Set(current);
+          next.delete(target);
+          return next;
+        });
+      } finally {
+        setMoving(false);
+      }
+    },
+  });
+  const startDrag = (event: DragEvent, item: NonNullable<typeof dragging>) => {
+    event.stopPropagation();
+    clearDragPreview();
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(
+      "application/x-guzi-project",
+      JSON.stringify(
+        item.kind === "file" ? { kind: item.kind, path: item.file.path } : item,
+      ),
+    );
+    if (item.kind === "file") {
+      const ownerDocument = root.ownerDocument;
+      const ownerWindow = ownerDocument.defaultView!;
+      const host = ownerDocument.createElement("div");
+      host.className = "desktop-drag-preview-host";
+      host.setAttribute("aria-hidden", "true");
+      const preview = ownerDocument.createElement("div");
+      preview.className = "desktop-drag-preview";
+      const source = event.currentTarget.querySelector(".desktop-file-preview");
+      if (source) {
+        preview.append(source.cloneNode(true));
+      }
+      const title = ownerDocument.createElement("div");
+      title.className = "desktop-drag-preview-title";
+      title.textContent = fileTitle(item.file.name);
+      const label = ownerDocument.createElement("div");
+      label.className = "desktop-drag-preview-label";
+      label.textContent = `↗ ${t("移动中")}`;
+      preview.append(title, label);
+      host.append(preview);
+      event.currentTarget.closest(".excalidraw.desktop-shell")!.append(host);
+      // Keep the rendered node alive until Chromium has captured the drag image.
+      dragPreview.current = {
+        node: host,
+        timer: ownerWindow.setTimeout(clearDragPreview, 150),
+      };
+      event.dataTransfer.setDragImage(host, 0, 0);
+    }
+    setDragging(item);
+    setMenu(null);
+    setFolderMenu(null);
+  };
+  const endDrag = () => {
+    clearDragPreview();
+    setDragging(null);
+    setDropTarget(null);
+  };
+  const showFolderMenu = (
+    folder: string,
+    anchor: HTMLButtonElement,
+    position?: { left: number; top: number },
+  ) => {
+    const rect = anchor.getBoundingClientRect();
+    setMenu(null);
+    setFolderMenu({
+      folder,
+      anchor,
+      left: position?.left ?? rect.right,
+      top: position?.top ?? rect.bottom + 8,
+      align: position ? "start" : "end",
+    });
+  };
+  const pinned = new Set(
+    workspace.settings.pinnedFoldersByRoot?.[
+      workspace.index.rootDirectory || ""
+    ] || [],
+  );
+  const folderTree = (parent: string): ReactNode => {
+    const children = workspace.index.folders
+      .filter((folder) => folder.split("/").slice(0, -1).join("/") === parent)
+      .sort(
+        (left, right) =>
+          Number(pinned.has(right)) - Number(pinned.has(left)) ||
+          left.localeCompare(right, workspace.settings.language, {
+            numeric: true,
+          }),
+      );
+    return children.length ? (
+      <ul className="desktop-category-tree">
+        {children.map((folder) => {
+          const hasChildren = workspace.index.folders.some((candidate) =>
+            candidate.startsWith(`${folder}/`),
+          );
+          const expanded = !collapsed.has(folder);
+          const editing = renaming?.folder === folder;
+          return (
+            <li key={folder}>
+              <div
+                className={`desktop-category-row${
+                  dropTarget === folder ? " desktop-drop-target" : ""
+                }`}
+                draggable={!moving && !renaming}
+                onDragStart={(event) => {
+                  if (renaming) {
+                    event.preventDefault();
+                    return;
+                  }
+                  startDrag(event, { kind: "folder", folder });
+                }}
+                onDragEnd={endDrag}
+                {...dropEvents(folder)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  if (renaming) {
+                    return;
+                  }
+                  showFolderMenu(
+                    folder,
+                    event.currentTarget.querySelector<HTMLButtonElement>(
+                      ".desktop-category-menu",
+                    )!,
+                    { left: event.clientX, top: event.clientY },
+                  );
+                }}
+                onKeyDown={(event) => {
+                  if (renaming) {
+                    return;
+                  }
+                  if (event.key === "F2") {
+                    event.preventDefault();
+                    beginRename(folder);
+                    return;
+                  }
+                  if (
+                    event.key === "ContextMenu" ||
+                    (event.shiftKey && event.key === "F10")
+                  ) {
+                    event.preventDefault();
+                    showFolderMenu(
+                      folder,
+                      event.currentTarget.querySelector<HTMLButtonElement>(
+                        ".desktop-category-menu",
+                      )!,
+                    );
+                  }
+                }}
+              >
+                {hasChildren ? (
+                  <button
+                    className="desktop-category-toggle"
+                    aria-label={t(expanded ? "收起 {name}" : "展开 {name}", {
+                      name: folder,
+                    })}
+                    aria-expanded={expanded}
+                    disabled={editing}
+                    onClick={() =>
+                      setCollapsed((current) => {
+                        const next = new Set(current);
+                        expanded ? next.add(folder) : next.delete(folder);
+                        return next;
+                      })
+                    }
+                  >
+                    {expanded ? "▾" : "▸"}
+                  </button>
+                ) : (
+                  <span className="desktop-category-toggle" />
+                )}
+                {editing ? (
+                  <div className="desktop-category-rename">
+                    <input
+                      ref={renameInput}
+                      className="desktop-category-rename-input"
+                      aria-label={t("分类名称")}
+                      aria-busy={renaming.pending}
+                      aria-invalid={renaming.error}
+                      value={renaming.value}
+                      readOnly={renaming.pending}
+                      onChange={(event) =>
+                        setRenaming({
+                          ...renaming,
+                          value: event.target.value,
+                          error: false,
+                        })
+                      }
+                      onCompositionStart={() => {
+                        composing.current = true;
+                      }}
+                      onCompositionEnd={() => {
+                        composing.current = false;
+                      }}
+                      onBlur={() => void submitRename()}
+                      onKeyDown={(event) => {
+                        event.stopPropagation();
+                        if (
+                          composing.current ||
+                          event.nativeEvent.isComposing ||
+                          event.keyCode === 229
+                        ) {
+                          return;
+                        }
+                        if (
+                          event.key === "Escape" &&
+                          renamePhase.current === "editing"
+                        ) {
+                          event.preventDefault();
+                          finishRename();
+                        } else if (event.key === "Enter") {
+                          event.preventDefault();
+                          void submitRename();
+                        }
+                      }}
+                    />
+                    {renaming.error && (
+                      <span role="alert">{t("重命名失败，请重试。")}</span>
+                    )}
+                  </div>
+                ) : (
+                  <Button
+                    selected={view === "files" && category === folder}
+                    onSelect={() => {
+                      setView("files");
+                      setCategory(folder);
+                    }}
+                    title={folder}
+                    onDoubleClick={(event) => {
+                      event.preventDefault();
+                      beginRename(folder);
+                    }}
+                  >
+                    <span className="desktop-category-name">
+                      {folder.split("/").pop()}
+                    </span>
+                    {pinned.has(folder) && (
+                      <span
+                        className="desktop-category-pin"
+                        title={t("已置顶")}
+                        aria-label={t("已置顶")}
+                      >
+                        {PinIcon}
+                      </span>
+                    )}
+                    <small>{count(folder)}</small>
+                  </Button>
+                )}
+                <button
+                  className="desktop-category-menu"
+                  aria-label={t("{name} 的分类操作", { name: folder })}
+                  aria-haspopup="menu"
+                  aria-expanded={folderMenu?.folder === folder}
+                  disabled={editing}
+                  onClick={(event) => {
+                    if (folderMenu?.folder === folder) {
+                      setFolderMenu(null);
+                    } else {
+                      showFolderMenu(folder, event.currentTarget);
+                    }
+                  }}
+                >
+                  {DotsHorizontalIcon}
+                </button>
+              </div>
+              {hasChildren && expanded && folderTree(folder)}
+            </li>
+          );
+        })}
+      </ul>
+    ) : null;
+  };
   const count = (name: string) =>
     workspace.index.files.filter((file) => file.category === name).length;
   const refresh = async () => {
@@ -180,6 +651,8 @@ export const Projects = ({
         </Button>
         <Button
           selected={view === "files" && category === ""}
+          className={dropTarget === "" ? "desktop-drop-target" : undefined}
+          {...dropEvents("")}
           onSelect={() => {
             setView("files");
             setCategory("");
@@ -220,20 +693,7 @@ export const Projects = ({
           </Button>
         </div>
         <div className="desktop-categories">
-          {workspace.index.folders.map((folder) => (
-            <Button
-              key={folder}
-              selected={view === "files" && category === folder}
-              onSelect={() => {
-                setView("files");
-                setCategory(folder);
-              }}
-              title={folder}
-            >
-              <span className="desktop-category-name">{folder}</span>
-              <small>{count(folder)}</small>
-            </Button>
-          ))}
+          {folderTree("")}
           {!workspace.index.folders.length && (
             <p className="desktop-sidebar-hint">
               {t("新建文件夹，整理你的画布。")}
@@ -279,6 +739,10 @@ export const Projects = ({
               {PlusIcon}
               <span>{t("新建演示文稿")}</span>
             </Button>
+            <Button onSelect={workspace.requestPdfImport}>
+              {LoadIcon}
+              <span>{t("导入 PDF")}</span>
+            </Button>
             <Button onSelect={workspace.openFiles}>
               {LoadIcon}
               <span>{t("打开文件")}</span>
@@ -286,7 +750,7 @@ export const Projects = ({
             </Button>
             <Button
               className="desktop-primary"
-              onSelect={workspace.newDocument}
+              onSelect={workspace.requestNewDocument}
             >
               {PlusIcon}
               <span>{t("新建画布")}</span>
@@ -344,6 +808,11 @@ export const Projects = ({
                 <article
                   className="desktop-file-card"
                   key={file.path}
+                  draggable={!moving}
+                  onDragStart={(event) =>
+                    startDrag(event, { kind: "file", file })
+                  }
+                  onDragEnd={endDrag}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     setMenu({
@@ -473,7 +942,7 @@ export const Projects = ({
                 {!query && (
                   <Button
                     className="desktop-primary"
-                    onSelect={workspace.newDocument}
+                    onSelect={workspace.requestNewDocument}
                   >
                     {PlusIcon}
                     {t("新建画布")}
@@ -494,6 +963,53 @@ export const Projects = ({
           </Button>
         </footer>
       </main>
+      {active && folderMenu && (
+        <ProjectContextMenu
+          id={`${menuId}-folder`}
+          root={root}
+          anchor={folderMenu.anchor}
+          label={t("{name} 的分类操作", { name: folderMenu.folder })}
+          left={folderMenu.left}
+          top={folderMenu.top}
+          align={folderMenu.align}
+          onClose={(restoreFocus) => {
+            if (restoreFocus && folderMenu.anchor.isConnected) {
+              folderMenu.anchor.focus({ preventScroll: true });
+            }
+            setFolderMenu(null);
+          }}
+          items={[
+            {
+              label: t("重命名"),
+              icon: PenModeIcon,
+              disabled: moving,
+              onSelect: () => beginRename(folderMenu.folder),
+            },
+            {
+              label: t(pinned.has(folderMenu.folder) ? "取消置顶" : "置顶"),
+              icon: PinIcon,
+              onSelect: () =>
+                void workspace.setFolderPinned(
+                  folderMenu.folder,
+                  !pinned.has(folderMenu.folder),
+                ),
+            },
+            {
+              label: t("新建子分类"),
+              icon: PlusIcon,
+              onSelect: () =>
+                onEdit({ kind: "folder", parent: folderMenu.folder }),
+            },
+            {
+              label: t("移动到分类"),
+              icon: ArrowIcon,
+              disabled: moving,
+              onSelect: () =>
+                onEdit({ kind: "moveFolder", folder: folderMenu.folder }),
+            },
+          ]}
+        />
+      )}
       {active && menu && (
         <ProjectContextMenu
           id={menuId}

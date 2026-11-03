@@ -17,6 +17,10 @@ export const saveDesktopDocument = async (
 
   pendingSaves.add(app);
   try {
+    await app.api.waitForPendingImages?.();
+    if (app.api.isDestroyed) {
+      return false;
+    }
     app.api.commitEditing();
     const saved = await integration.save(
       {

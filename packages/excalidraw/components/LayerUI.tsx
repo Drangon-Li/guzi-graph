@@ -26,6 +26,7 @@ import { useAtom, useAtomValue } from "../editor-jotai";
 
 import { t } from "../i18n";
 import { getSelectedTableRoot } from "../features/table/helpers";
+import { TableCanvasControls } from "../features/table/TableCanvasControls";
 import { getScrollToContentState, getSelectedElements } from "../scene";
 import {
   getColorTargetAppStateUpdates,
@@ -783,6 +784,9 @@ const LayerUI = ({
                 />
               }
             />
+          )}
+          {defaultUIEnabled && (
+            <TableCanvasControls app={app} appState={appState} />
           )}
           {defaultUIEnabled &&
             appProps.desktopIntegration &&

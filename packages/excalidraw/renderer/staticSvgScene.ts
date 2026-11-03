@@ -28,6 +28,7 @@ import {
 } from "@excalidraw/element/imageBorder";
 import {
   getSubcanvasPinGeometry,
+  getSubcanvasPinTitle,
   isSubcanvasPin,
 } from "@excalidraw/element/subcanvasPin";
 import { hashString } from "@excalidraw/element";
@@ -223,6 +224,34 @@ const renderElementToSvg = (
           ),
         );
         group.appendChild(head);
+        const title = getSubcanvasPinTitle(
+          element,
+          renderConfig.renderEnvironment,
+        );
+        if (title) {
+          const label = svgRoot.ownerDocument.createElementNS(SVG_NS, "text");
+          label.setAttribute("font-family", "sans-serif");
+          label.setAttribute("font-size", `${title.fontSize}`);
+          label.setAttribute("text-anchor", "middle");
+          label.setAttribute("dominant-baseline", "text-before-edge");
+          label.setAttribute(
+            "fill",
+            applyDarkModeFilter(
+              element.strokeColor,
+              renderConfig.theme === THEME.DARK,
+            ),
+          );
+          label.setAttribute("stroke", "none");
+          label.setAttribute("xml:space", "preserve");
+          title.lines.forEach((line, index) => {
+            const span = svgRoot.ownerDocument.createElementNS(SVG_NS, "tspan");
+            span.setAttribute("x", `${element.width / 2}`);
+            span.setAttribute("y", `${title.y + index * title.lineHeight}`);
+            span.textContent = line;
+            label.appendChild(span);
+          });
+          group.appendChild(label);
+        }
         addToRoot(group, element);
         break;
       }

@@ -71,7 +71,9 @@ export const ContextMenu = React.memo(
               : buttons.length - 1
             : (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) %
               buttons.length;
-        buttons[next]?.focus();
+        const button = buttons[next];
+        button?.focus({ preventScroll: true });
+        button?.scrollIntoView({ block: "nearest", inline: "nearest" });
       };
       popover.addEventListener("keydown", onKeyDown, true);
       return () => popover.removeEventListener("keydown", onKeyDown, true);
@@ -110,6 +112,9 @@ export const ContextMenu = React.memo(
           ref={menuRef}
           role="menu"
           className="context-menu"
+          style={{
+            maxHeight: Math.max(0, Math.min(480, appState.height - 20)),
+          }}
           onContextMenu={(event) => event.preventDefault()}
         >
           {filteredItems.map((item, idx) => {

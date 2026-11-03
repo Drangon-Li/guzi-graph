@@ -100,6 +100,9 @@ export class AppPan {
    * it did */
   start = (event: React.PointerEvent<HTMLElement> | MouseEvent): boolean => {
     const { app } = this;
+    if (this.dependencies.getPointerCount() > 1) {
+      this.end();
+    }
     // a new press supersedes whatever the previous session left pending
     this.suppressNextContextMenu = false;
     const isSecondary = event.button === POINTER_BUTTON.SECONDARY;
@@ -123,6 +126,10 @@ export class AppPan {
     this.secondary = isSecondary
       ? { engaged: false, nativeMenuSeen: false }
       : null;
+    app.props.desktopIntegration?.onViewportGesture?.(
+      { source: "pointer", phase: "begin", deltaY: 0 },
+      app.state,
+    );
 
     // due to event.preventDefault below, container wouldn't get focus
     // automatically
@@ -144,6 +151,7 @@ export class AppPan {
       app.cursor.set(CURSOR_TYPE.GRABBING);
     }
     const { clientX: startX, clientY: startY } = event;
+    const pointerId = "pointerId" in event ? event.pointerId : undefined;
     let { clientX: lastX, clientY: lastY } = event;
     const onPointerMove = withBatchedUpdatesThrottled((event: PointerEvent) => {
       if (this.secondary && !this.secondary.engaged) {
@@ -217,11 +225,19 @@ export class AppPan {
         scrollX: state.scrollX - deltaX / state.zoom.value,
         scrollY: state.scrollY - deltaY / state.zoom.value,
       }));
+      app.setState({}, () => {
+        app.props.desktopIntegration?.onViewportGesture?.(
+          { source: "pointer", phase: "move", deltaY },
+          app.state,
+        );
+      });
     }, app.ownerWindow);
     this.pendingMoveFlush = onPointerMove.flush;
     const teardown = withBatchedUpdates(
       (upEvent?: PointerEvent | FocusEvent) => {
         const { secondary } = this;
+        // Flush the final navigation before the release callback observes it.
+        onPointerMove.flush();
         this.teardown = null;
         this.pendingMoveFlush = null;
         this.active = false;
@@ -250,12 +266,32 @@ export class AppPan {
               app.savePointer(pointer.clientX, pointer.clientY, "up");
             }
             app.viewport.releaseOverscroll();
+            app.props.desktopIntegration?.onViewportGesture?.(
+              {
+                source: "pointer",
+                phase:
+                  upEvent?.type === EVENT.POINTER_UP &&
+                  (pointerId === undefined ||
+                    ("pointerId" in upEvent &&
+                      upEvent.pointerId === pointerId)) &&
+                  this.dependencies.getPointerCount() <= 1
+                    ? "end"
+                    : "cancel",
+                deltaY: 0,
+              },
+              app.state,
+            );
           },
         );
         app.ownerWindow.removeEventListener(EVENT.POINTER_MOVE, onPointerMove);
         app.ownerWindow.removeEventListener(EVENT.POINTER_UP, teardown);
+        app.ownerWindow.removeEventListener("pointercancel", teardown);
+        app.ownerWindow.removeEventListener(
+          "pointerdown",
+          onAdditionalPointerDown,
+          true,
+        );
         app.ownerWindow.removeEventListener(EVENT.BLUR, teardown);
-        onPointerMove.flush();
 
         // released without a drag: a right-click. Where the platform's
         // `contextmenu` came with the press it was swallowed, so the menu
@@ -277,12 +313,23 @@ export class AppPan {
         }
       },
     );
+    const onAdditionalPointerDown = (nextEvent: PointerEvent) => {
+      if (nextEvent.pointerId !== pointerId) {
+        teardown();
+      }
+    };
     this.teardown = teardown;
     app.ownerWindow.addEventListener(EVENT.BLUR, teardown);
     app.ownerWindow.addEventListener(EVENT.POINTER_MOVE, onPointerMove, {
       passive: true,
     });
     app.ownerWindow.addEventListener(EVENT.POINTER_UP, teardown);
+    app.ownerWindow.addEventListener("pointercancel", teardown);
+    app.ownerWindow.addEventListener(
+      "pointerdown",
+      onAdditionalPointerDown,
+      true,
+    );
     return true;
   };
 }

@@ -51,6 +51,7 @@ export interface DesktopSettings {
   includeInferredStructure: boolean;
   skipRemoveConfirmation: boolean;
   skipTrashConfirmation: boolean;
+  pinnedFoldersByRoot?: Record<string, string[]>;
 }
 
 export interface DiskDocument {
@@ -175,6 +176,7 @@ export interface DesktopAPI {
   chooseDirectory(): Promise<DesktopSettings | null>;
   listProjects(): Promise<ProjectIndex>;
   openFiles(): Promise<DiskDocument[]>;
+  importPdf(): Promise<{ name: string; data: ArrayBuffer } | null>;
   readFile(path: string): Promise<DiskDocument>;
   recordOpenedFile(path: string): Promise<void>;
   saveFile(request: SaveRequest): Promise<DiskDocument | null>;
@@ -203,6 +205,24 @@ export interface DesktopAPI {
   removeFile(path: string, mode: "remove" | "trash"): Promise<void>;
   renameFile(path: string, name: string): Promise<DiskDocument>;
   moveFile(path: string, category: string): Promise<DiskDocument>;
+  moveFolder(
+    category: string,
+    parentCategory: string,
+    rootDirectory?: string,
+  ): Promise<{
+    source: string;
+    destination: string;
+  }>;
+  renameFolder(
+    category: string,
+    name: string,
+    rootDirectory?: string,
+  ): Promise<{ source: string; destination: string }>;
+  setFolderPinned(
+    category: string,
+    pinned: boolean,
+    rootDirectory: string,
+  ): Promise<DesktopSettings>;
   createFolder(category: string): Promise<void>;
   revealFile(path: string): Promise<void>;
   getSession(): Promise<DesktopSession>;

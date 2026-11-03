@@ -8,9 +8,12 @@ import { Excalidraw } from "../index";
 import { createPasteEvent } from "../clipboard";
 
 import { API } from "./helpers/api";
-import { mockMultipleHTMLImageElements } from "./helpers/mocks";
+import {
+  mockHTMLImageElement,
+  mockMultipleHTMLImageElements,
+} from "./helpers/mocks";
 import { UI } from "./helpers/ui";
-import { GlobalTestState, render, waitFor } from "./test-utils";
+import { act, GlobalTestState, render, waitFor } from "./test-utils";
 import {
   DEER_IMAGE_DIMENSIONS,
   SMILEY_IMAGE_DIMENSIONS,
@@ -140,6 +143,11 @@ describe("image insertion", () => {
     await setupImageTest([DEER_IMAGE_DIMENSIONS], {
       imageOptions: { maxWidthOrHeight: 2048 },
     });
+    vi.unstubAllGlobals();
+    mockHTMLImageElement(
+      DEER_IMAGE_DIMENSIONS.width,
+      DEER_IMAGE_DIMENSIONS.height,
+    );
 
     await API.drop([
       { kind: "file", file: await API.loadFile("./fixtures/deer.png") },
@@ -150,6 +158,11 @@ describe("image insertion", () => {
         expect.any(File),
         { maxWidthOrHeight: 2048 },
       );
+      expect(h.app.api.getSceneElements()).toHaveLength(1);
+      expect(h.app.api.getSceneElements()[0]).toMatchObject({
+        type: "image",
+        fileId: expect.any(String),
+      });
     });
   });
 
@@ -172,5 +185,69 @@ describe("image insertion", () => {
         "File is too big. Maximum allowed size is 1MB.",
       );
     });
+  });
+
+  it("limits concurrent image initialization across batches and retains every file", async () => {
+    await setupImageTest(
+      Array.from({ length: 12 }, () => DEER_IMAGE_DIMENSIONS),
+    );
+    vi.unstubAllGlobals();
+    mockHTMLImageElement(
+      DEER_IMAGE_DIMENSIONS.width,
+      DEER_IMAGE_DIMENSIONS.height,
+    );
+    let started = 0;
+    const releases: (() => void)[] = [];
+    vi.mocked(blobModule.generateIdFromFile).mockImplementation(() => {
+      const id = `limited-${started++}` as FileId;
+      return new Promise((resolve) => releases.push(() => resolve(id)));
+    });
+    const file = await API.loadFile("./fixtures/deer.png");
+    let importing!: Promise<void>;
+    act(() => {
+      importing = Promise.all([
+        h.app.insertImages(Array(6).fill(file), 0, 0),
+        h.app.insertImages(Array(6).fill(file), 100, 100),
+      ]).then(() => {});
+    });
+    await waitFor(() => expect(started).toBe(4));
+    expect(h.app.api.hasPendingImages()).toBe(true);
+    const waitForStarted = (total: number) =>
+      waitFor(() => expect(started).toBe(total));
+    for (const total of [8, 12]) {
+      await act(async () => releases.splice(0).forEach((release) => release()));
+      await waitForStarted(total);
+    }
+    await act(async () => {
+      releases.splice(0).forEach((release) => release());
+      await importing;
+      await h.app.api.waitForPendingImages();
+    });
+    expect(h.app.api.hasPendingImages()).toBe(false);
+    expect(h.app.api.getSceneElements()).toHaveLength(12);
+    expect(Object.keys(h.app.api.getFiles())).toHaveLength(12);
+    expect(
+      h.app.api
+        .getSceneElements()
+        .every(
+          (element) =>
+            element.type === "image" && !!element.fileId && element.width > 0,
+        ),
+    ).toBe(true);
+  });
+
+  it("settles pending image imports when an image fails", async () => {
+    await setup();
+    vi.mocked(blobModule.generateIdFromFile).mockRejectedValue(
+      new Error("bad image"),
+    );
+    const file = await API.loadFile("./fixtures/deer.png");
+    await act(async () => {
+      await h.app.insertImages([file], 0, 0);
+      await h.app.api.waitForPendingImages();
+    });
+    expect(h.app.api.hasPendingImages()).toBe(false);
+    expect(h.app.api.getSceneElements()).toHaveLength(0);
+    expect(h.state.errorMessage).toBe("bad image");
   });
 });

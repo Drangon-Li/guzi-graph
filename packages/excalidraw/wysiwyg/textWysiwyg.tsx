@@ -87,17 +87,12 @@ import {
 } from "../features/rich-text/editorBridge";
 import { richTextWysiwyg } from "../features/rich-text/editor";
 
+import { createCaretFollow } from "./caretFollow";
+
 import type { ParsedDataTranferList } from "../clipboard";
 
 import type App from "../components/App";
 import type { AppState } from "../types";
-
-/**
- * How much further than the browser's caret reveal the canvas pans, in
- * screen px: text typed past the viewport's edge comes back with this much
- * room to spare, instead of flush against the edge.
- */
-export const CARET_FOLLOW_PADDING = 5;
 
 /**
  * The editor is scaled and rotated about the text's center (its transform
@@ -727,40 +722,6 @@ export const textWysiwyg = ({
     };
   };
 
-  /**
-   * A caret typed in under the stats or the styles panel (see
-   * AppText.getTextSidePanels) is out of sight, yet inside the editor's box, so
-   * the browser doesn't reveal it (unlike the sidebar, the panels don't span
-   * the box's height, see updateEditorBoxInsets). Pan the canvas to bring it
-   * out from under the panel, on the canvas' side, with some room to spare —
-   * only then: a text beside or below a panel stays where it is.
-   */
-  const followCaretFromUnderPanels = () => {
-    const caret = !isDestroyed && getCaretViewportBounds();
-    if (!caret) {
-      return;
-    }
-    for (const name of app.text.getTextSidePanels()) {
-      const panel = app.viewport.getSideUIRect(name);
-      if (
-        panel &&
-        caret.right >= panel.left &&
-        caret.left <= panel.right &&
-        caret.bottom > panel.top &&
-        caret.top < panel.bottom
-      ) {
-        const panX =
-          panel.left + panel.right < app.state.width
-            ? panel.right + CARET_FOLLOW_PADDING - caret.left
-            : panel.left - CARET_FOLLOW_PADDING - caret.right;
-        app.viewport.translate((state) => ({
-          scrollX: state.scrollX + panX / state.zoom.value,
-        }));
-        return;
-      }
-    }
-  };
-
   let pendingInitialSelection =
     initialSelection ??
     (() => {
@@ -888,7 +849,7 @@ export const textWysiwyg = ({
       onChange(editable.value);
       // once the update, and any scroll it made (see
       // AppText.handleTextWysiwyg), is in the app's state
-      queueMicrotask(followCaretFromUnderPanels);
+      caretFollow.schedule();
     };
   }
 
@@ -1180,6 +1141,7 @@ export const textWysiwyg = ({
     ownerWindow.removeEventListener("pointerup", bindBlurEvent);
     ownerWindow.removeEventListener("blur", handleSubmit);
     ownerWindow.removeEventListener("beforeunload", handleSubmit);
+    caretFollow.destroy();
     cleanupSelection();
     unbindRichEditor(preserveSelection);
     unbindUpdate();
@@ -1475,34 +1437,18 @@ export const textWysiwyg = ({
     publishSelection();
   });
 
-  // The browser reveals an out-of-view caret by scrolling the nearest scroll
-  // container: the editor's box, which clips it to the canvas area (off a
-  // sidebar too, see updateEditorBoxInsets). Scrolled, the editor
-  // would leave its text on the canvas; hand the offset to the canvas
-  // instead, plus some room to spare, and put the box back: the canvas
-  // follows the caret. Scroll events fire before the frame is painted, so
-  // the box's shift is never seen, and the reveal never gets past the box —
-  // to the editor root, whose overflow a host may override, or to a page
-  // around an embedded editor. (A `scroll-padding` can't give the room: the
-  // reveal only scrolls as far as the editor reaches, which ends at the
-  // text.)
+  const caretFollow = createCaretFollow(
+    app,
+    editable,
+    getCaretViewportBounds,
+    () => composing,
+  );
   const onEditorBoxScroll = () => {
-    if (!editorBox) {
-      return;
-    }
-    const { scrollLeft, scrollTop } = editorBox;
-    if (!scrollLeft && !scrollTop) {
+    if (!editorBox || (!editorBox.scrollLeft && !editorBox.scrollTop)) {
       return;
     }
     editorBox.scrollLeft = 0;
     editorBox.scrollTop = 0;
-    // the box only scrolls right and down (it can't go below 0)
-    const panX = scrollLeft && scrollLeft + CARET_FOLLOW_PADDING;
-    const panY = scrollTop && scrollTop + CARET_FOLLOW_PADDING;
-    app.viewport.translate((state) => ({
-      scrollX: state.scrollX - panX / state.zoom.value,
-      scrollY: state.scrollY - panY / state.zoom.value,
-    }));
   };
   editorBox?.addEventListener("scroll", onEditorBoxScroll);
 
