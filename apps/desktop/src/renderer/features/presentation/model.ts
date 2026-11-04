@@ -6,6 +6,7 @@ import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 export interface PresentationSlide {
   id: string;
   title: string;
+  notes?: string;
   scene: ExcalidrawInitialDataState;
   bounds?: { x: number; y: number; width: number; height: number };
 }
@@ -146,6 +147,7 @@ function validatePresentation(value: unknown): asserts value is Presentation {
       !slide.id.trim() ||
       ids.has(slide.id) ||
       typeof slide.title !== "string" ||
+      (slide.notes !== undefined && typeof slide.notes !== "string") ||
       !isRecord(slide.scene)
     ) {
       invalid();
@@ -206,6 +208,7 @@ export const parsePresentation = async (
     slides.push({
       id: slide.id,
       title: slide.title,
+      ...(slide.notes !== undefined ? { notes: slide.notes } : {}),
       scene,
       ...(slide.bounds ? { bounds: slide.bounds } : {}),
     });
@@ -236,6 +239,7 @@ export const serializePresentation = (deck: Presentation): string => {
       slides: deck.slides.map((slide) => ({
         id: slide.id,
         title: slide.title,
+        notes: slide.notes,
         ...(slide.bounds ? { bounds: slide.bounds } : {}),
         scene: serializeForJSON(
           slide.scene.elements ?? [],

@@ -321,6 +321,37 @@
     border: 0;
     background: transparent;
   }
+  .desktop-slide-footer {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    .desktop-slide-title,
+    input {
+      flex: 1;
+      min-width: 0;
+      width: auto;
+    }
+  }
+  .desktop-slide-notes-button {
+    display: grid;
+    place-items: center;
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
+    padding: 4px;
+    border-color: transparent;
+    background: transparent;
+    color: var(--desktop-muted);
+    &.has-notes,
+    &[aria-expanded="true"] {
+      color: var(--color-primary);
+      background: var(--color-primary-light);
+    }
+    svg {
+      width: 16px;
+      height: 16px;
+    }
+  }
   .desktop-presentation-editor {
     position: relative;
     flex: 1;

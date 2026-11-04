@@ -116,6 +116,8 @@ export const useWorkspace = (
     deleteSlide,
     renameSlide,
     moveSlide,
+    updateSlideNotes,
+    finishSlideNotesEdit,
   } = presentationActions;
   const { applyFontToCurrentLayer, applyFontToOpenDocuments } = fontActions;
   const { closeDocument, removeFile, closeWindow } = closeActions;
@@ -406,6 +408,8 @@ export const useWorkspace = (
     deleteSlide,
     renameSlide,
     moveSlide,
+    updateSlideNotes,
+    finishSlideNotesEdit,
     commitText,
     openFiles,
     openProject,

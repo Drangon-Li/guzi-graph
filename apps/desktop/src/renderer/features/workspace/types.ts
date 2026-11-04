@@ -25,6 +25,7 @@ export type PresentationStructure = {
 
 export type PresentationHistoryEntry =
   | { kind: "canvas"; slideId: string; checkpoint: HistoryCheckpoint }
+  | { kind: "notes"; slideId: string; before?: string; after?: string }
   | {
       kind: "slides" | "fonts";
       before: PresentationStructure;
@@ -35,6 +36,7 @@ export interface PresentationHistory {
   undo: PresentationHistoryEntry[];
   redo: PresentationHistoryEntry[];
   replaying: boolean;
+  editingNotes?: Extract<PresentationHistoryEntry, { kind: "notes" }>;
   pending?: { entry: PresentationHistoryEntry; direction: "undo" | "redo" };
 }
 
@@ -63,6 +65,7 @@ export interface CanvasDocument {
   replaceAllSceneFonts?: (fontFamily: FontFamilyValues) => void;
   dirty: boolean;
   revision: number;
+  presentationPreviewRevision?: number;
   content: string;
   contentSignature: string;
   savedContentSignature: string | null;

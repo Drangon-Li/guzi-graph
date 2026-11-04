@@ -800,7 +800,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
       if (
         target instanceof ownerWindow.Element &&
         target.closest(
-          "input, textarea, select, [contenteditable='true'], [role='textbox'], .desktop-presentation-toolbar, .desktop-presentation-filmstrip, .desktop-project-context-menu",
+          "input, textarea, select, [contenteditable='true'], [role='textbox'], .desktop-presentation-toolbar, .desktop-presentation-filmstrip, .desktop-project-context-menu, .desktop-slide-notes",
         )
       ) {
         return;

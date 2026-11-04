@@ -95,6 +95,9 @@ const makeProps = () => ({
   onHistory: vi.fn(),
   onDelete: vi.fn(),
   onRename: vi.fn(),
+  onUpdateNotes: vi.fn(),
+  onEndNotesEdit: vi.fn(),
+  onSave: vi.fn(),
   onMove: vi.fn(),
   onExportPdf: vi.fn(),
   onFit: vi.fn(),
@@ -605,7 +608,7 @@ it("keeps thumbnails compact and provides rename and delete in the context menu"
   fireEvent.click(screen.getByRole("button", { name: "Add slide" }));
   expect(props.onAdd).toHaveBeenCalledTimes(1);
   for (const item of screen.getAllByRole("listitem")) {
-    expect(within(item).getAllByRole("button")).toHaveLength(2);
+    expect(within(item).getAllByRole("button")).toHaveLength(3);
   }
 
   const second = screen.getByRole("button", {
@@ -658,6 +661,142 @@ it("keeps thumbnails compact and provides rename and delete in the context menu"
     screen.getByRole("button", { name: "Select slide 1: Introduction" }),
   );
   expect(screen.getByRole("menuitem", { name: "Delete" })).toBeDisabled();
+});
+
+it("edits notes on another slide without selecting, dragging or deleting it", () => {
+  const props = makeProps();
+  const Harness = () => {
+    const [presentation, setPresentation] = useState(props.presentation);
+    return (
+      <PresentationLayout
+        {...props}
+        presentation={presentation}
+        onUpdateNotes={(id, notes) => {
+          props.onUpdateNotes(id, notes);
+          setPresentation((deck) => ({
+            ...deck,
+            slides: deck.slides.map((slide) =>
+              slide.id === id ? { ...slide, notes } : slide,
+            ),
+          }));
+        }}
+      />
+    );
+  };
+  render(<Harness />);
+  const button = screen.getByRole("button", {
+    name: "Add notes to slide 1: Introduction",
+  });
+  firePointer(button, "pointerdown", 100);
+  firePointer(button, "pointermove", 250);
+  firePointer(button, "pointerup", 250);
+  fireEvent.click(button);
+  const input = screen.getByRole("textbox");
+  expect(input).toHaveFocus();
+  fireEvent.change(input, { target: { value: "第一点\n待补充的证据" } });
+  expect(props.onUpdateNotes).toHaveBeenLastCalledWith(
+    "first",
+    "第一点\n待补充的证据",
+  );
+  expect(button).toHaveClass("has-notes");
+  fireEvent.keyDown(input, { key: "Backspace" });
+  fireEvent.keyDown(input, { key: "ArrowRight" });
+  fireEvent.keyDown(input, { key: "z", [KEYS.CTRL_OR_CMD]: true });
+  const clipboardData = { getData: vi.fn(() => "text"), setData: vi.fn() };
+  expect(fireClipboard(input, "copy", clipboardData)).toBe(true);
+  expect(fireClipboard(input, "paste", clipboardData)).toBe(true);
+  expect(props.onCopy).not.toHaveBeenCalled();
+  expect(props.onPaste).not.toHaveBeenCalled();
+  expect(props.onCanvasPaste).not.toHaveBeenCalled();
+  expect(props.onHistory).not.toHaveBeenCalled();
+  expect(props.onDelete).not.toHaveBeenCalled();
+  expect(props.onMove).not.toHaveBeenCalled();
+  expect(props.onSelect).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, { key: "s", [KEYS.CTRL_OR_CMD]: true });
+  expect(props.onSave).toHaveBeenLastCalledWith(false);
+  fireEvent.keyDown(input, {
+    key: "s",
+    [KEYS.CTRL_OR_CMD]: true,
+    shiftKey: true,
+  });
+  expect(props.onSave).toHaveBeenLastCalledWith(true);
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(button).toHaveFocus();
+  expect(props.onEndNotesEdit).toHaveBeenCalled();
+  fireEvent.click(button);
+  expect(screen.getByRole("textbox")).toHaveValue("第一点\n待补充的证据");
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  expect(button).not.toHaveClass("has-notes");
+  expect(button).toHaveAccessibleName("Add notes to slide 1: Introduction");
+});
+
+it("previews existing notes on hover and keeps the auto-hidden strip open", () => {
+  vi.useFakeTimers();
+  localStorage.setItem(PINNED_STORAGE_KEY, "false");
+  const props = makeProps();
+  props.presentation.slides[0].notes = "Remember this source";
+  render(<PresentationLayout {...props} />);
+  const strip = screen.getByRole("complementary", { name: "Slides" });
+  fireEvent.pointerEnter(strip);
+  const button = screen.getByRole("button", {
+    name: "Edit notes for slide 1: Introduction",
+  });
+  fireEvent.mouseEnter(button);
+  act(() => vi.advanceTimersByTime(300));
+  const preview = screen.getByRole("tooltip");
+  expect(preview).toHaveTextContent("Remember this source");
+  fireEvent.mouseLeave(button);
+  fireEvent.mouseMove(button.closest("li")!);
+  act(() => vi.advanceTimersByTime(300));
+  expect(preview).toBeInTheDocument();
+  fireEvent.mouseLeave(button.closest("li")!);
+  fireEvent.pointerLeave(strip);
+  fireEvent.mouseEnter(preview);
+  act(() => vi.advanceTimersByTime(300));
+  expect(preview).toBeInTheDocument();
+  expect(strip.parentElement).toHaveClass("is-expanded");
+  expect(props.onSelect).not.toHaveBeenCalled();
+  fireEvent.mouseLeave(preview);
+  act(() => vi.advanceTimersByTime(180));
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  expect(strip.parentElement).toHaveClass("is-collapsed");
+});
+
+it("dismisses the previous preview when hovering a slide without notes", () => {
+  vi.useFakeTimers();
+  const props = makeProps();
+  props.presentation.slides[0].notes = "Only on the first slide";
+  render(<PresentationLayout {...props} />);
+  const first = screen.getByRole("button", {
+    name: "Edit notes for slide 1: Introduction",
+  });
+  fireEvent.mouseEnter(first);
+  act(() => vi.advanceTimersByTime(300));
+  expect(screen.getByRole("tooltip")).toBeInTheDocument();
+  fireEvent.mouseLeave(first);
+  fireEvent.mouseEnter(
+    screen.getByRole("button", { name: "Add notes to slide 2: Details" }),
+  );
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+});
+
+it("disables uninitialized notes and closes them when the document becomes inactive", () => {
+  const props = makeProps();
+  const { rerender } = render(
+    <PresentationLayout {...props} onUpdateNotes={undefined} />,
+  );
+  const button = screen.getByRole("button", {
+    name: "Add notes to slide 1: Introduction",
+  });
+  expect(button).toBeDisabled();
+  rerender(<PresentationLayout {...props} />);
+  fireEvent.click(button);
+  expect(screen.getByRole("textbox")).toHaveFocus();
+  rerender(<PresentationLayout {...props} active={false} />);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(button).toBeDisabled();
 });
 
 it("offers creation and presentation on the blank strip while retaining page actions on thumbnails", () => {

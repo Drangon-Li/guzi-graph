@@ -151,6 +151,10 @@ export const createPresentationActions = (
     return true;
   };
 
+  const finishSlideNotesEdit = (document: CanvasDocument) => {
+    delete document.presentationHistory?.editingNotes;
+  };
+
   const selectSlide = (document: CanvasDocument, id: string) => {
     const slide = document.presentation?.slides.find((item) => item.id === id);
     if (!slide || document.activeSlideId === id || document.presenting) {
@@ -159,6 +163,7 @@ export const createPresentationActions = (
     if (deferUntilImagesReady(document, () => selectSlide(document, id))) {
       return;
     }
+    finishSlideNotesEdit(document);
     if (
       document.presentation!.slides.some(
         (slide) => slide.id === document.activeSlideId,
@@ -405,6 +410,7 @@ export const createPresentationActions = (
       return true;
     }
     commitText(document);
+    finishSlideNotesEdit(document);
     const entry = history[direction].pop();
     if (!entry) {
       return true;
@@ -417,6 +423,15 @@ export const createPresentationActions = (
         history.pending = { entry, direction };
         selectSlide(document, entry.slideId);
       }
+    } else if (entry.kind === "notes") {
+      const slide = document.presentation!.slides.find(
+        (slide) => slide.id === entry.slideId,
+      )!;
+      slide.notes = direction === "undo" ? entry.before : entry.after;
+      selectSlide(document, entry.slideId);
+      recordContent(document, serializePresentation(document.presentation!), {
+        notesOnly: true,
+      });
     } else {
       checkpointSlide(document);
       const target = direction === "undo" ? entry.before : entry.after;
@@ -514,6 +529,7 @@ export const createPresentationActions = (
         const title = settingsRef.current.language === "en" ? "Slide" : "页面";
         const slide = {
           id,
+          notes: source?.notes,
           ...(source?.bounds ? { bounds: { ...source.bounds } } : {}),
           title: source
             ? `${source.title} ${
@@ -557,6 +573,7 @@ export const createPresentationActions = (
     if (!slide) {
       return null;
     }
+    finishSlideNotesEdit(document);
     commitText(document);
     return serializePresentation({ ...document.presentation, slides: [slide] });
   };
@@ -579,6 +596,7 @@ export const createPresentationActions = (
     }
     const slides = source.slides.map((slide) => ({
       id: ownerWindow.crypto.randomUUID(),
+      notes: slide.notes,
       title: `${slide.title} ${
         settingsRef.current.language === "en" ? "copy" : "副本"
       }`,
@@ -652,6 +670,52 @@ export const createPresentationActions = (
     );
   };
 
+  const updateSlideNotes = (
+    document: CanvasDocument,
+    id: string,
+    notes: string,
+  ) => {
+    const deck = document.presentation;
+    const slide = deck?.slides.find((slide) => slide.id === id);
+    if (
+      !deck ||
+      !slide ||
+      (slide.notes ?? "") === notes ||
+      !document.initialized ||
+      document.presenting ||
+      document.removalPhase ||
+      closingRef.current ||
+      !documentsRef.current.includes(document)
+    ) {
+      return;
+    }
+    const history = document.presentationHistory!;
+    const editing = history.editingNotes;
+    const before = slide.notes;
+    const after = notes || undefined;
+    slide.notes = after;
+    if (editing?.slideId === id && editing === history.undo.at(-1)) {
+      if ((editing.before ?? "") === notes) {
+        slide.notes = editing.before;
+        history.undo.pop();
+        finishSlideNotesEdit(document);
+      } else {
+        editing.after = after;
+      }
+    } else {
+      const entry = {
+        kind: "notes" as const,
+        slideId: id,
+        before,
+        after,
+      };
+      history.undo.push(entry);
+      history.editingNotes = entry;
+    }
+    history.redo.length = 0;
+    recordContent(document, serializePresentation(deck), { notesOnly: true });
+  };
+
   return {
     newPresentation,
     checkpointSlide,
@@ -667,6 +731,8 @@ export const createPresentationActions = (
     deleteSlide,
     renameSlide,
     moveSlide,
+    updateSlideNotes,
+    finishSlideNotesEdit,
   };
 };
 

@@ -62,6 +62,7 @@ const serializeByCopy = (deck: ReturnType<typeof createPresentation>) =>
       slides: deck.slides.map((slide) => ({
         id: slide.id,
         title: slide.title,
+        notes: slide.notes,
         ...(slide.bounds ? { bounds: slide.bounds } : {}),
         scene: copyPresentationScene(slide.scene),
       })),
@@ -114,6 +115,7 @@ describe("presentation model", () => {
       window,
     );
     expect(restored?.slides[0].scene.elements).toEqual([]);
+    expect(restored?.slides[0]).not.toHaveProperty("notes");
   });
 
   it("matches copy-based serialization byte for byte while persisting live tables and reachable subcanvases", () => {
@@ -182,6 +184,7 @@ describe("presentation model", () => {
     };
     const deck = createPresentation("first", "表格与子画布", scene);
     deck.slides[0].bounds = { x: -900, y: -500, width: 1600, height: 900 };
+    deck.slides[0].notes = "讲稿\n第二行";
     deck.slides.push(
       { id: "blank", title: "空白页", scene: {} },
       {
@@ -305,6 +308,8 @@ describe("presentation model", () => {
       },
     });
     deck.slides.push({ id: "third", title: "空白页", scene: {} });
+    const notes = "  开场白\n\nDiscuss the examples.  \n";
+    deck.slides[0].notes = notes;
     const content = serializePresentation(deck);
     const saved = JSON.parse(content);
     expect(saved.slides).toHaveLength(3);
@@ -319,6 +324,8 @@ describe("presentation model", () => {
       "second",
       "third",
     ]);
+    expect(restored?.slides[0].notes).toBe(notes);
+    expect(restored?.slides[1]).not.toHaveProperty("notes");
     expect(restored?.slides[0].scene.appState).toMatchObject({
       viewBackgroundColor: "#ddeeff",
       fontRegistry: { 123456: "Example Font" },
@@ -386,6 +393,19 @@ describe("presentation model", () => {
       parsePresentation(JSON.stringify(saved), window),
     ).rejects.toThrow();
   });
+
+  it.each([null, 42, { text: "Note" }])(
+    "rejects a non-text slide note: %j",
+    async (notes) => {
+      const saved = JSON.parse(
+        serializePresentation(createPresentation("first", "A")),
+      );
+      saved.slides[0].notes = notes;
+      await expect(
+        parsePresentation(JSON.stringify(saved), window),
+      ).rejects.toThrow();
+    },
+  );
 
   it.each([
     { version: 2 },
