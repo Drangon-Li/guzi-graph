@@ -22,6 +22,7 @@ import {
 import { ProjectContextMenu } from "../projects/ProjectContextMenu";
 
 import { renderSlideSvg } from "./renderSlide";
+import { SlideNotesPopover } from "./SlideNotes";
 
 import "./Presentation.scss";
 
@@ -45,6 +46,9 @@ type Props = {
   onHistory: (direction: "undo" | "redo") => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
+  onUpdateNotes?: (id: string, notes: string) => void;
+  onEndNotesEdit: () => void;
+  onSave: (saveAs: boolean) => void;
   onMove: (id: string, toIndex: number) => void;
   onExportPdf: () => void;
   onFit?: () => void;
@@ -214,6 +218,15 @@ export const PresentationLayout = (props: Props) => {
   const presentMenuButton = useRef<HTMLButtonElement>(null);
   const filmstripId = useId();
   const presentMenuId = useId();
+  const notesPopoverId = useId();
+  const notesTimer = useRef<number | undefined>(undefined);
+  const [notesPopover, setNotesPopover] = useState<{
+    slideId: string;
+    anchor: HTMLButtonElement;
+    mode: "preview" | "edit";
+  } | null>(null);
+  const notesPopoverRef = useRef(notesPopover);
+  notesPopoverRef.current = notesPopover;
   const [presentMenu, setPresentMenu] = useState<{
     left: number;
     top: number;
@@ -272,7 +285,85 @@ export const PresentationLayout = (props: Props) => {
     keyboardFocus ||
     !!renaming ||
     !!contextMenu ||
+    !!notesPopover ||
     dragActive;
+
+  const notesSlide = presentation.slides.find(
+    (slide) => slide.id === notesPopover?.slideId,
+  );
+  const clearNotesTimer = useCallback(() => {
+    root.current?.ownerDocument.defaultView!.clearTimeout(notesTimer.current);
+    notesTimer.current = undefined;
+  }, []);
+  const closeNotes = useCallback(
+    (restoreFocus = false) => {
+      clearNotesTimer();
+      const anchor = notesPopoverRef.current?.anchor;
+      setNotesPopover(null);
+      latest.current.onEndNotesEdit();
+      if (restoreFocus && anchor?.isConnected) {
+        anchor.focus({ preventScroll: true });
+      }
+    },
+    [clearNotesTimer],
+  );
+
+  useEffect(() => {
+    const ownerWindow = root.current!.ownerDocument.defaultView!;
+    return () => ownerWindow.clearTimeout(notesTimer.current);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (
+      disabled ||
+      session ||
+      dragActive ||
+      renaming ||
+      contextMenu ||
+      presentMenu ||
+      !props.onUpdateNotes ||
+      (notesPopover && !notesSlide)
+    ) {
+      closeNotes();
+    }
+  }, [
+    disabled,
+    session,
+    dragActive,
+    renaming,
+    contextMenu,
+    presentMenu,
+    props.onUpdateNotes,
+    notesPopover,
+    notesSlide,
+    closeNotes,
+  ]);
+
+  const previewNotes = (
+    slide: PresentationSlide,
+    anchor: HTMLButtonElement,
+  ) => {
+    if (notesPopoverRef.current?.mode === "edit") {
+      return;
+    }
+    if (!slide.notes) {
+      closeNotes();
+      return;
+    }
+    clearNotesTimer();
+    notesTimer.current = anchor.ownerDocument.defaultView!.setTimeout(() => {
+      setNotesPopover({ slideId: slide.id, anchor, mode: "preview" });
+    }, 300);
+  };
+  const leaveNotesPreview = () => {
+    clearNotesTimer();
+    if (notesPopoverRef.current?.mode === "preview") {
+      notesTimer.current = root.current!.ownerDocument.defaultView!.setTimeout(
+        () => closeNotes(),
+        180,
+      );
+    }
+  };
 
   useLayoutEffect(() => {
     committed.current = { session, page };
@@ -697,6 +788,18 @@ export const PresentationLayout = (props: Props) => {
       ref={root}
       inert={session ? true : undefined}
       onKeyDown={(event) => {
+        if (
+          notesPopover?.mode === "edit" &&
+          !event.nativeEvent.isComposing &&
+          !event.altKey &&
+          (event.metaKey || event.ctrlKey) &&
+          event.key.toLowerCase() === "s"
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          props.onSave(event.shiftKey);
+          return;
+        }
         if (contextMenu || presentMenu) {
           event.stopPropagation();
         }
@@ -981,6 +1084,19 @@ export const PresentationLayout = (props: Props) => {
                         }`
                       : ""
                   }`}
+                  onMouseMove={() => {
+                    if (
+                      notesPopoverRef.current?.slideId === slide.id &&
+                      notesPopoverRef.current.mode === "preview"
+                    ) {
+                      clearNotesTimer();
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (notesPopoverRef.current?.slideId === slide.id) {
+                      leaveNotesPreview();
+                    }
+                  }}
                   onPointerDown={(event) => {
                     if (disabled || renaming || event.button !== 0) {
                       return;
@@ -1109,6 +1225,9 @@ export const PresentationLayout = (props: Props) => {
                       !disabled &&
                       !renaming &&
                       !event.nativeEvent.isComposing &&
+                      !(event.target as HTMLElement).closest(
+                        ".desktop-slide-notes-button",
+                      ) &&
                       (event.key === "Delete" || event.key === "Backspace")
                     ) {
                       event.preventDefault();
@@ -1144,48 +1263,142 @@ export const PresentationLayout = (props: Props) => {
                       darkMode={theme === "dark"}
                     />
                   </button>
-                  {renaming === slide.id ? (
-                    <input
-                      ref={renameInput}
-                      aria-label={t("幻灯片名称", "Slide title")}
-                      value={title}
-                      onChange={(event) => setTitle(event.target.value)}
-                      onBlur={saveTitle}
-                      onKeyDown={(event) => {
-                        event.stopPropagation();
-                        if (event.nativeEvent.isComposing) {
-                          return;
+                  <div className="desktop-slide-footer">
+                    {renaming === slide.id ? (
+                      <input
+                        ref={renameInput}
+                        aria-label={t("幻灯片名称", "Slide title")}
+                        value={title}
+                        onChange={(event) => setTitle(event.target.value)}
+                        onBlur={saveTitle}
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          if (event.nativeEvent.isComposing) {
+                            return;
+                          }
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            restoreSlideFocus.current = true;
+                            saveTitle();
+                          } else if (event.key === "Escape") {
+                            event.preventDefault();
+                            restoreSlideFocus.current = true;
+                            setRenaming(null);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <button
+                        className="desktop-slide-title"
+                        disabled={disabled}
+                        title={t("双击重命名", "Double-click to rename")}
+                        onClick={(event) =>
+                          selectSlide(slide.id, event.currentTarget)
                         }
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          restoreSlideFocus.current = true;
-                          saveTitle();
-                        } else if (event.key === "Escape") {
-                          event.preventDefault();
-                          restoreSlideFocus.current = true;
-                          setRenaming(null);
+                        onDoubleClick={() => rename(slide)}
+                      >
+                        {slide.title}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className={`desktop-slide-notes-button${
+                        slide.notes ? " has-notes" : ""
+                      }`}
+                      disabled={
+                        disabled ||
+                        !!renaming ||
+                        dragActive ||
+                        !props.onUpdateNotes
+                      }
+                      aria-label={`${
+                        slide.notes
+                          ? t("编辑备注", "Edit notes for slide")
+                          : t("添加备注", "Add notes to slide")
+                      } ${index + 1}: ${slide.title}`}
+                      title={
+                        slide.notes ? undefined : t("添加备注", "Add notes")
+                      }
+                      aria-haspopup="dialog"
+                      aria-expanded={
+                        notesPopover?.slideId === slide.id &&
+                        notesPopover.mode === "edit"
+                      }
+                      aria-controls={
+                        notesPopover?.slideId === slide.id &&
+                        notesPopover.mode === "edit"
+                          ? notesPopoverId
+                          : undefined
+                      }
+                      aria-describedby={
+                        notesPopover?.slideId === slide.id &&
+                        notesPopover.mode === "preview"
+                          ? notesPopoverId
+                          : undefined
+                      }
+                      onMouseEnter={(event) =>
+                        previewNotes(slide, event.currentTarget)
+                      }
+                      onMouseLeave={leaveNotesPreview}
+                      onClick={(event) => {
+                        clearNotesTimer();
+                        if (
+                          notesPopover?.slideId === slide.id &&
+                          notesPopover.mode === "edit"
+                        ) {
+                          closeNotes(true);
+                        } else {
+                          props.onEndNotesEdit();
+                          setNotesPopover({
+                            slideId: slide.id,
+                            anchor: event.currentTarget,
+                            mode: "edit",
+                          });
                         }
                       }}
-                    />
-                  ) : (
-                    <button
-                      className="desktop-slide-title"
-                      disabled={disabled}
-                      title={t("双击重命名", "Double-click to rename")}
-                      onClick={(event) =>
-                        selectSlide(slide.id, event.currentTarget)
-                      }
-                      onDoubleClick={() => rename(slide)}
                     >
-                      {slide.title}
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M7 18 3 21V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2Z" />
+                        {slide.notes ? (
+                          <path d="M7 8h10M7 12h7" />
+                        ) : (
+                          <path d="M8 10h8m-4-4v8" />
+                        )}
+                      </svg>
                     </button>
-                  )}
+                  </div>
                 </li>
               ))}
             </ol>
           </aside>
         </div>
       </div>
+      {notesPopover && notesSlide && !disabled && !session && root.current && (
+        <SlideNotesPopover
+          id={notesPopoverId}
+          anchor={notesPopover.anchor}
+          container={
+            root.current.closest<HTMLElement>(".desktop-shell") ?? root.current
+          }
+          title={notesSlide.title}
+          notes={notesSlide.notes ?? ""}
+          mode={notesPopover.mode}
+          language={language}
+          onChange={(notes) => props.onUpdateNotes?.(notesSlide.id, notes)}
+          onEditingEnd={props.onEndNotesEdit}
+          onClose={closeNotes}
+          onMouseEnter={clearNotesTimer}
+          onMouseLeave={leaveNotesPreview}
+        />
+      )}
       <div
         className="desktop-slide-drag-preview"
         ref={dragPreview}

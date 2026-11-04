@@ -377,7 +377,7 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
   const recordContent = (
     document: CanvasDocument,
     content: string,
-    files?: BinaryFiles,
+    options?: { files?: BinaryFiles; notesOnly?: boolean },
   ) => {
     if (
       !documentsRef.current.includes(document) ||
@@ -392,7 +392,7 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
     document.contentSignature = documentContentSignature(
       content,
       (id) =>
-        files?.[id] ??
+        options?.files?.[id] ??
         (document.presentation
           ? document.presentation.slides.find(
               (slide) => slide.scene.files?.[id],
@@ -402,6 +402,9 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
           : undefined),
     );
     document.revision += 1;
+    if (document.presentation && !options?.notesOnly) {
+      document.presentationPreviewRevision = document.revision;
+    }
     if (!document.initialized) {
       return;
     }
@@ -427,7 +430,7 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
       slide.scene = snapshot;
       recordContent(document, serializePresentation(document.presentation));
     } else {
-      recordContent(document, sceneContent, snapshot.files);
+      recordContent(document, sceneContent, { files: snapshot.files });
     }
   };
 
@@ -537,6 +540,7 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
       );
       return false;
     }
+    delete document.presentationHistory?.editingNotes;
     const content = document.content;
     const contentSignature = document.contentSignature;
     const performSave = async () => {

@@ -229,7 +229,7 @@ export const PresentationEditor = ({
     <PresentationLayout
       presentation={deck}
       activeSlideId={slideId}
-      revision={document.revision}
+      revision={document.presentationPreviewRevision ?? 0}
       active={props.interaction !== false}
       blocked={false}
       language={props.langCode === "en" ? "en" : "zh-CN"}
@@ -248,6 +248,13 @@ export const PresentationEditor = ({
       }
       onDelete={(id) => workspace.deleteSlide(document, id)}
       onRename={(id, title) => workspace.renameSlide(document, id, title)}
+      onUpdateNotes={
+        document.initialized
+          ? (id, notes) => workspace.updateSlideNotes(document, id, notes)
+          : undefined
+      }
+      onEndNotesEdit={() => workspace.finishSlideNotesEdit(document)}
+      onSave={(saveAs) => void workspace.requestSave(document, saveAs)}
       onMove={(id, index) => workspace.moveSlide(document, id, index)}
       onFit={fit}
       onController={(controller) => {

@@ -45,7 +45,7 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 - **子画布**：将便签转为子画布图钉，进入独立画布展开细节，通过导航返回上层；子画布与主画布保存在同一文件中。
 - **自定义偏好**：设置默认字体、字号与颜色快捷项，可添加本机字体；配置绘图样式预设及其快捷键，选中元素时应用样式，未选中时切换绘图工具。
 - **桌面体验**：中英文界面、浅色／深色／跟随系统主题，支持调整工具提示和选区悬浮工具栏。
-- **演示文稿**：多页手绘幻灯片、拖拽排序与放映；底部缩略图跟随界面主题，支持保存、重开和整份 PDF 导出。
+- **演示文稿**：多页手绘幻灯片、拖拽排序与放映；底部缩略图跟随界面主题，可从右下角添加或编辑每页备注，悬浮预览内容；支持保存、重开和整份 PDF 导出。
 - **Market 与 MCP**：在设置中启停内置 MCP，让 Codex 等客户端创建、编辑、保存和导出画布与演示文稿；通过 MCP 开发自己的插件，再在 Market 导入、启用或停用，默认采用手绘风格。
 - **图片复制**：复制选中元素后，粘贴到聊天或文档时呈现图片，在画板内部粘贴仍可编辑，并保留关联子画布。
 - **多种导出**：PNG、SVG、PDF，以及带图片附件的 JSON / Markdown 结构化导出。
@@ -54,9 +54,9 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 
 > **Windows 更新节奏调整**：Windows 版本暂缓日常持续迭代，后续按大版本规划推进，仅在关键版本集中更新。**Windows 开发仍将继续**，但不再跟随每个小版本同步发布。具体更新内容以对应版本的发布说明为准。
 
-当前桌面发布为 [v0.8.7](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.7)，提供 **macOS Apple Silicon（arm64）0.8.7** 和 **Windows 10 / 11 x64 0.8.5** 安装包。本次更新 macOS，Windows 沿用此前发布的 0.8.5。暂未提供 Intel Mac 或 Linux 安装包。
+当前桌面发布为 [v0.8.8](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.8)，提供 **macOS Apple Silicon（arm64）0.8.8** 和 **Windows 10 / 11 x64 0.8.5** 安装包。本次更新 macOS，Windows 沿用此前发布的 0.8.5。暂未提供 Intel Mac 或 Linux 安装包。
 
-1. 在 [v0.8.7 Releases](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.7) 下载 `Excalidraw-Guzi-0.8.7-arm64.dmg`。
+1. 在 [v0.8.8 Releases](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.8) 下载 `Excalidraw-Guzi-0.8.8-arm64.dmg`。
 2. 打开 DMG，将 **Excalidraw-Guzi.app** 拖入「应用程序」。
 3. 从「应用程序」启动，也可用它打开 `.excalidraw` 文件。
 

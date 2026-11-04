@@ -1642,12 +1642,112 @@ describe("desktop document workspace", () => {
     expect(document.initialData.elements![0].x).toBe(33);
   });
 
+  it("undoes a group of notes edits and saves and reopens the exact text", async () => {
+    const hook = await mount();
+    const path = "/drawings/talk.guzi-presentation";
+    vi.mocked(desktop.openFiles).mockResolvedValue([
+      disk(path, presentationContent()),
+    ]);
+    await act(async () => hook.result.current.openFiles());
+    const document = hook.result.current.documents[0];
+    attachSlide(hook, document);
+    const notes = "  Start here.\n\n接下来介绍图表。  \n";
+    const workspace = hook.result.current;
+    const { revision, presentationPreviewRevision } = document;
+    act(() => {
+      workspace.updateSlideNotes(document, "first", "Start");
+      workspace.updateSlideNotes(document, "first", notes);
+    });
+    expect(document.presentation!.slides[0].notes).toBe(notes);
+    expect(document.dirty).toBe(true);
+    expect(document.revision).toBeGreaterThan(revision);
+    expect(document.presentationHistory!.undo).toHaveLength(1);
+    act(() => workspace.performPresentationHistory(document, "undo"));
+    expect(document.presentation!.slides[0].notes).toBeUndefined();
+    expect(document.dirty).toBe(false);
+    act(() => workspace.performPresentationHistory(document, "redo"));
+    expect(document.presentation!.slides[0].notes).toBe(notes);
+    expect(document.dirty).toBe(true);
+    expect(document.presentationPreviewRevision).toBe(
+      presentationPreviewRevision,
+    );
+
+    await waitFor(() => expect(desktop.writeDraft).toHaveBeenCalled());
+    expect(vi.mocked(desktop.writeDraft).mock.lastCall?.[0].content).toBe(
+      document.content,
+    );
+    vi.mocked(desktop.saveFile).mockImplementation(async ({ content }) =>
+      disk(path, content),
+    );
+    await act(async () => {
+      expect(await workspace.requestSave(document)).toBe(true);
+    });
+    expect(document.dirty).toBe(false);
+    const saved = vi.mocked(desktop.saveFile).mock.lastCall![0].content;
+
+    act(() => {
+      workspace.updateSlideNotes(document, "first", "Draft text");
+      workspace.finishSlideNotesEdit(document);
+      workspace.updateSlideNotes(document, "first", "");
+    });
+    expect(document.presentation!.slides[0].notes).toBeUndefined();
+    act(() => workspace.performPresentationHistory(document, "undo"));
+    expect(document.presentation!.slides[0].notes).toBe("Draft text");
+    act(() => workspace.performPresentationHistory(document, "undo"));
+    expect(document.presentation!.slides[0].notes).toBe(notes);
+    expect(document.dirty).toBe(false);
+    await act(async () => {
+      expect(await workspace.closeDocument(document.id)).toBe(true);
+      vi.mocked(desktop.openFiles).mockResolvedValue([disk(path, saved)]);
+      await workspace.openFiles();
+    });
+    const reopened = hook.result.current.documents[0];
+    attachSlide(hook, reopened);
+    expect(reopened.presentation!.slides.map((slide) => slide.notes)).toEqual([
+      notes,
+      undefined,
+    ]);
+    expect(reopened.dirty).toBe(false);
+  });
+
+  it("replays a note edit on an inactive page without losing either page's notes", async () => {
+    const hook = await mount();
+    vi.mocked(desktop.openFiles).mockResolvedValue([
+      disk("/drawings/talk.guzi-presentation", presentationContent()),
+    ]);
+    await act(async () => hook.result.current.openFiles());
+    const document = hook.result.current.documents[0];
+    attachSlide(hook, document);
+    const workspace = hook.result.current;
+    act(() => {
+      workspace.updateSlideNotes(document, "first", "First notes");
+      workspace.updateSlideNotes(document, "second", "Second notes");
+    });
+    expect(document.activeSlideId).toBe("first");
+    act(() => workspace.performPresentationHistory(document, "undo"));
+    expect(document.activeSlideId).toBe("second");
+    attachSlide(hook, document);
+    expect(JSON.parse(document.content).slides).toMatchObject([
+      { id: "first", notes: "First notes" },
+      { id: "second" },
+    ]);
+    expect(document.presentation!.slides[1].notes).toBeUndefined();
+    act(() => workspace.performPresentationHistory(document, "redo"));
+    expect(document.presentation!.slides.map((slide) => slide.notes)).toEqual([
+      "First notes",
+      "Second notes",
+    ]);
+  });
+
   it("recovers complete presentation drafts as independent unsaved documents", async () => {
+    const deck = JSON.parse(presentationContent());
+    const notes = "Page two\nRecovery notes";
+    deck.slides[1].notes = notes;
     const draft = {
       id: "presentation-recovery",
       path: "/drawings/talk.guzi-presentation",
       title: "Recovered talk",
-      content: presentationContent(),
+      content: JSON.stringify(deck),
       modifiedAt: 100,
     };
     vi.mocked(desktop.listDrafts).mockResolvedValue([draft]);
@@ -1673,6 +1773,7 @@ describe("desktop document workspace", () => {
     act(() => hook.result.current.selectSlide(document, "second"));
     attachSlide(hook, document);
     expect(document.initialData.elements![0].x).toBe(22);
+    expect(document.presentation!.slides[1].notes).toBe(notes);
     expect(document.dirty).toBe(true);
     expect(document.savedContentSignature).toBeNull();
     vi.mocked(desktop.saveFile).mockImplementation(async (request) =>
@@ -1698,6 +1799,8 @@ describe("desktop document workspace", () => {
     });
     attachSlide(hook, document).edit(snapshot(11));
     const first = document.activeSlideId!;
+    const notes = "Only on the original slide and its duplicate.";
+    act(() => hook.result.current.updateSlideNotes(document, first, notes));
     act(() => hook.result.current.addSlide(document));
     attachSlide(hook, document).edit(snapshot(22));
     const second = document.activeSlideId!;
@@ -1722,6 +1825,11 @@ describe("desktop document workspace", () => {
     ]);
     expect(document.presentation!.slides[1].scene.elements![0].x).toBe(11);
     expect(document.presentation!.slides[2].scene.elements![0].x).toBe(33);
+    expect(document.presentation!.slides.map((slide) => slide.notes)).toEqual([
+      undefined,
+      notes,
+      notes,
+    ]);
     act(() => hook.result.current.deleteSlide(document, duplicate));
     attachSlide(hook, document);
     expect(document.activeSlideId).toBe(first);
@@ -1789,6 +1897,8 @@ describe("desktop document workspace", () => {
   it("copies a frozen page without changing the deck and pastes it after the current page even after the source is deleted", async () => {
     const hook = await mount();
     const source = createPresentation("first", "Opening", snapshot(11));
+    const notes = "Opening line\nSecond line";
+    source.slides[0].notes = notes;
     source.slides.push(
       { id: "second", title: "Details", scene: snapshot(22) },
       { id: "last", title: "Ending", scene: snapshot(66) },
@@ -1828,12 +1938,14 @@ describe("desktop document workspace", () => {
     expect(document.activeSlideId).toBe(pasted.id);
     expect(pasted.id).not.toBe("first");
     expect(pasted.title).toBe("Opening 副本");
+    expect(pasted.notes).toBe(notes);
     expect(pasted.scene).not.toBe(original);
     expect(pasted.scene.elements![0].x).toBe(11);
     attachSlide(hook, document).edit(snapshot(44));
     await act(async () => hook.result.current.pasteSlide(document, clipboard));
     expect(document.presentation!.slides[1].scene.elements![0].x).toBe(44);
     expect(document.presentation!.slides[2].scene.elements![0].x).toBe(11);
+    expect(document.presentation!.slides[2].notes).toBe(notes);
     expect(document.presentation!.slides[2].id).not.toBe(pasted.id);
   });
 
