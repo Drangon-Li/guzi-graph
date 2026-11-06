@@ -19,15 +19,22 @@ import {
 } from "@excalidraw/element/table";
 
 import type { Radians } from "@excalidraw/math";
+import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import { actionUngroup } from "../actions/actionGroup";
+import {
+  actionChangeBackgroundColor,
+  actionChangeStrokeColor,
+} from "../actions/actionProperties";
 import { actionTableProperties } from "../actions/actionTable";
 
 import { Excalidraw } from "../index";
 import { createPasteEvent, serializeAsClipboardJSON } from "../clipboard";
+import { serializeAsJSON } from "../data/json";
+import { restoreElements } from "../data/restore";
 
 import { API } from "./helpers/api";
-import { Pointer } from "./helpers/ui";
+import { Keyboard, Pointer } from "./helpers/ui";
 import {
   act,
   fireEvent,
@@ -35,6 +42,7 @@ import {
   screen,
   unmountComponent,
   waitFor,
+  within,
 } from "./test-utils";
 
 const { h } = window;
@@ -442,6 +450,9 @@ it("inserts with H using canvas defaults, retains styles through structure edits
   expect(h.elements.find(isTableRoot)?.customData.table.columns[0]).toBe(200);
   fireEvent.change(screen.getByLabelText("行高"), { target: { value: "100" } });
   expect(h.elements.find(isTableRoot)?.customData.table.rows[0]).toBe(100);
+  expect(
+    h.elements.find(isTableRoot)?.customData.table.rowMinHeights?.[0],
+  ).toBe(100);
   fireEvent.click(screen.getByRole("button", { name: "删除行" }));
   expect(h.elements.find(isTableRoot)?.customData.table.rows).toHaveLength(3);
   expect(
@@ -517,6 +528,288 @@ it("uses configurable table size presets and isolates text and border color popo
   expect(cells[1].strokeColor).not.toBe(swatch.title);
 });
 
+const tableColors = (key: "backgroundColor" | "strokeColor" | "textColor") =>
+  h.elements.find(isTableRoot)!.customData.table.cells.map((cell) => cell[key]);
+
+const pickTableColor = (panel: HTMLElement, label: string, index: number) => {
+  const field = within(panel).getByText(label, { selector: "legend" })
+    .parentElement!;
+  const swatch = field.querySelectorAll<HTMLButtonElement>(
+    ".color-picker__top-picks button",
+  )[index];
+  fireEvent.click(swatch);
+  return swatch.title;
+};
+
+it("defaults to whole table coloring and keeps the operation cell independent", () => {
+  fireEvent.click(screen.getByTestId("toolbar-table"));
+  const panel = screen.getByText("表格", { selector: "legend" }).parentElement!;
+  expect(within(panel).getByText("着色范围 · 整表")).toBeTruthy();
+  const selection = h.state.selectedElementIds;
+  const undoCount = h.history.undoStack.length;
+  const originalBackgrounds = tableColors("backgroundColor");
+  const background = pickTableColor(panel, "背景", 2);
+  expect(tableColors("backgroundColor")).toEqual(Array(9).fill(background));
+  expect(h.state.selectedElementIds).toBe(selection);
+  expect(h.history.undoStack.length).toBe(undoCount + 1);
+  act(() => h.app.api.history.undo!());
+  expect(tableColors("backgroundColor")).toEqual(originalBackgrounds);
+  act(() => h.app.api.history.redo!());
+  expect(tableColors("backgroundColor")).toEqual(Array(9).fill(background));
+  const stroke = pickTableColor(panel, "边框颜色", 2);
+  expect(tableColors("strokeColor")).toEqual(Array(9).fill(stroke));
+  const text = pickTableColor(panel, "文字颜色", 3);
+  expect(tableColors("textColor")).toEqual(Array(9).fill(text));
+  expect(tableColors("strokeColor")).toEqual(Array(9).fill(stroke));
+  const saved = JSON.parse(serializeAsJSON(h.elements, h.state, {}, "local"));
+  const reopened = restoreElements<ExcalidrawElement>(
+    saved.elements,
+    null,
+  ).find(isTableRoot);
+  expect(reopened?.customData?.table).toEqual(
+    h.elements.find(isTableRoot)!.customData.table,
+  );
+
+  fireEvent.click(within(panel).getByRole("button", { name: "第2行，第2列" }));
+  fireEvent.click(within(panel).getByRole("button", { name: "第3行，第3列" }), {
+    shiftKey: true,
+  });
+  const range = pickTableColor(panel, "背景", 3);
+  expect(tableColors("backgroundColor")).toEqual(
+    [0, 1, 2, 3, 4, 5, 6, 7, 8].map((index) =>
+      [4, 5, 7, 8].includes(index) ? range : background,
+    ),
+  );
+  fireEvent.click(within(panel).getByRole("button", { name: "选整行" }));
+  expect(within(panel).getByText("着色范围 · 第2行")).toBeTruthy();
+  const row = pickTableColor(panel, "边框颜色", 3);
+  expect(tableColors("strokeColor")).toEqual([
+    stroke,
+    stroke,
+    stroke,
+    row,
+    row,
+    row,
+    stroke,
+    stroke,
+    stroke,
+  ]);
+  fireEvent.click(within(panel).getByRole("button", { name: "选整列" }));
+  expect(within(panel).getByText("着色范围 · 第2列")).toBeTruthy();
+  const column = pickTableColor(panel, "文字颜色", 2);
+  expect(tableColors("textColor")).toEqual([
+    text,
+    column,
+    text,
+    text,
+    column,
+    text,
+    text,
+    column,
+    text,
+  ]);
+
+  fireEvent.click(within(panel).getByRole("button", { name: "整表" }));
+  fireEvent.click(within(panel).getByRole("button", { name: "合并单元格" }));
+  const merged = h.elements.find(isTableRoot)!.customData.table.cells;
+  expect(merged.find((cell) => cell.rowSpan > 1)).toMatchObject({
+    row: 1,
+    column: 1,
+    rowSpan: 2,
+    columnSpan: 2,
+  });
+  fireEvent.click(
+    within(panel).getByRole("button", { name: "第3行，第3列（已合并）" }),
+  );
+  const mergedColor = pickTableColor(panel, "背景", 4);
+  expect(
+    h.elements
+      .find(isTableRoot)!
+      .customData.table.cells.filter(
+        (cell) => cell.backgroundColor === mergedColor,
+      ),
+  ).toEqual([expect.objectContaining({ row: 1, column: 1, rowSpan: 2 })]);
+
+  const selected = API.getSelectedElements().filter(isNonDeletedElement);
+  API.setSelectedElements([]);
+  API.setSelectedElements(selected);
+  expect(screen.getByText("着色范围 · 整表")).toBeTruthy();
+});
+
+it("replaces an explicit color range when Ctrl-click selects a different table cell", () => {
+  const table = createTableElements(createTableData(2, 2), 100, 100);
+  API.setElements(table.elements);
+  const panel = () =>
+    screen.getByText("表格", { selector: "legend" }).parentElement!;
+  const deepClick = (x: number, y: number) =>
+    Keyboard.withModifierKeys({ ctrl: true }, () => mouse.clickAt(x, y));
+  deepClick(118, 118);
+  expect(h.state.selectedElementIds[table.root.id]).toBeUndefined();
+  expect(h.state.editingGroupId).toBe(table.root.groupIds[0]);
+  expect(within(panel()).getByText("着色范围 · 第1行第1列")).toBeTruthy();
+  fireEvent.click(within(panel()).getByRole("button", { name: "选整行" }));
+  expect(within(panel()).getByText("着色范围 · 第1行")).toBeTruthy();
+
+  deepClick(260, 168);
+  expect(h.state.selectedElementIds[table.root.id]).toBeUndefined();
+  expect(h.state.editingGroupId).toBe(table.root.groupIds[0]);
+  expect(within(panel()).getByText("着色范围 · 第2行第2列")).toBeTruthy();
+  const background = pickTableColor(panel(), "背景", 2);
+  expect(tableColors("backgroundColor")).toEqual([
+    "#ffffff",
+    "#ffffff",
+    "#ffffff",
+    background,
+  ]);
+});
+
+it("shares scope with details and uses custom and sampled colors", async () => {
+  fireEvent.click(screen.getByTestId("toolbar-table"));
+  fireEvent.click(screen.getByRole("button", { name: "第1行，第2列" }));
+  act(() => h.app.actionManager.executeAction(actionTableProperties, "ui"));
+  const dialog = screen.getByRole("dialog", { name: "表格详细设置" });
+  expect(within(dialog).getByText("着色范围 · 第1行第2列")).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "第2行，第3列" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "文字颜色" }));
+  const popup = screen.getByRole("dialog", { name: "取色器" });
+  expect(popup.closest(".excalidraw-modal-container")).toBe(
+    dialog.closest(".excalidraw-modal-container"),
+  );
+  fireEvent.change(within(popup).getByLabelText("文字颜色"), {
+    target: { value: "123456" },
+  });
+  expect(tableColors("textColor")[5]).toBe("#123456");
+  const colorSample = vi.spyOn(h.app.canvas.getContext("2d")!, "getImageData");
+  colorSample.mockReturnValue({
+    data: new Uint8ClampedArray([22, 45, 67, 255]),
+  } as ImageData);
+  fireEvent.click(popup.querySelector(".excalidraw-eye-dropper-trigger")!);
+  const backdrop = await waitFor(() => {
+    const target = document.querySelector(".excalidraw-eye-dropper-backdrop");
+    expect(target).not.toBeNull();
+    return target!;
+  });
+  expect(dialog).toHaveClass("table-details--sampling");
+  fireEvent.pointerUp(backdrop, { clientX: 50, clientY: 50 });
+  expect(dialog).not.toHaveClass("table-details--sampling");
+  expect(popup).toContainElement(document.activeElement as HTMLElement);
+  expect(tableColors("textColor")[5]).toBe("#162d43");
+  expect(
+    tableColors("textColor").filter((color) => color === "#162d43"),
+  ).toHaveLength(1);
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(screen.getByText("着色范围 · 第2行第3列")).toBeTruthy();
+  fireEvent.keyDown(document.querySelector("canvas.interactive")!, {
+    key: KEYS.I,
+  });
+  const keyboardBackdrop = await waitFor(() => {
+    const target = document.querySelector(".excalidraw-eye-dropper-backdrop");
+    expect(target).not.toBeNull();
+    return target!;
+  });
+  fireEvent.pointerUp(keyboardBackdrop, { clientX: 50, clientY: 50 });
+  expect(tableColors("backgroundColor")[5]).toBe("#162d43");
+  expect(
+    tableColors("backgroundColor").filter((color) => color === "#162d43"),
+  ).toHaveLength(1);
+  colorSample.mockRestore();
+});
+
+it("keeps table roots transparent when coloring multiple tables and shapes", () => {
+  const left = createTableElements(createTableData(2, 2), 0, 0);
+  const right = createTableElements(createTableData(1, 3), 500, 0);
+  const shape = API.createElement({ type: "rectangle" });
+  API.setElements([...left.elements, ...right.elements, shape]);
+  API.setSelectedElements([left.root, right.root, shape]);
+  act(() =>
+    h.app.actionManager.executeAction(actionChangeBackgroundColor, "ui", {
+      color: "#234567",
+    }),
+  );
+  act(() =>
+    h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+      color: "#abcdef",
+    }),
+  );
+  const roots = h.elements.filter(isTableRoot);
+  expect(roots).toHaveLength(2);
+  for (const root of roots) {
+    expect(root).toMatchObject({
+      strokeColor: "transparent",
+      backgroundColor: "transparent",
+    });
+    for (const cell of root.customData.table.cells) {
+      expect(cell).toMatchObject({
+        backgroundColor: "#234567",
+        strokeColor: "#abcdef",
+        textColor: "#abcdef",
+      });
+    }
+  }
+  expect(h.elements.find((element) => element.id === shape.id)).toMatchObject({
+    strokeColor: "#abcdef",
+    backgroundColor: "#234567",
+  });
+});
+
+it("keeps a compact panel's color range until the canvas selection changes", async () => {
+  unmountComponent();
+  localStorage.setItem("excalidraw.desktopUIMode", "compact");
+  await render(
+    <Excalidraw
+      langCode="en"
+      UIOptions={{ getFormFactor: () => "tablet" }}
+      desktopIntegration={{
+        save: async () => true,
+        open: async () => {},
+        selectionToolbar: false,
+      }}
+    />,
+  );
+  act(() => h.app.refreshEditorInterface());
+  fireEvent.click(screen.getByRole("button", { name: "Insert table" }));
+  const togglePanel = () =>
+    fireEvent.click(screen.getByRole("button", { name: "Table details…" }));
+  togglePanel();
+  fireEvent.click(screen.getByRole("button", { name: "Row 2, column 3" }));
+  expect(screen.getByText("Color scope · R2C3")).toBeTruthy();
+  togglePanel();
+  expect(screen.queryByText("Color scope · R2C3")).toBeNull();
+  togglePanel();
+  expect(screen.getByText("Color scope · R2C3")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Background" }));
+  const popup = screen.getByRole("dialog", { name: "Color picker" });
+  fireEvent.change(within(popup).getByLabelText("Background"), {
+    target: { value: "fedcba" },
+  });
+  expect(tableColors("backgroundColor")[5]).toBe("#fedcba");
+  expect(
+    tableColors("backgroundColor").filter((color) => color === "#fedcba"),
+  ).toHaveLength(1);
+  const sample = vi
+    .spyOn(h.app.canvas.getContext("2d")!, "getImageData")
+    .mockReturnValue({
+      data: new Uint8ClampedArray([45, 66, 77, 255]),
+    } as ImageData);
+  fireEvent.click(popup.querySelector(".excalidraw-eye-dropper-trigger")!);
+  const backdrop = await waitFor(() => {
+    const target = document.querySelector(".excalidraw-eye-dropper-backdrop");
+    expect(target).not.toBeNull();
+    return target!;
+  });
+  fireEvent.pointerDown(backdrop, { clientX: 50, clientY: 50 });
+  fireEvent.pointerUp(backdrop, { clientX: 50, clientY: 50 });
+  expect(tableColors("backgroundColor")[5]).toBe("#2d424d");
+  expect(screen.getByText("Color scope · R2C3")).toBeTruthy();
+  sample.mockRestore();
+
+  const selection = API.getSelectedElements().filter(isNonDeletedElement);
+  API.setSelectedElements([]);
+  API.setSelectedElements(selection);
+  togglePanel();
+  expect(screen.getByText("Color scope · Whole table")).toBeTruthy();
+});
+
 const setTableWithBoundArrows = (elbowed = false) => {
   const table = createTableElements(createTableData(1, 1), 100, 100);
   const background = table.elements.find(
@@ -565,6 +858,34 @@ const setTableWithBoundArrows = (elbowed = false) => {
   );
   return { table, targets, arrows };
 };
+
+it("moves bound arrow endpoints during proportional resize and restores them on cancel", () => {
+  const { targets, arrows } = setTableWithBoundArrows();
+  const boundary = screen.getAllByRole("separator", { name: "调整第1列宽" })[0];
+  fireEvent.pointerDown(boundary, {
+    button: 0,
+    pointerId: 1,
+    clientX: 244,
+    clientY: 124,
+    [KEYS.CTRL_OR_CMD]: true,
+  });
+  fireEvent.pointerMove(window, { pointerId: 1, clientX: 316, clientY: 124 });
+  expect(h.elements.find(isTableRoot)?.width).toBe(216);
+  arrows.forEach((arrow, index) => {
+    const resized = h.elements.find((element) => element.id === arrow.id)!;
+    expect(resized).toMatchObject({
+      endBinding: { elementId: targets[index].id },
+    });
+    expect(resized).not.toMatchObject({ points: arrow.points });
+  });
+  fireEvent.pointerCancel(window, { pointerId: 1 });
+  expect(h.elements.find(isTableRoot)?.width).toBe(144);
+  arrows.forEach((arrow) => {
+    expect(h.elements.find((element) => element.id === arrow.id)).toEqual(
+      arrow,
+    );
+  });
+});
 
 it.each([false, true])(
   "keeps root and cell arrows attached after table size property changes (elbowed=%s)",

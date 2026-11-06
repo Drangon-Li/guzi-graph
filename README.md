@@ -54,9 +54,9 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 
 > **Windows 更新节奏调整**：Windows 版本暂缓日常持续迭代，后续按大版本规划推进，仅在关键版本集中更新。**Windows 开发仍将继续**，但不再跟随每个小版本同步发布。具体更新内容以对应版本的发布说明为准。
 
-当前桌面发布为 [v0.8.8](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.8)，提供 **macOS Apple Silicon（arm64）0.8.8** 和 **Windows 10 / 11 x64 0.8.5** 安装包。本次更新 macOS，Windows 沿用此前发布的 0.8.5。暂未提供 Intel Mac 或 Linux 安装包。
+当前桌面发布为 [v0.8.9](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.9)，提供 **macOS Apple Silicon（arm64）0.8.9** 和 **Windows 10 / 11 x64 0.8.5** 安装包。本次更新 macOS，Windows 沿用此前发布的 0.8.5。暂未提供 Intel Mac 或 Linux 安装包。
 
-1. 在 [v0.8.8 Releases](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.8) 下载 `Excalidraw-Guzi-0.8.8-arm64.dmg`。
+1. 在 [v0.8.9 Releases](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.9) 下载 `Excalidraw-Guzi-0.8.9-arm64.dmg`。
 2. 打开 DMG，将 **Excalidraw-Guzi.app** 拖入「应用程序」。
 3. 从「应用程序」启动，也可用它打开 `.excalidraw` 文件。
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-import { getFontString } from "@excalidraw/common";
+import { arrayToMap, getFontString } from "@excalidraw/common";
+import { getElementsOverlappingFrame } from "@excalidraw/element";
 import { getNonDeletedElements, loadFromBlob } from "@excalidraw/excalidraw";
 import { restoreAppState } from "@excalidraw/excalidraw/data/restore";
 import { Fonts } from "@excalidraw/excalidraw/fonts";
@@ -10,6 +11,7 @@ import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import { translate } from "../../shared/i18n/i18n";
 import { GuziLogo } from "../../shared/ui/GuziLogo";
+import { getPaperPages } from "../paper/paper";
 import { parsePresentation } from "../presentation/model";
 import { renderSlideSvg } from "../presentation/renderSlide";
 
@@ -96,6 +98,10 @@ const getThumbnail = (
     if (!elements.length) {
       return null;
     }
+    const firstPage = getPaperPages(elements)[0];
+    const kind = firstPage?.customData?.guziPaper?.kind;
+    const exportingFrame =
+      kind === "blank" || kind === "ruled" ? firstPage : undefined;
     const appState = {
       ...restoreAppState(scene.appState, null),
       exportWithDarkMode: theme === "dark",
@@ -112,7 +118,8 @@ const getThumbnail = (
         config: {
           theme,
           canvasBackgroundColor: appState.viewBackgroundColor,
-          padding: 24,
+          padding: exportingFrame ? 0 : 24,
+          exportingFrame,
           frames: appState.frameRendering.enabled
             ? appState.frameRendering
             : { name: false, outline: false, clip: false },
@@ -127,7 +134,16 @@ const getThumbnail = (
             },
             createImage: () => new ownerWindow.Image(),
             loadFonts: async () => {
-              await loadThumbnailFonts(elements, ownerDocument);
+              await loadThumbnailFonts(
+                exportingFrame
+                  ? getElementsOverlappingFrame(
+                      elements,
+                      exportingFrame,
+                      arrayToMap(elements),
+                    )
+                  : elements,
+                ownerDocument,
+              );
               if (cancelled()) {
                 throw new ownerWindow.DOMException(
                   "Thumbnail cancelled",

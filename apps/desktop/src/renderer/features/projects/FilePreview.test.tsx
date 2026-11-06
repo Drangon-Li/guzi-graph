@@ -1,9 +1,23 @@
 import { act, render, waitFor } from "@testing-library/react";
 
 import { FONT_FAMILY } from "@excalidraw/common";
+import {
+  newFrameElement,
+  newImageElement,
+  newTextElement,
+} from "@excalidraw/element";
 import { loadFromBlob } from "@excalidraw/excalidraw";
+import {
+  restoreAppState,
+  restoreElements,
+} from "@excalidraw/excalidraw/data/restore";
 import { Fonts } from "@excalidraw/excalidraw/fonts";
 import { exportScene } from "@excalidraw/excalidraw/scene/export";
+
+import type { FileId } from "@excalidraw/element/types";
+import type { BinaryFiles, DataURL } from "@excalidraw/excalidraw/types";
+
+import { A4, createPaperPage } from "../paper/paper";
 
 import { FilePreview } from "./FilePreview";
 
@@ -31,11 +45,11 @@ describe("desktop canvas thumbnails", () => {
   let loadGlyphs: MockInstance<FontFaceSet["load"]>;
   let sequence = 0;
   let canvasSize: [number, number];
-  const files = {
+  const files: BinaryFiles = {
     image: {
-      id: "image",
+      id: "image" as FileId,
       mimeType: "image/png",
-      dataURL: "data:image/png;base64,AAAA",
+      dataURL: "data:image/png;base64,AAAA" as DataURL,
       created: 1,
     },
   };
@@ -98,11 +112,13 @@ describe("desktop canvas thumbnails", () => {
     vi.mocked(exportScene).mockImplementation(async ({ config }) => {
       await config!.environment!.loadFonts!();
       const canvas = config!.environment!.createCanvas!();
+      const frame = config!.exportingFrame;
+      const [width, height] = frame ? [frame.width, frame.height] : canvasSize;
       const scale = (
         config!.scale as (width: number, height: number) => number
-      )(...canvasSize);
-      canvas.width = Math.max(1, Math.round(canvasSize[0] * scale));
-      canvas.height = Math.max(1, Math.round(canvasSize[1] * scale));
+      )(width, height);
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
       rendered(canvas, scale, [canvas.width, canvas.height]);
       return canvas;
     });
@@ -183,6 +199,81 @@ describe("desktop canvas thumbnails", () => {
         padding: 24,
         environment: { document: root.ownerDocument },
       });
+    },
+  );
+
+  it.each(["blank", "ruled"] as const)(
+    "crops a %s A4 thumbnail to the first page in paper order",
+    async (template) => {
+      const first = createPaperPage({ ...A4, name: "A4", template });
+      const firstFrame = first.at(-1)!;
+      const second = createPaperPage({ ...A4, y: 1500, name: "A4", template });
+      const secondPageText = newTextElement({
+        x: 48,
+        y: 1550,
+        text: "Second page",
+        frameId: second.at(-1)!.id,
+      });
+      if (template === "ruled") {
+        first.unshift(
+          newImageElement({
+            type: "image",
+            x: 100,
+            y: 100,
+            width: 100,
+            height: 100,
+            fileId: files.image.id,
+            status: "saved",
+            frameId: firstFrame.id,
+          }),
+        );
+      }
+      vi.mocked(loadFromBlob).mockResolvedValue({
+        elements: restoreElements([...second, secondPageText, ...first], null),
+        appState: restoreAppState(null, null),
+        files,
+      });
+      render(<FilePreview file={file} root={root} theme="light" />);
+      show();
+      await waitFor(() => expect(rendered).toHaveBeenCalledTimes(1));
+      const [{ config, data }] = vi.mocked(exportScene).mock.calls[0];
+      expect(config?.exportingFrame?.id).toBe(firstFrame.id);
+      expect(config?.padding).toBe(0);
+      expect(rendered.mock.calls[0][2]).toEqual([509, 720]);
+      expect(loadGlyphs).not.toHaveBeenCalled();
+      if (template === "ruled") {
+        expect(data.files).toBe(files);
+        expect(loadFonts.mock.calls[0][0]).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ fileId: files.image.id }),
+          ]),
+        );
+      }
+    },
+  );
+
+  it.each(["regular frames", "imported PDF"] as const)(
+    "keeps the full preview for %s",
+    async (format) => {
+      const elements = [0, 1500].flatMap((y) =>
+        format === "imported PDF"
+          ? createPaperPage({ ...A4, y, name: "PDF", image: files.image })
+          : [newFrameElement({ ...A4, x: 0, y })],
+      );
+      vi.mocked(loadFromBlob).mockResolvedValue({
+        elements: restoreElements(elements, null),
+        appState: restoreAppState(null, null),
+        files,
+      });
+      render(<FilePreview file={file} root={root} theme="light" />);
+      show();
+      await waitFor(() => expect(rendered).toHaveBeenCalledTimes(1));
+      const [{ config, data }] = vi.mocked(exportScene).mock.calls[0];
+      expect(config?.exportingFrame).toBeUndefined();
+      expect(config?.padding).toBe(24);
+      expect(data.elements.map((element) => element.id)).toEqual(
+        elements.map((element) => element.id),
+      );
     },
   );
 

@@ -24,7 +24,12 @@ import {
   serializePresentation,
 } from "../presentation/model";
 
-import { apiSnapshot, flushDocumentEditing } from "./editorSnapshot";
+import {
+  apiSnapshot,
+  flushDocumentEditing,
+  isEditorReady,
+} from "./editorSnapshot";
+import { markDocumentActive, pinDocumentSleep } from "./tabSleep";
 
 import type { Presentation } from "../presentation/model";
 import type { SceneSnapshot } from "../../shared/model/document";
@@ -88,6 +93,10 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
       flushDocumentEditing(
         documentsRef.current.find((item) => item.id === activeRef.current),
       );
+    }
+    const document = documentsRef.current.find((item) => item.id === id);
+    if (document) {
+      markDocumentActive(document);
     }
     activeRef.current = id;
     projectRef.current = false;
@@ -172,6 +181,7 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
         : undefined,
       id: draft?.id || ownerWindow.crypto.randomUUID(),
       path: file?.path || null,
+      initialSaveCategory: draft?.initialSaveCategory,
       title: draft
         ? draft.title
         : file
@@ -344,13 +354,32 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
     document: CanvasDocument,
     task: () => Promise<void>,
   ) => {
-    document.draftTask = document.draftTask.then(task, task).catch(reportError);
-    return document.draftTask;
+    const operation = document.draftTask.then(task);
+    document.draftTask = operation.catch(reportError);
+    return operation.then(
+      () => true,
+      () => false,
+    );
   };
 
   const deleteDraft = (document: CanvasDocument) => {
     ownerWindow.clearTimeout(document.draftTimer);
     return enqueueDraft(document, () => desktop.deleteDraft(document.id));
+  };
+
+  const writeDraft = (document: CanvasDocument) => {
+    ownerWindow.clearTimeout(document.draftTimer);
+    const draft: RecoveryDraft = {
+      id: document.id,
+      path: document.path,
+      ...(document.initialSaveCategory
+        ? { initialSaveCategory: document.initialSaveCategory }
+        : {}),
+      title: document.title,
+      content: document.content,
+      modifiedAt: Date.now(),
+    };
+    return enqueueDraft(document, () => desktop.writeDraft(draft));
   };
 
   const scheduleDraft = (document: CanvasDocument) => {
@@ -363,14 +392,7 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
       return;
     }
     document.draftTimer = ownerWindow.setTimeout(() => {
-      const draft: RecoveryDraft = {
-        id: document.id,
-        path: document.path,
-        title: document.title,
-        content: document.content,
-        modifiedAt: Date.now(),
-      };
-      void enqueueDraft(document, () => desktop.writeDraft(draft));
+      void writeDraft(document);
     }, 750);
   };
 
@@ -435,7 +457,7 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
   };
 
   const captureAPI = (document: CanvasDocument) => {
-    if (!document.api || document.api.isDestroyed) {
+    if (!isEditorReady(document.api)) {
       return;
     }
     capture(document, document.getSnapshot?.() ?? apiSnapshot(document.api));
@@ -446,11 +468,9 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
       document.presentation?.slides ?? [
         {
           id: document.id,
-          scene:
-            document.getSnapshot?.() ??
-            (document.api && !document.api.isDestroyed
-              ? apiSnapshot(document.api)
-              : document.initialData),
+          scene: isEditorReady(document.api)
+            ? document.getSnapshot?.() ?? apiSnapshot(document.api)
+            : document.initialData,
         },
       ],
     );
@@ -461,6 +481,9 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
   ) => {
     document.api = api;
     captureAPI(document);
+    if (!document.sleepCheckpoint?.path.length) {
+      delete document.sleepCheckpoint;
+    }
     if (document.initialized) {
       refresh();
       return;
@@ -505,7 +528,7 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
         return false;
       }
     }
-    if (snapshot) {
+    if (snapshot && !snapshot.appState.isLoading) {
       capture(document, snapshot);
     } else {
       captureAPI(document);
@@ -549,6 +572,9 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
           ...(document.presentation ? { format: "presentation" as const } : {}),
           documentId: document.id,
           path: document.path,
+          ...(document.initialSaveCategory
+            ? { initialSaveCategory: document.initialSaveCategory }
+            : {}),
           name: document.title,
           content,
           saveAs,
@@ -569,6 +595,7 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
           throw new Error("此文件已经在另一个标签中打开，请选择其他文件名。");
         }
         document.path = file.path;
+        delete document.initialSaveCategory;
         document.title = fileTitle(file.path);
         document.modifiedAt = file.modifiedAt;
         document.savedContentSignature = contentSignature;
@@ -612,18 +639,22 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
     return saveDocument(document, saveAs, snapshot);
   };
 
-  const requestSave = async (document: CanvasDocument, saveAs = false) => {
-    if (document.hasPendingImages?.()) {
-      await document.flushPendingImages?.();
-    }
-    if (!documentsRef.current.includes(document) || document.removalPhase) {
-      return false;
-    }
-    const editor = document.activeEditor?.() ?? document.api;
-    return editor && !editor.isDestroyed
-      ? editor.desktopSave(saveAs)
-      : saveDocument(document, saveAs);
-  };
+  const requestSave = (document: CanvasDocument, saveAs = false) =>
+    pinDocumentSleep(document, async () => {
+      if (document.hasPendingImages?.()) {
+        await document.flushPendingImages?.();
+      }
+      if (!documentsRef.current.includes(document) || document.removalPhase) {
+        return false;
+      }
+      const editor = document.activeEditor?.() ?? document.api;
+      return !document.sleepCheckpoint &&
+        isEditorReady(document.api) &&
+        editor &&
+        !editor.isDestroyed
+        ? editor.desktopSave(saveAs)
+        : saveDocument(document, saveAs);
+    });
 
   const commitText = (document: CanvasDocument) => {
     flushDocumentEditing(document);
@@ -642,10 +673,12 @@ export const createDocumentActions = (workspace: WorkspaceState) => {
     openFiles,
     openProject,
     deleteDraft,
+    writeDraft,
     scheduleDraft,
     recordContent,
     capture,
     captureAPI,
+    documentMissingImageFiles,
     initialize,
     saveDocument,
     editorSave,

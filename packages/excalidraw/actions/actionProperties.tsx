@@ -86,6 +86,8 @@ import {
 } from "@excalidraw/element";
 
 import { isSubcanvasPin } from "@excalidraw/element/subcanvasPin";
+import { isTableElement } from "@excalidraw/element/table";
+import { getRuledTextFontUpdate } from "@excalidraw/element/ruledText";
 
 import type { LocalPoint, Radians } from "@excalidraw/math";
 
@@ -110,6 +112,7 @@ import type { ElementUpdate, Scene } from "@excalidraw/element";
 import type { CaptureUpdateActionType } from "@excalidraw/element";
 
 import { getEditorStylesPanelMode } from "../components/stylesPanelMode";
+import { updateTableColorsFromSelection } from "../features/table/selection";
 import {
   executeRichTextCommand,
   getRichTextSelectionState,
@@ -355,10 +358,10 @@ const changeFontSize = (
         const newFontSize = getNewFontSize(oldElement);
         newFontSizes.add(newFontSize);
         const container = app.scene.getContainerElement(oldElement);
-
         let newElement: ExcalidrawTextElement = newElementWith(
           oldElement,
-          getBaseFontSizeUpdate(oldElement, newFontSize, elementsMap),
+          getRuledTextFontUpdate(oldElement, newFontSize) ??
+            getBaseFontSizeUpdate(oldElement, newFontSize, elementsMap),
         );
         redrawTextBoundingBox(
           newElement,
@@ -441,34 +444,40 @@ export const actionChangeStrokeColor = register<
     return {
       // a note and its label share one ink: coloring the label while editing
       // it (no selection) colors the note too — the footer paints with it
-      elements: syncStickyNoteInk(
-        changeProperty(
-          elements,
-          appState,
-          (el) => {
-            if (!hasStrokeColor(el.type)) {
-              return el;
-            }
-            return newElementWith(el, {
-              ...getColorUpdate(el, "strokeColor", color, elementsMap),
-              ...(isTextElement(el) &&
-                el.richText &&
-                el.richText.paragraphs.some((paragraph) =>
-                  paragraph.runs.some((run) => run.color !== undefined),
-                ) && {
-                  richText: {
-                    ...el.richText,
-                    paragraphs: el.richText.paragraphs.map((paragraph) => ({
-                      ...paragraph,
-                      runs: paragraph.runs.map(({ color, ...run }) => run),
-                    })),
-                  },
-                }),
-            });
-          },
-          true,
+      elements: updateTableColorsFromSelection(
+        app,
+        appState,
+        syncStickyNoteInk(
+          changeProperty(
+            elements,
+            appState,
+            (el) => {
+              if (!hasStrokeColor(el.type) || isTableElement(el)) {
+                return el;
+              }
+              return newElementWith(el, {
+                ...getColorUpdate(el, "strokeColor", color, elementsMap),
+                ...(isTextElement(el) &&
+                  el.richText &&
+                  el.richText.paragraphs.some((paragraph) =>
+                    paragraph.runs.some((run) => run.color !== undefined),
+                  ) && {
+                    richText: {
+                      ...el.richText,
+                      paragraphs: el.richText.paragraphs.map((paragraph) => ({
+                        ...paragraph,
+                        runs: paragraph.runs.map(({ color, ...run }) => run),
+                      })),
+                    },
+                  }),
+              });
+            },
+            true,
+          ),
+          elementsMap,
         ),
-        elementsMap,
+        "strokeColor",
+        color,
       ),
       appState: {
         ...appState,
@@ -580,6 +589,7 @@ export const actionChangeBackgroundColor = register<
     } else {
       nextElements = changeProperty(elements, appState, (el) =>
         // a note's label passes the pick on to the note (below)
+        !isTableElement(el) &&
         getColorTargetElement(el, "backgroundColor", elementsMap) === el
           ? newElementWith(
               el,
@@ -608,7 +618,13 @@ export const actionChangeBackgroundColor = register<
     }
 
     return {
-      elements: nextElements,
+      elements: updateTableColorsFromSelection(
+        app,
+        appState,
+        nextElements,
+        "backgroundColor",
+        color,
+      ),
       appState: {
         ...appState,
         ...appStateUpdates,
@@ -1434,7 +1450,11 @@ export const actionChangeFontFamily = register<{
             ) {
               const newElement: ExcalidrawTextElement = newElementWith(
                 oldElement,
-                {
+                getRuledTextFontUpdate(
+                  oldElement,
+                  oldElement.fontSize,
+                  nextFontFamily,
+                ) ?? {
                   fontFamily: nextFontFamily,
                   lineHeight: getLineHeight(nextFontFamily!),
                 },

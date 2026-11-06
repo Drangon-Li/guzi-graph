@@ -420,7 +420,7 @@ const Editor = ({
           <MainMenu.Item
             icon={PlusIcon}
             shortcut={desktopShortcut(platform, "N")}
-            onSelect={workspace.requestNewDocument}
+            onSelect={() => workspace.requestNewDocument()}
           >
             {t("新建画布")}
           </MainMenu.Item>
@@ -892,7 +892,7 @@ export const App = ({ root }: { root: HTMLElement }) => {
         </nav>
         <Button
           className="desktop-titlebar-new"
-          onSelect={workspace.requestNewDocument}
+          onSelect={() => workspace.requestNewDocument()}
           aria-label={t("新建画布")}
           title={t("新建画布 · {shortcut}", {
             shortcut: desktopShortcut(platform, "N"),
@@ -964,26 +964,28 @@ export const App = ({ root }: { root: HTMLElement }) => {
                 }
               />
             </div>
-            {workspace.documents.map((document) => (
-              <Editor
-                key={document.id}
-                root={root}
-                document={document}
-                workspace={workspace}
-                theme={theme}
-                blocked={modalOpen || workspace.closing}
-                active={
-                  !workspace.projectsVisible &&
-                  document.id === workspace.activeId
-                }
-                onSettings={() => setSettingsOpen(true)}
-                onPreferences={setPreferencesSection}
-                onStructuredExport={() => {
-                  document.flushEditing?.();
-                  setStructuredExport(document);
-                }}
-              />
-            ))}
+            {workspace.documents
+              .filter((document) => !document.asleep)
+              .map((document) => (
+                <Editor
+                  key={document.id}
+                  root={root}
+                  document={document}
+                  workspace={workspace}
+                  theme={theme}
+                  blocked={modalOpen || workspace.closing}
+                  active={
+                    !workspace.projectsVisible &&
+                    document.id === workspace.activeId
+                  }
+                  onSettings={() => setSettingsOpen(true)}
+                  onPreferences={setPreferencesSection}
+                  onStructuredExport={() => {
+                    document.flushEditing?.();
+                    setStructuredExport(document);
+                  }}
+                />
+              ))}
           </>
         )}
       </div>

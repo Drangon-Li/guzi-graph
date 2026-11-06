@@ -89,6 +89,14 @@ export const Projects = ({
   const historyVisible = view === "history";
   const examplesVisible = view === "examples";
   const [category, setCategory] = useState<string | null>(null);
+  const requestNewDocument = () => {
+    const { rootDirectory } = workspace.index;
+    workspace.requestNewDocument(
+      view === "files" && category && rootDirectory
+        ? { rootDirectory, category }
+        : undefined,
+    );
+  };
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("modified");
   const [refreshing, setRefreshing] = useState(false);
@@ -748,10 +756,7 @@ export const Projects = ({
               <span>{t("打开文件")}</span>
               <kbd>{desktopShortcut(platform, "O")}</kbd>
             </Button>
-            <Button
-              className="desktop-primary"
-              onSelect={workspace.requestNewDocument}
-            >
+            <Button className="desktop-primary" onSelect={requestNewDocument}>
               {PlusIcon}
               <span>{t("新建画布")}</span>
             </Button>
@@ -942,7 +947,7 @@ export const Projects = ({
                 {!query && (
                   <Button
                     className="desktop-primary"
-                    onSelect={workspace.requestNewDocument}
+                    onSelect={requestNewDocument}
                   >
                     {PlusIcon}
                     {t("新建画布")}

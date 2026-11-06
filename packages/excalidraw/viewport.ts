@@ -107,6 +107,8 @@ export type SetViewportOptions = {
 };
 
 type Viewport = Pick<AppState, "scrollX" | "scrollY" | "zoom">;
+type ConstrainedViewport = Viewport &
+  Pick<AppState, "width" | "height" | "scrollConstraints">;
 
 /**
  * Clamps a single scroll axis so the visible scene span stays inside the box.
@@ -143,10 +145,7 @@ const constrainScrollAxis = (
  * resting clamp — pass 0 for a hard clamp.
  */
 export const constrainScrollState = (
-  state: Pick<
-    AppState,
-    "scrollX" | "scrollY" | "zoom" | "width" | "height" | "scrollConstraints"
-  >,
+  state: ConstrainedViewport,
   overscroll = 0,
 ): Viewport => {
   const { scrollConstraints, width, height } = state;
@@ -203,6 +202,93 @@ export const constrainScrollState = (
   };
 };
 
+// Match free scrolling at the boundary, then continuously decrease the
+// amount of visible motion per pixel of input.
+const resist = (raw: number, limit: number) =>
+  Math.sign(raw) * (limit * (Math.abs(raw) / (limit + Math.abs(raw))));
+
+const unresist = (visible: number, limit: number) =>
+  Math.abs(visible) < limit
+    ? (visible * limit) / (limit - Math.abs(visible))
+    : visible;
+
+export const getElasticOverscrollY = (
+  constraint: ScrollConstraints,
+  zoom: number,
+) =>
+  constraint.maxOverscrollYInScene === undefined
+    ? constraint.overscroll
+    : Math.min(constraint.overscroll, constraint.maxOverscrollYInScene * zoom);
+
+const moveElasticAxis = (visible: number, movement: number, limit: number) => {
+  if (visible * movement < 0) {
+    // Spend inward input on the visible stretch first. Any input left after
+    // reaching the edge is free to move across the paper.
+    return Math.abs(movement) <= Math.abs(visible)
+      ? { visible: visible + movement, raw: 0 }
+      : { raw: visible + movement };
+  }
+  if (!movement || Math.abs(visible) >= limit) {
+    return { visible, raw: 0 };
+  }
+  return { raw: unresist(visible, limit) + movement };
+};
+
+export const panViewportWithinConstraints = (
+  state: ConstrainedViewport,
+  deltaX: number,
+  deltaY: number,
+) => {
+  const zoom = state.zoom.value;
+  const constraint = state.scrollConstraints;
+  if (!constraint?.elasticPan || !constraint.overscroll) {
+    return {
+      scrollX: state.scrollX - deltaX / zoom,
+      scrollY: state.scrollY - deltaY / zoom,
+    };
+  }
+  const hard = constrainScrollState(state);
+  const { overscroll } = constraint;
+  const overscrollY = getElasticOverscrollY(constraint, zoom);
+  const x = moveElasticAxis(
+    (state.scrollX - hard.scrollX) * zoom,
+    -deltaX,
+    overscroll,
+  );
+  const y = moveElasticAxis(
+    (state.scrollY - hard.scrollY) * zoom,
+    -deltaY,
+    overscrollY,
+  );
+  const raw = {
+    ...state,
+    scrollX: hard.scrollX + x.raw / zoom,
+    scrollY: hard.scrollY + y.raw / zoom,
+  };
+  const resting = constrainScrollState(raw);
+  return {
+    scrollX:
+      x.visible === undefined
+        ? resting.scrollX +
+          resist((raw.scrollX - resting.scrollX) * zoom, overscroll) / zoom
+        : hard.scrollX + x.visible / zoom,
+    scrollY:
+      y.visible === undefined
+        ? resting.scrollY +
+          resist((raw.scrollY - resting.scrollY) * zoom, overscrollY) / zoom
+        : hard.scrollY + y.visible / zoom,
+  };
+};
+
+export const getDistancePastEnd = (state: ConstrainedViewport) => {
+  const constraint = state.scrollConstraints;
+  if (!constraint?.elasticPan || constraint.lockScroll !== true) {
+    return undefined;
+  }
+  const end = constrainScrollState({ ...state, scrollY: -Infinity }).scrollY;
+  return (end - state.scrollY) * state.zoom.value;
+};
+
 /** private helper. Use {@link getViewportForZoomWithScrollConstraints} instead */
 const getViewportForZoom = (
   { viewportX, viewportY, nextZoom }: ZoomOptions,
@@ -256,12 +342,26 @@ export const getViewportForZoomWithScrollConstraints = (
   }
 
   const zoom = zoomedViewport.zoom.value;
+  // Focal zoom can move an edge into the interior. While paper is already
+  // overscrolled, retain its rubberband distance from that edge at the new zoom.
+  const base = state.scrollConstraints.elasticPan
+    ? constrainScrollState({
+        ...state,
+        ...zoomedViewport,
+        scrollX: overscrollX
+          ? Math.sign(overscrollX) * Infinity
+          : zoomedViewport.scrollX,
+        scrollY: overscrollY
+          ? Math.sign(overscrollY) * Infinity
+          : zoomedViewport.scrollY,
+      })
+    : zoomedViewport;
   return constrainScrollState(
     {
       ...state,
-      ...zoomedViewport,
-      scrollX: zoomedViewport.scrollX + overscrollX / zoom,
-      scrollY: zoomedViewport.scrollY + overscrollY / zoom,
+      ...base,
+      scrollX: base.scrollX + overscrollX / zoom,
+      scrollY: base.scrollY + overscrollY / zoom,
     },
     state.scrollConstraints.overscroll,
   );

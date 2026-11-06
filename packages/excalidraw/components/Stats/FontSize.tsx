@@ -7,6 +7,7 @@ import {
   redrawTextBoundingBox,
 } from "@excalidraw/element";
 import { hasBoundTextElement, isTextElement } from "@excalidraw/element";
+import { getRuledTextFontUpdate } from "@excalidraw/element/ruledText";
 
 import type {
   ExcalidrawElement,
@@ -95,7 +96,8 @@ const handleFontSizeChange = (
       }
       scene.mutateElement(
         latestElement,
-        getBaseFontSizeUpdate(latestElement, nextFontSize, elementsMap),
+        getRuledTextFontUpdate(latestElement, nextFontSize) ??
+          getBaseFontSizeUpdate(latestElement, nextFontSize, elementsMap),
       );
       redrawTextBoundingBox(
         latestElement,

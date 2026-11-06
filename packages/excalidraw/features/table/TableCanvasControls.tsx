@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 
-import { sceneCoordsToViewportCoords } from "@excalidraw/common";
+import { KEYS, sceneCoordsToViewportCoords } from "@excalidraw/common";
 import {
   CaptureUpdateAction,
   deepCopyElement,
   isArrowElement,
 } from "@excalidraw/element";
-import { readTableData } from "@excalidraw/element/table";
+import {
+  getTableResizeMinScale,
+  readTableData,
+  TABLE_MIN_COLUMN_WIDTH,
+  TABLE_MIN_ROW_HEIGHT,
+} from "@excalidraw/element/table";
 
 import type { TableRoot } from "@excalidraw/element/table";
 
@@ -14,6 +19,11 @@ import { useAppStateValue } from "../../hooks/useAppStateValue";
 import { getLanguage } from "../../i18n";
 
 import { applyTableChange, getSelectedTableRoot } from "./TableActions";
+import {
+  getTableSelectionAtom,
+  resolveTableSelection,
+  setTableSelection,
+} from "./selection";
 
 import "./TableCanvasControls.scss";
 
@@ -146,9 +156,22 @@ export const TableCanvasControls = ({
       },
       captureUpdate: CaptureUpdateAction.EVENTUALLY,
     });
-    const initialSize = (
-      axis === "row" ? initialData.rows : initialData.columns
-    )[index];
+    const proportional = event[KEYS.CTRL_OR_CMD];
+    const initialSizes =
+      axis === "row" ? initialData.rows : initialData.columns;
+    const initialSize = initialSizes[index];
+    const minimumSize =
+      axis === "row" ? TABLE_MIN_ROW_HEIGHT : TABLE_MIN_COLUMN_WIDTH;
+    const minimumScale = proportional
+      ? getTableResizeMinScale(initialData, axis, app.renderEnvironment)
+      : 1;
+    // The pointer controls the grabbed edge's distance from the fixed edge.
+    const anchorDistance = proportional
+      ? initialSizes
+          .slice(0, leading ? initialSizes.length : index + 1)
+          .reduce((sum, size) => sum + size, 0)
+      : initialSize;
+    const sizing = axis === "row" ? "rowMinHeights" : "columns";
     const startX = event.clientX;
     const startY = event.clientY;
     const cos = Math.cos(root.angle);
@@ -165,22 +188,36 @@ export const TableCanvasControls = ({
       const dx = (next.clientX - startX) / zoom;
       const dy = (next.clientY - startY) / zoom;
       const delta =
-        axis === "column" ? cos * dx + sin * dy : -sin * dx + cos * dy;
-      const size = Math.max(
-        axis === "column" ? 40 : 24,
-        initialSize + (leading ? -delta : delta),
-      );
-      changed = size !== initialSize;
+        (leading ? -1 : 1) *
+        (axis === "column" ? cos * dx + sin * dy : -sin * dx + cos * dy);
+      const scale = Math.max(minimumScale, 1 + delta / anchorDistance);
+      const size = Math.max(minimumSize, initialSize + delta);
+      const nextChanged =
+        delta !== 0 && (proportional ? scale !== 1 : size !== initialSize);
+      if (!nextChanged) {
+        if (changed) {
+          app.syncActionResult({
+            elements: restoreAffectedElements(),
+            captureUpdate: CaptureUpdateAction.EVENTUALLY,
+          });
+        }
+        changed = false;
+        return;
+      }
+      changed = true;
       applyTableChange(
         app,
         initialRoot,
-        () => ({
-          ...initialData,
-          [axis === "row" ? "rows" : "columns"]: (axis === "row"
-            ? initialData.rows
-            : initialData.columns
-          ).map((value, item) => (item === index ? size : value)),
-        }),
+        !proportional && axis === "row"
+          ? { type: "resizeRows", row: index, endRow: index, height: size }
+          : () => ({
+              ...initialData,
+              [sizing]: proportional
+                ? initialSizes.map((value) => value * scale)
+                : initialSizes.map((value, item) =>
+                    item === index ? size : value,
+                  ),
+            }),
         {
           previous: restoreAffectedElements(),
           captureUpdate: CaptureUpdateAction.EVENTUALLY,
@@ -412,6 +449,25 @@ export const TableCanvasControls = ({
             transform: `translate(-50%, -100%) rotate(${-root.angle}rad)`,
           }}
         >
+          <button
+            type="button"
+            onClick={() => {
+              const selection = resolveTableSelection(
+                app.editorStore.get(getTableSelectionAtom(app)),
+                root,
+                data,
+                app.scene.getElementsIncludingDeleted(),
+                app.state.selectedElementIds,
+              );
+              setTableSelection(app, {
+                ...selection,
+                color: { type: header.axis, index: header.index },
+              });
+              setHeader(null);
+            }}
+          >
+            {english ? `Select ${header.axis}` : `选整${axisName(header.axis)}`}
+          </button>
           <button
             type="button"
             onClick={() => updateStructure("insert", header.axis, header.index)}

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
-import { getFontSizePresets } from "@excalidraw/common";
+import { getFontSizePresets, reduceToCommonValue } from "@excalidraw/common";
 import {
   CaptureUpdateAction,
   fixBindingsAfterDeletion,
@@ -17,21 +17,28 @@ import {
   readTableData,
   splitTableCells,
   styleTableCells,
+  tableCellIntersectsRange,
+  TABLE_MIN_COLUMN_WIDTH,
+  TABLE_MIN_ROW_HEIGHT,
   updateTableElements,
 } from "@excalidraw/element/table";
 
 import type {
   TableCell,
+  TableCellColors,
   TableRange,
   TableRoot,
 } from "@excalidraw/element/table";
+import type { CaptureUpdateActionType } from "@excalidraw/element";
 
 import { getLanguage } from "../../i18n";
+import { useAtomValue } from "../../editor-jotai";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { UIAppStateContext } from "../../context/ui-appState";
 
 import { ColorPicker } from "../../components/ColorPicker/ColorPicker";
 import { Dialog } from "../../components/Dialog";
+import { activeEyeDropperAtom } from "../../components/EyeDropper";
 import { IconButton } from "../../components/IconButton";
 import { PreferenceConfigureButton } from "../../components/PreferenceConfigureButton";
 import { RadioSelection } from "../../components/RadioSelection";
@@ -52,6 +59,15 @@ import {
 } from "../../components/App";
 
 import { getSelectedTableRoot as resolveSelectedTableRoot } from "./helpers";
+import {
+  clampTableRange,
+  getTableColorRange,
+  getTableSelectionAtom,
+  resolveTableSelection,
+  setTableSelection,
+  tableCellRange,
+  updateSelectedTableColors,
+} from "./selection";
 
 import "./TableActions.scss";
 
@@ -77,6 +93,10 @@ const labels = {
     fill: "背景",
     textColor: "文字颜色",
     borderColor: "边框颜色",
+    colorScope: "着色范围",
+    wholeTable: "整表",
+    selectRow: "选整行",
+    selectColumn: "选整列",
     fontSize: "字号",
     align: "对齐",
     left: "左对齐",
@@ -105,6 +125,10 @@ const labels = {
     fill: "Background",
     textColor: "Text color",
     borderColor: "Border color",
+    colorScope: "Color scope",
+    wholeTable: "Whole table",
+    selectRow: "Select row",
+    selectColumn: "Select column",
     fontSize: "Font size",
     align: "Alignment",
     left: "Left",
@@ -114,14 +138,9 @@ const labels = {
     rowHeight: "Row height",
     columnWidth: "Column width",
     sizeHint:
-      "Sizes apply to selected rows and columns. Rows expand to fit text.",
+      "Sizes apply to selected rows and columns. Rows adjust to fit text.",
   },
 };
-
-const selectedRanges = new WeakMap<
-  AppClassProperties,
-  Map<string, TableRange>
->();
 
 const operationIcon = (operation: "row" | "column" | "merge" | "split") => (
   <svg
@@ -161,7 +180,7 @@ export const applyTableChange = (
   root: TableRoot,
   transform: Parameters<typeof updateTableElements>[2],
   options: {
-    captureUpdate?: typeof CaptureUpdateAction[keyof typeof CaptureUpdateAction];
+    captureUpdate?: CaptureUpdateActionType;
     previous?: Parameters<typeof updateTableElements>[0];
     preserveOrigin?: boolean;
     leadingAxis?: "row" | "column";
@@ -253,38 +272,66 @@ const TableEditor = ({
   root,
   renderAction,
   detailed = false,
+  popoverContainer,
 }: {
   app: AppClassProperties;
   appState: UIAppState;
   root: TableRoot;
   renderAction?: ActionManager["renderAction"];
   detailed?: boolean;
+  popoverContainer?: HTMLDivElement | null;
 }) => {
   const english = getLanguage().code === "en";
   const label = labels[english ? "en" : "zh-CN"];
-  const [range, setRange] = useState<TableRange>(
-    () =>
-      selectedRanges.get(app)?.get(root.id) ?? {
-        row: 0,
-        column: 0,
-        endRow: 0,
-        endColumn: 0,
-      },
-  );
+  const activeSelection = useAtomValue(getTableSelectionAtom(app));
   const elements = app.scene.getElementsIncludingDeleted();
   const data = readTableData(root, elements);
-  const selection = {
-    row: Math.min(range.row, data.rows.length - 1),
-    column: Math.min(range.column, data.columns.length - 1),
-    endRow: Math.min(range.endRow, data.rows.length - 1),
-    endColumn: Math.min(range.endColumn, data.columns.length - 1),
+  const tableSelection = resolveTableSelection(
+    activeSelection,
+    root,
+    data,
+    elements,
+    appState.selectedElementIds,
+  );
+  const selection = clampTableRange(tableSelection.operation, data);
+  const colorRange = getTableColorRange(tableSelection, data);
+  const colorCells = colorRange
+    ? data.cells.filter((cell) => tableCellIntersectsRange(cell, colorRange))
+    : data.cells;
+  const position = (row: number, column: number) =>
+    english ? `R${row + 1}C${column + 1}` : `第${row + 1}行第${column + 1}列`;
+  const colorScopeLabel = () => {
+    if (!colorRange) {
+      return label.wholeTable;
+    }
+    const { row, column, endRow, endColumn } = colorRange;
+    switch (tableSelection.color.type) {
+      case "row":
+        return english ? `Row ${row + 1}` : `第${row + 1}行`;
+      case "column":
+        return english ? `Column ${column + 1}` : `第${column + 1}列`;
+      case "range":
+        return `${position(row, column)} – ${position(endRow, endColumn)}`;
+      default:
+        return position(row, column);
+    }
   };
   const cell = getTableCellAt(data, selection.row, selection.column)!;
-  const chooseRange = (next: TableRange) => {
-    const ranges = selectedRanges.get(app) ?? new Map<string, TableRange>();
-    ranges.set(root.id, next);
-    selectedRanges.set(app, ranges);
-    setRange(next);
+  const chooseRange = (next: TableRange, shiftKey: boolean) => {
+    const anchor = shiftKey
+      ? clampTableRange(tableSelection.anchor, data)
+      : next;
+    setTableSelection(app, {
+      ...tableSelection,
+      anchor,
+      operation: {
+        row: Math.min(anchor.row, next.row),
+        column: Math.min(anchor.column, next.column),
+        endRow: Math.max(anchor.endRow, next.endRow),
+        endColumn: Math.max(anchor.endColumn, next.endColumn),
+      },
+      color: { type: shiftKey ? "range" : "cell" },
+    });
   };
   const apply = (transform: Parameters<typeof updateTableElements>[2]) =>
     applyTableChange(app, root, transform);
@@ -292,6 +339,29 @@ const TableEditor = ({
     (value: Parameters<typeof styleTableCells>[2]) =>
       apply((data) => styleTableCells(data, selection, value)),
   );
+  const applyColor = useStableCallback((value: TableCellColors) => {
+    const current = app.scene.getElementsIncludingDeleted();
+    const selected = resolveSelectedTableRoot(
+      current,
+      app.state.selectedElementIds,
+    );
+    if (selected?.id !== root.id || app.state.editingTextElement) {
+      return;
+    }
+    const next = updateSelectedTableColors(
+      app,
+      app.state,
+      current,
+      selected,
+      value,
+    );
+    if (next !== current) {
+      app.syncActionResult({
+        elements: next,
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+    }
+  });
   const mergeDisabled =
     !canMergeTableCells(data, selection) ||
     (selection.row === selection.endRow &&
@@ -312,6 +382,9 @@ const TableEditor = ({
       className={`table-actions${detailed ? " table-actions--details" : ""}`}
     >
       {!detailed && <legend>{label.table}</legend>}
+      <small className="table-color-scope" aria-live="polite">
+        {label.colorScope} · {colorScopeLabel()}
+      </small>
       <Tooltip label={label.hint} long delay>
         <div
           className="table-cell-grid"
@@ -324,10 +397,7 @@ const TableEditor = ({
             data.columns.map((_, column) => {
               const current = getTableCellAt(data, row, column)!;
               const selected =
-                row >= selection.row &&
-                row <= selection.endRow &&
-                column >= selection.column &&
-                column <= selection.endColumn;
+                !!colorRange && tableCellIntersectsRange(current, colorRange);
               const title = `${
                 english
                   ? `Row ${row + 1}, column ${column + 1}`
@@ -345,21 +415,7 @@ const TableEditor = ({
                   aria-label={title}
                   aria-pressed={selected}
                   onClick={(event) =>
-                    chooseRange(
-                      event.shiftKey
-                        ? {
-                            row: Math.min(selection.row, row),
-                            column: Math.min(selection.column, column),
-                            endRow: Math.max(selection.row, row),
-                            endColumn: Math.max(selection.column, column),
-                          }
-                        : {
-                            row: current.row,
-                            column: current.column,
-                            endRow: current.row + current.rowSpan - 1,
-                            endColumn: current.column + current.columnSpan - 1,
-                          },
-                    )
+                    chooseRange(tableCellRange(current), event.shiftKey)
                   }
                 >
                   {current.row === row && current.column === column
@@ -371,6 +427,70 @@ const TableEditor = ({
           )}
         </div>
       </Tooltip>
+      <div
+        className="table-color-scopes"
+        role="group"
+        aria-label={label.colorScope}
+      >
+        <button
+          type="button"
+          aria-pressed={!colorRange}
+          onClick={() =>
+            setTableSelection(app, {
+              ...tableSelection,
+              color: { type: "table" },
+            })
+          }
+        >
+          {label.wholeTable}
+        </button>
+        {(["row", "column"] as const).map((axis) => (
+          <button
+            key={axis}
+            type="button"
+            aria-pressed={tableSelection.color.type === axis}
+            onClick={() =>
+              setTableSelection(app, {
+                ...tableSelection,
+                color: { type: axis, index: selection[axis] },
+              })
+            }
+          >
+            {axis === "row" ? label.selectRow : label.selectColumn}
+          </button>
+        ))}
+      </div>
+      {(
+        [
+          [label.borderColor, "strokeColor", "elementStroke"],
+          [label.fill, "backgroundColor", "elementBackground"],
+          [label.textColor, "textColor", "tableText"],
+        ] as const
+      ).map(([title, key, type]) => (
+        <fieldset key={key}>
+          <legend>{title}</legend>
+          <ColorPicker
+            type={type}
+            color={reduceToCommonValue(colorCells, (cell) => cell[key])}
+            label={title}
+            elements={elements}
+            appState={appState}
+            onChange={(color) => applyColor({ [key]: color })}
+            updateData={(value) =>
+              app.syncActionResult({
+                appState: value,
+                captureUpdate: CaptureUpdateAction.NEVER,
+              })
+            }
+            customizableTopPicks={
+              type === "elementBackground"
+                ? "elementBackground"
+                : "elementStroke"
+            }
+            popoverContainer={popoverContainer}
+          />
+        </fieldset>
+      ))}
       <div className="table-structure-actions">
         <IconButton
           type="button"
@@ -488,19 +608,20 @@ const TableEditor = ({
                 <input
                   type="number"
                   aria-label={label.rowHeight}
-                  min={24}
+                  min={TABLE_MIN_ROW_HEIGHT}
                   value={Math.round(data.rows[selection.row])}
                   onChange={(event) => {
                     const height = Number(event.target.value);
-                    if (Number.isFinite(height) && height >= 24) {
-                      apply((data) => ({
-                        ...data,
-                        rows: data.rows.map((value, index) =>
-                          index >= selection.row && index <= selection.endRow
-                            ? height
-                            : value,
-                        ),
-                      }));
+                    if (
+                      Number.isFinite(height) &&
+                      height >= TABLE_MIN_ROW_HEIGHT
+                    ) {
+                      apply({
+                        type: "resizeRows",
+                        row: selection.row,
+                        endRow: selection.endRow,
+                        height,
+                      });
                     }
                   }}
                 />
@@ -510,11 +631,14 @@ const TableEditor = ({
                 <input
                   type="number"
                   aria-label={label.columnWidth}
-                  min={40}
+                  min={TABLE_MIN_COLUMN_WIDTH}
                   value={Math.round(data.columns[selection.column])}
                   onChange={(event) => {
                     const width = Number(event.target.value);
-                    if (Number.isFinite(width) && width >= 40) {
+                    if (
+                      Number.isFinite(width) &&
+                      width >= TABLE_MIN_COLUMN_WIDTH
+                    ) {
                       apply((data) => ({
                         ...data,
                         columns: data.columns.map((value, index) =>
@@ -539,36 +663,6 @@ const TableEditor = ({
         </>
       ) : (
         <>
-          {(
-            [
-              [label.borderColor, "strokeColor", "elementStroke"],
-              [label.fill, "backgroundColor", "elementBackground"],
-              [label.textColor, "textColor", "tableText"],
-            ] as const
-          ).map(([title, key, type]) => (
-            <fieldset key={key}>
-              <legend>{title}</legend>
-              <ColorPicker
-                type={type}
-                color={cell[key]}
-                label={title}
-                elements={elements}
-                appState={appState}
-                onChange={(color) => style({ [key]: color })}
-                updateData={(value) =>
-                  app.syncActionResult({
-                    appState: value,
-                    captureUpdate: CaptureUpdateAction.NEVER,
-                  })
-                }
-                customizableTopPicks={
-                  type === "elementBackground"
-                    ? "elementBackground"
-                    : "elementStroke"
-                }
-              />
-            </fieldset>
-          ))}
           {renderAction?.("changeFontFamily")}
           <fieldset>
             <legend>{label.fontSize}</legend>
@@ -678,6 +772,15 @@ export const TablePropertiesDialog = ({
   onClose: () => void;
 }) => {
   const appState = useExcalidrawAppState();
+  const eyeDropper = useAtomValue(activeEyeDropperAtom);
+  const [popoverContainer, setPopoverContainer] =
+    useState<HTMLDivElement | null>(null);
+  const setDialogContent = useCallback((node: HTMLDivElement | null) => {
+    setPopoverContainer(
+      (node?.closest(".Modal")?.parentElement as HTMLDivElement | undefined) ??
+        null,
+    );
+  }, []);
   const { renderAction } = useExcalidrawActionManager();
   const elements = useExcalidrawElements();
   const root = elements.find((element) => element.id === rootId);
@@ -689,17 +792,21 @@ export const TablePropertiesDialog = ({
     <UIAppStateContext.Provider value={appState}>
       <Dialog
         title={<span id="dialog-title">{label.details}</span>}
+        className={eyeDropper ? "table-details--sampling" : undefined}
         size="small"
         onCloseRequest={onClose}
       >
-        <TableEditor
-          key={root.id}
-          app={app}
-          appState={appState}
-          root={root}
-          renderAction={renderAction}
-          detailed
-        />
+        <div ref={setDialogContent}>
+          <TableEditor
+            key={root.id}
+            app={app}
+            appState={appState}
+            root={root}
+            renderAction={renderAction}
+            popoverContainer={popoverContainer}
+            detailed
+          />
+        </div>
       </Dialog>
     </UIAppStateContext.Provider>
   );

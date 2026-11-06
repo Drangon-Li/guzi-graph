@@ -6,9 +6,18 @@ import { getNormalizedZoom } from "../scene";
 import { getViewportForZoomWithScrollConstraints } from "../viewport";
 
 import type App from "./App";
+import type { AppState } from "../types";
 
 /** `MouseEvent.buttons` bit of the wheel (middle) button */
 const WHEEL_BUTTON_MASK = 4;
+const WHEEL_PAN_IDLE = 200;
+type DirectWheel = { previous?: AppState; finishing: boolean };
+type MomentumWheel = {
+  queue: { x: number; y: number; time: number }[];
+  ready: boolean;
+  applying: boolean;
+  blocked: { x: boolean; y: boolean };
+};
 
 /**
  * Wheel input over the editor: pans the canvas, or zooms it around the
@@ -20,6 +29,37 @@ const WHEEL_BUTTON_MASK = 4;
  */
 export class AppWheel {
   constructor(private app: App) {}
+
+  private panTimer: number | undefined;
+  private direct: DirectWheel | null = null;
+  private momentum: MomentumWheel | null = null;
+  private generation = 0;
+  private finishingGeneration: number | null = null;
+
+  private clearIdle = () => {
+    this.app.ownerWindow.clearTimeout(this.panTimer);
+    this.panTimer = undefined;
+  };
+
+  destroy = () => {
+    this.clearIdle();
+    this.generation++;
+    this.direct = null;
+    this.momentum = null;
+    this.finishingGeneration = null;
+  };
+
+  cancelPan = () => {
+    const direct = this.direct;
+    this.destroy();
+    if (direct) {
+      this.app.viewport.notifyPan({
+        source: "wheel",
+        phase: "cancel",
+        deltaY: 0,
+      });
+    }
+  };
 
   /** the editor surfaces whose wheel input the editor consumes; everywhere
    * else (menus, sidebars, …) the DOM keeps scrolling. The frame-name labels
@@ -74,7 +114,11 @@ export class AppWheel {
     }
 
     const { deltaX, deltaY } = event;
-    if (!deltaX && !deltaY) {
+    const elastic = this.app.state.scrollConstraints?.elasticPan;
+    const momentum =
+      !!elastic &&
+      (event as WheelEvent & { momentum?: boolean }).momentum === true;
+    if (!deltaX && !deltaY && !momentum) {
       return;
     }
     // note that event.ctrlKey is necessary to handle pinch zooming
@@ -87,12 +131,20 @@ export class AppWheel {
         (!event.shiftKey &&
           (hasZoomModifier ||
             resolveInputDevice(this.app.state.inputDevice) === "mouse")));
-    if (shouldZoom) {
-      this.app.props.desktopIntegration?.onViewportGesture?.(
-        { source: "wheel", phase: "cancel", deltaY: 0 },
-        this.app.state,
-      );
+    if (shouldZoom && !momentum) {
+      const hadPan = this.direct !== null;
+      this.cancelPan();
+      if (!hadPan) {
+        this.app.viewport.notifyPan({
+          source: "wheel",
+          phase: "cancel",
+          deltaY: 0,
+        });
+      }
       this.zoomBy(deltaY);
+      if (hadPan) {
+        this.app.viewport.scheduleOverscrollRelease();
+      }
       return;
     }
 
@@ -100,28 +152,146 @@ export class AppWheel {
     if (event.shiftKey) {
       // on Mac, shift+wheel tends to result in deltaX
       const delta = deltaY || deltaX;
-      this.app.viewport.translate(({ zoom, scrollX, scrollY }) => ({
-        scrollX: hasZoomModifier ? scrollX : scrollX - delta / zoom.value,
-        scrollY: hasZoomModifier ? scrollY - delta / zoom.value : scrollY,
-      }));
-      this.notifyPan(hasZoomModifier ? delta : 0);
+      this.panBy(
+        hasZoomModifier ? 0 : delta,
+        hasZoomModifier ? delta : 0,
+        momentum,
+        event.timeStamp,
+      );
       return;
     }
 
-    this.app.viewport.translate(({ zoom, scrollX, scrollY }) => ({
-      scrollX: scrollX - deltaX / zoom.value,
-      scrollY: scrollY - deltaY / zoom.value,
-    }));
-    this.notifyPan(deltaY);
+    this.panBy(deltaX, deltaY, momentum, event.timeStamp);
   });
 
-  private notifyPan = (deltaY: number) => {
-    this.app.setState({}, () => {
-      this.app.props.desktopIntegration?.onViewportGesture?.(
-        { source: "wheel", phase: "move", deltaY },
-        this.app.state,
-      );
+  private panBy = (
+    deltaX: number,
+    deltaY: number,
+    momentum: boolean,
+    time: number,
+  ) => {
+    const { viewport, ownerWindow } = this.app;
+    if (!this.app.state.scrollConstraints?.elasticPan) {
+      if (this.direct || this.momentum) {
+        this.cancelPan();
+      }
+      viewport.panBy(deltaX, deltaY, "wheel");
+      return;
+    }
+    if (momentum) {
+      const stream = (this.momentum ??= {
+        queue: [],
+        ready: !this.direct && this.finishingGeneration === null,
+        applying: false,
+        blocked: { x: false, y: false },
+      });
+      stream.queue.push({ x: deltaX, y: deltaY, time });
+      if (this.direct && !this.direct.finishing) {
+        this.finishDirect(this.direct);
+      }
+      this.consumeMomentum(stream);
+      return;
+    }
+
+    if (this.momentum || this.finishingGeneration !== null) {
+      this.cancelPan();
+    }
+    if (!this.direct) {
+      viewport.beginPan(time);
+      this.generation++;
+      this.direct = { finishing: false };
+    }
+    const direct = this.direct;
+    this.clearIdle();
+    const translated = viewport.panBy(deltaX, deltaY, "wheel", {
+      time,
+      onCommit: (state) => {
+        direct.previous = state;
+        if (!direct.finishing) {
+          this.clearIdle();
+          this.panTimer = ownerWindow.setTimeout(
+            () => this.finishDirect(direct),
+            WHEEL_PAN_IDLE,
+          );
+        }
+      },
+      isCurrent: () => this.direct === direct && this.app.isNavigationEnabled(),
     });
+    if (!translated) {
+      this.cancelPan();
+    }
+  };
+
+  private finishDirect = (direct: DirectWheel) => {
+    if (this.direct !== direct || direct.finishing) {
+      return;
+    }
+    this.clearIdle();
+    direct.finishing = true;
+    const { viewport } = this.app;
+    const generation = this.generation;
+    this.finishingGeneration = generation;
+    // The first momentum event can arrive in the same React batch as direct
+    // input. Let every direct sample commit before deciding whether to append.
+    this.app.setState({}, () => {
+      if (this.direct !== direct) {
+        return;
+      }
+      const current = this.app.state;
+      const previous = direct.previous;
+      const unchanged =
+        previous &&
+        current.scrollY === previous.scrollY &&
+        current.zoom.value === previous.zoom.value &&
+        current.scrollConstraints === previous.scrollConstraints &&
+        !current.editingTextElement &&
+        this.app.isNavigationEnabled();
+      this.direct = null;
+      viewport.notifyPan({
+        source: "wheel",
+        phase: unchanged ? "end" : "cancel",
+        deltaY: 0,
+      });
+      // If the host appended paper, momentum starts in the expanded range.
+      this.app.setState({}, () => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.finishingGeneration = null;
+        if (this.app.state.scrollConstraints?.elasticPan) {
+          viewport.releaseOverscroll();
+        }
+        if (this.momentum) {
+          this.momentum.ready = true;
+          this.consumeMomentum(this.momentum);
+        }
+      });
+    });
+  };
+
+  private consumeMomentum = (stream: MomentumWheel) => {
+    if (this.momentum !== stream || !stream.ready || stream.applying) {
+      return;
+    }
+    if (stream.blocked.x && stream.blocked.y) {
+      stream.queue.length = 0;
+      return;
+    }
+    if (!stream.queue.length) {
+      return;
+    }
+    stream.applying = true;
+    this.app.viewport.panMomentum(
+      stream.queue.splice(0),
+      stream.blocked,
+      () => this.momentum === stream,
+      (blocked) => {
+        stream.applying = false;
+        stream.blocked.x ||= blocked.x;
+        stream.blocked.y ||= blocked.y;
+        this.consumeMomentum(stream);
+      },
+    );
   };
 
   /**

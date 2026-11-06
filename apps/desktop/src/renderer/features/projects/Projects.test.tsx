@@ -494,6 +494,33 @@ describe("desktop category tree", () => {
     expect(view.card()).toHaveTextContent("nested");
   });
 
+  it("starts a new canvas in the selected nested category from either creation button", () => {
+    const view = mountTree();
+    fireEvent.click(view.folder("work/nested/empty"));
+    const buttons = view.getAllByRole("button", { name: "新建画布" });
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) {
+      fireEvent.click(button);
+    }
+    const selection = {
+      rootDirectory: "/drawings",
+      category: "work/nested/empty",
+    };
+    expect(view.workspace.requestNewDocument).toHaveBeenNthCalledWith(
+      1,
+      selection,
+    );
+    expect(view.workspace.requestNewDocument).toHaveBeenNthCalledWith(
+      2,
+      selection,
+    );
+    fireEvent.click(view.getByRole("button", { name: /历史画布/ }));
+    fireEvent.click(view.getByRole("button", { name: "新建画布" }));
+    expect(view.workspace.requestNewDocument).toHaveBeenLastCalledWith(
+      undefined,
+    );
+  });
+
   it("moves external history files and complete folders by dragging, including back to root", async () => {
     const view = mountTree();
     let dataTransfer = transfer();

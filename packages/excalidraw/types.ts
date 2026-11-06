@@ -325,6 +325,10 @@ export type ScrollConstraints = {
    * default give, `false` → 0).
    */
   overscroll: number;
+  /** Apply nonlinear resistance to direct panning (used by paper documents). */
+  elasticPan?: boolean;
+  /** Scene-space cap on vertical elasticity when a new page can absorb it. */
+  maxOverscrollYInScene?: number;
   /**
    * Extra scrollable margin around the box (CSS-style), letting the viewport
    * scroll past each box edge to reveal that much empty space. Values are
@@ -865,11 +869,27 @@ export type ViewportGesture = {
   phase: "begin" | "move" | "end" | "cancel";
   /** Screen pixels moved toward the bottom of the scene. */
   deltaY: number;
+  /** Signed visible screen distance past the lower scroll boundary. */
+  pastEnd?: number;
+  /** Signed screen distance past the boundary before this input was applied. */
+  previousPastEnd?: number;
 };
 
 export interface ExcalidrawProps {
   desktopIntegration?: {
     onViewportGesture?: (gesture: ViewportGesture, state: AppState) => void;
+    /** Optional layout for a new free text created by double-clicking blank canvas. */
+    getFreeTextPlacement?: (context: {
+      sceneX: number;
+      sceneY: number;
+      elements: readonly ExcalidrawElement[];
+    }) => {
+      x: number;
+      baselineY: number;
+      width: number;
+      lineSpacing: number;
+      fontSize?: number;
+    } | null;
     save: (
       data: {
         elements: readonly ExcalidrawElement[];
@@ -1504,7 +1524,7 @@ export interface ExcalidrawImperativeAPI {
     clear: InstanceType<typeof App>["resetHistory"];
     undo?: () => void;
     redo?: () => void;
-    checkpoint?: () => import("./history").HistoryCheckpoint;
+    checkpoint?: (limit?: number) => import("./history").HistoryCheckpoint;
     restoreCheckpoint?: (
       checkpoint: import("./history").HistoryCheckpoint,
     ) => void;
@@ -1529,10 +1549,16 @@ export interface ExcalidrawImperativeAPI {
   >;
   getSceneElements: InstanceType<typeof App>["getSceneElements"];
   getAppState: () => InstanceType<typeof App>["state"];
+  /** The editor's view mode without the temporary non-interactive override. */
+  getViewModePreference: () => boolean;
   getFiles: () => InstanceType<typeof App>["files"];
   getName: InstanceType<typeof App>["getName"];
   setViewport: InstanceType<typeof App>["viewport"]["setViewport"];
   getViewportOffsets: InstanceType<typeof App>["viewport"]["getOffsets"];
+  /** @internal Updates paper offsets without clearing the scroll lock. */
+  transitionScrollConstraints: InstanceType<
+    typeof App
+  >["viewport"]["transitionScrollConstraints"];
   /**
    * Atomically replaces all transient visual overrides. Values are copied;
    * omitted IDs/fields use document values, except for inherited label offsets.
@@ -1704,6 +1730,8 @@ export type ViewportUIDock = "top" | "bottom" | "side";
  * reading-direction start side).
  */
 export type ViewportOffsetsOptions = {
+  /** @internal Measure the desktop tool dock at its destination width. */
+  useSettledToolDock?: boolean;
   /** padding added to each measured side (default 24) */
   padding?: number;
   paddingTop?: number;

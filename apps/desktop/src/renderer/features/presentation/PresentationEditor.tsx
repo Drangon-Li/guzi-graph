@@ -20,6 +20,7 @@ import type {
 } from "@excalidraw/excalidraw/types";
 
 import { SubcanvasEditor } from "../editor/SubcanvasEditor";
+import { holdDocumentAwake } from "../workspace/tabSleep";
 
 import { PresentationLayout } from "./PresentationLayout";
 import { exportPresentationPdf } from "./renderSlide";
@@ -30,9 +31,13 @@ import "./PresentationEditor.scss";
 import type { ReactNode } from "react";
 import type { CanvasDocument, Workspace } from "../workspace/workspace";
 
-type PendingPaste = { slideId: string; event?: ClipboardEvent };
-
-const SlideCanvas = ({ children }: { children: ReactNode }) => {
+const SlideCanvas = ({
+  children,
+  document,
+}: {
+  children: ReactNode;
+  document: CanvasDocument;
+}) => {
   const content = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -45,6 +50,7 @@ const SlideCanvas = ({ children }: { children: ReactNode }) => {
         ".desktop-root-canvas canvas.static",
       );
       if (
+        document.asleep ||
         overlay.childElementCount ||
         !canvas ||
         !canvas.width ||
@@ -68,7 +74,7 @@ const SlideCanvas = ({ children }: { children: ReactNode }) => {
       }
       overlay.hidden = false;
     };
-  }, []);
+  }, [document]);
 
   return (
     <div className="desktop-presentation-slide-canvas" ref={content}>
@@ -94,7 +100,6 @@ export const PresentationEditor = ({
     slideId: string;
     api: ExcalidrawImperativeAPI;
   } | null>(null);
-  const pendingPastes = useRef<PendingPaste[]>([]);
   const pasteEnabled = useRef(true);
   pasteEnabled.current = props.interaction !== false && !presenting;
   let runtime = document.slideRuntime!.get(slideId);
@@ -163,6 +168,12 @@ export const PresentationEditor = ({
   }, [document, initialized, slideId]);
 
   const flushPendingPastes = useCallback(() => {
+    if (!document.presentationPastes?.length) {
+      return;
+    }
+    document.presentationPastes = document.presentationPastes.filter((paste) =>
+      document.presentation?.slides.some(({ id }) => id === paste.slideId),
+    );
     const api = document.api;
     if (
       !pasteEnabled.current ||
@@ -172,10 +183,10 @@ export const PresentationEditor = ({
     ) {
       return;
     }
-    const ready = pendingPastes.current.filter(
+    const ready = document.presentationPastes.filter(
       (paste) => paste.slideId === document.activeSlideId && paste.event,
     );
-    pendingPastes.current = pendingPastes.current.filter(
+    document.presentationPastes = document.presentationPastes.filter(
       (paste) => !ready.includes(paste),
     );
     ready.forEach((paste) => api.pasteFromClipboard(paste.event!));
@@ -183,7 +194,7 @@ export const PresentationEditor = ({
 
   useEffect(() => {
     flushPendingPastes();
-  }, [props.interaction, presenting, flushPendingPastes]);
+  }, [props.interaction, presenting, document.revision, flushPendingPastes]);
 
   const pasteToCanvas = (event: ClipboardEvent) => {
     const api = document.api;
@@ -192,10 +203,11 @@ export const PresentationEditor = ({
       return;
     }
     const ownerWindow = container.current!.ownerDocument.defaultView!;
-    const paste: PendingPaste = {
+    const paste: NonNullable<CanvasDocument["presentationPastes"]>[number] = {
       slideId: document.activeSlideId!,
     };
-    pendingPastes.current.push(paste);
+    (document.presentationPastes ??= []).push(paste);
+    const release = holdDocumentAwake(document);
     // Capture native data and request web custom formats before activation expires.
     const captured = parseDataTransferEvent(event);
     const customFormats =
@@ -207,6 +219,9 @@ export const PresentationEditor = ({
         : Promise.resolve(null);
     void Promise.all([captured, customFormats])
       .then(([data, custom]) => {
+        if (!document.presentationPastes?.includes(paste)) {
+          return;
+        }
         const types = Object.fromEntries(
           data.flatMap((item) =>
             item.kind === "string" ? [[item.type, item.value]] : [],
@@ -222,7 +237,13 @@ export const PresentationEditor = ({
         );
         flushPendingPastes();
       })
-      .catch(workspace.reportError);
+      .catch((failure) => {
+        document.presentationPastes = document.presentationPastes?.filter(
+          (item) => item !== paste,
+        );
+        workspace.reportError(failure);
+      })
+      .finally(release);
   };
 
   return (
@@ -287,7 +308,7 @@ export const PresentationEditor = ({
       }}
     >
       <div className="desktop-presentation-canvas" ref={container}>
-        <SlideCanvas key={slideId}>
+        <SlideCanvas key={slideId} document={document}>
           <SubcanvasEditor
             {...props}
             autoFocus={false}

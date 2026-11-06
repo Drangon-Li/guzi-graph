@@ -33,6 +33,7 @@ import {
 } from "../presentation/renderSlide";
 
 import { apiSnapshot } from "./editorSnapshot";
+import { holdDocumentAwake } from "./tabSleep";
 
 import type { Presentation } from "../presentation/model";
 import type { PresentationControlCommand } from "../presentation/control";
@@ -97,12 +98,17 @@ export const createPluginRequestActions = (
     kind: document.presentation ? "presentation" : "canvas",
   });
 
-  const commandDocument = (value: unknown) => {
+  const findCommandDocument = (value: unknown) => {
     const id = stringArgument(value, "documentId");
     const document = documentsRef.current.find((item) => item.id === id);
     if (!document) {
       throw new CanvasCommandError("NOT_FOUND", "Canvas document is not open.");
     }
+    return document;
+  };
+
+  const commandDocument = (value: unknown) => {
+    const document = findCommandDocument(value);
     if (!document.initialized || !document.api || document.api.isDestroyed) {
       throw new CanvasCommandError("NOT_READY", "Canvas is not initialized.");
     }
@@ -153,9 +159,11 @@ export const createPluginRequestActions = (
     const deadline = Date.now() + 10000;
     while (
       !document.initialized ||
+      document.sleepCheckpoint ||
       !document.api ||
       document.api.isDestroyed ||
-      document.api.getAppState().isLoading
+      document.api.getAppState().isLoading ||
+      document.activeEditor?.() === null
     ) {
       assertActive();
       if (pluginDisposed.current || !documentsRef.current.includes(document)) {
@@ -313,7 +321,10 @@ export const createPluginRequestActions = (
     return { data: url.slice(url.indexOf(",") + 1), mimeType: blob.type };
   };
 
-  const runCanvasCommand = async (request: PluginRequest) => {
+  const runCanvasCommand = async (
+    request: PluginRequest,
+    releases: Map<CanvasDocument, () => void>,
+  ) => {
     const assertActive = () => {
       const pending = pluginPending.current.get(request.requestId);
       if (pluginDisposed.current || !pending || pending.cancelled) {
@@ -337,6 +348,24 @@ export const createPluginRequestActions = (
       } catch {
         return false;
       }
+    };
+    const pin = (document: CanvasDocument) => {
+      if (!releases.has(document)) {
+        releases.set(document, holdDocumentAwake(document));
+      }
+    };
+    const acquireDocument = async (id: unknown) => {
+      const document = findCommandDocument(id);
+      pin(document);
+      if (document.asleep) {
+        document.asleep = false;
+        refresh();
+      }
+      if (document.sleepCheckpoint) {
+        await waitForCanvas(document, assertActive);
+      }
+      assertActive();
+      return commandDocument(id);
     };
     assertActive();
     const args = objectArgument(request.arguments);
@@ -414,7 +443,7 @@ export const createPluginRequestActions = (
       const source =
         args.sourceDocumentId === undefined
           ? undefined
-          : commandDocument(args.sourceDocumentId);
+          : await acquireDocument(args.sourceDocumentId);
       if (source) {
         assertCommandAvailable(source);
         if (source.hasPendingImages?.()) {
@@ -430,6 +459,7 @@ export const createPluginRequestActions = (
       document.title = title;
       document.unsavedCopy = true;
       document.dirty = true;
+      pin(document);
       refresh();
       await waitForCanvas(document, assertActive);
       return document.presentation
@@ -442,7 +472,18 @@ export const createPluginRequestActions = (
       const file = await desktop.readFile(path);
       assertActive();
       assertCommandAvailable();
-      await openDocuments([file], true, removalVersion.current, canOpen);
+      const existing = documentsRef.current.find(
+        (item) => item.path === file.path,
+      );
+      if (existing) {
+        pin(existing);
+      }
+      await openDocuments(
+        [file],
+        !(existing?.asleep || existing?.sleepCheckpoint),
+        removalVersion.current,
+        canOpen,
+      );
       assertActive();
       assertCommandAvailable();
       const document = documentsRef.current.find(
@@ -454,12 +495,16 @@ export const createPluginRequestActions = (
           "The requested document could not be opened.",
         );
       }
+      if (document.asleep || document.sleepCheckpoint) {
+        await acquireDocument(document.id);
+      }
+      pin(document);
       await waitForCanvas(document, assertActive);
       return document.presentation
         ? presentationDescriptor(document)
         : canvasDescriptor(document);
     }
-    const document = commandDocument(args.documentId);
+    const document = await acquireDocument(args.documentId);
     if (
       [
         "update_presentation",
@@ -570,7 +615,10 @@ export const createPluginRequestActions = (
       } else if (operation.type === "select") {
         selectSlide(document, slideId!);
       } else if (operation.type === "copy_from") {
-        const source = commandDocument(operation.sourceDocumentId);
+        const source = await acquireDocument(operation.sourceDocumentId);
+        assertCommandAvailable(document);
+        captureAPI(document);
+        assertRevision(document, args);
         assertCommandAvailable(source);
         captureAPI(source);
         const sourceId = stringArgument(
@@ -787,10 +835,7 @@ export const createPluginRequestActions = (
         document.activeSlideId !== args.slideId
       ) {
         assertCommandAvailable();
-        flushSync(() => {
-          activate(document.id);
-          selectSlide(document, String(args.slideId));
-        });
+        flushSync(() => selectSlide(document, String(args.slideId)));
         await waitForCanvas(document, assertActive);
         assertCommandAvailable(document);
         if (document.activeSlideId !== args.slideId) {
@@ -1141,7 +1186,9 @@ export const createPluginRequestActions = (
     if (write) {
       pluginWrites.current.add(writeKey);
     }
-    const task = runCanvasCommand(request).finally(() => {
+    const releases = new Map<CanvasDocument, () => void>();
+    const task = runCanvasCommand(request, releases).finally(() => {
+      releases.forEach((release) => release());
       if (write) {
         pluginWrites.current.delete(writeKey);
       }

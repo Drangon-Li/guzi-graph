@@ -213,6 +213,7 @@ import {
   getTableCellAt,
   getTableMember,
   getTableRoot,
+  isTableElement,
   isTableRoot,
   readTableData,
   syncTableData,
@@ -307,6 +308,10 @@ import {
 import { createRedoAction, createUndoAction } from "../actions/actionHistory";
 import { actionTextAutoResize } from "../actions/actionTextAutoResize";
 import { actionTableProperties } from "../actions/actionTable";
+import {
+  actionChangeBackgroundColor,
+  actionChangeStrokeColor,
+} from "../actions/actionProperties";
 import { actionSubcanvasTitle } from "../actions/actionSubcanvas";
 import { actionToggleViewMode } from "../actions/actionToggleViewMode";
 import { ActionManager } from "../actions/manager";
@@ -375,6 +380,7 @@ import { Renderer } from "../scene/Renderer";
 import {
   type SetViewportOptions,
   getViewportForZoomWithScrollConstraints,
+  panViewportWithinConstraints,
   scrollBoundsIntoView,
   constrainScrollState,
 } from "../viewport";
@@ -842,6 +848,7 @@ class App extends React.Component<AppProps, AppState> {
   modifiers = new AppModifiers();
 
   api: ExcalidrawImperativeAPI;
+  private viewModeBeforeInteractionDisabled = false;
   private elementRenderOverrides: ElementRenderOverrides = new Map();
   /** offsets of `elementRenderOverrides`; keeps its identity while they don't change */
   private elementRenderOffsets: ElementRenderOffsets = new Map();
@@ -884,16 +891,22 @@ class App extends React.Component<AppProps, AppState> {
           this.actionManager.executeAction(createUndoAction(this.history)),
         redo: () =>
           this.actionManager.executeAction(createRedoAction(this.history)),
-        checkpoint: () => this.history.checkpoint(),
+        checkpoint: (limit) => this.history.checkpoint(limit),
         restoreCheckpoint: (checkpoint) =>
           this.history.restoreCheckpoint(checkpoint),
       },
       selection: this.selection,
       setViewport: this.viewport.setViewport,
       getViewportOffsets: this.viewport.getOffsets,
+      transitionScrollConstraints: this.viewport.transitionScrollConstraints,
       setElementRenderOverrides: this.setElementRenderOverrides,
       getSceneElements: this.getSceneElements,
       getAppState: () => this.state,
+      getViewModePreference: () =>
+        this.props.viewModeEnabled ??
+        (this.isInteractionEnabled()
+          ? this.state.viewModeEnabled
+          : this.viewModeBeforeInteractionDisabled),
       getFiles: () => this.files,
       getName: this.getName,
       registerAction: (action: Action) => {
@@ -3212,6 +3225,14 @@ class App extends React.Component<AppProps, AppState> {
             },
             captureUpdate: CaptureUpdateAction.IMMEDIATELY,
           });
+        } else if (selectedElements.some(isTableElement)) {
+          this.actionManager.executeAction(
+            property === "strokeColor"
+              ? actionChangeStrokeColor
+              : actionChangeBackgroundColor,
+            "keyboard",
+            { color },
+          );
         } else {
           const elementsMap = this.scene.getNonDeletedElementsMap();
           // a note's visible text is its label, so stroke picks include it
@@ -3531,6 +3552,11 @@ class App extends React.Component<AppProps, AppState> {
       wasInteractionEnabled !== this.isInteractionEnabled();
     const viewModePropChanged =
       prevProps.viewModeEnabled !== this.props.viewModeEnabled;
+    const becameNonInteractive =
+      interactionEnabledChanged && !this.isInteractionEnabled();
+    if (becameNonInteractive && prevProps.viewModeEnabled === undefined) {
+      this.viewModeBeforeInteractionDisabled = prevState.viewModeEnabled;
+    }
 
     // Preserve internally toggled view mode while interactive and
     // uncontrolled. Synchronize it when its prop changes, when interaction is
@@ -3539,7 +3565,9 @@ class App extends React.Component<AppProps, AppState> {
     if (!this.isInteractionEnabled()) {
       nextViewModeEnabled = true;
     } else if (viewModePropChanged || interactionEnabledChanged) {
-      nextViewModeEnabled = !!this.props.viewModeEnabled;
+      nextViewModeEnabled =
+        this.props.viewModeEnabled ??
+        (!viewModePropChanged && this.viewModeBeforeInteractionDisabled);
     }
     if (nextViewModeEnabled !== this.state.viewModeEnabled) {
       this.setState({ viewModeEnabled: nextViewModeEnabled });
@@ -3549,9 +3577,6 @@ class App extends React.Component<AppProps, AppState> {
       wasInteractionEnabled && !prevState.viewModeEnabled;
     const editingEnabled =
       this.isInteractionEnabled() && !this.state.viewModeEnabled;
-    const becameNonInteractive =
-      interactionEnabledChanged && !this.isInteractionEnabled();
-
     if (becameNonInteractive || (editingWasEnabled && !editingEnabled)) {
       this.terminateActiveInteraction();
     }
@@ -3834,6 +3859,7 @@ class App extends React.Component<AppProps, AppState> {
 
     this.resetStore();
     this.resetHistory();
+    this.viewModeBeforeInteractionDisabled = restoredAppState.viewModeEnabled;
     this.syncActionResult({
       elements: restoredElements,
       appState: restoredAppState,
@@ -4094,6 +4120,7 @@ class App extends React.Component<AppProps, AppState> {
     this.resizeObserver?.disconnect();
     this.unmounted = true;
     this.viewport.destroy();
+    this.wheel.destroy();
     this.removeEventListeners();
     this.library.destroy();
     this.laserTrails.stop();
@@ -6734,6 +6761,12 @@ class App extends React.Component<AppProps, AppState> {
           insertAtParentCenter: !event.altKey,
           container: container || null,
           initialCaretSceneCoords,
+          useFreeTextPlacement:
+            !hitElement &&
+            !event.altKey &&
+            !event[KEYS.CTRL_OR_CMD] &&
+            this.state.activeTool.type ===
+              this.state.preferredSelectionTool.type,
         });
       }
     }
@@ -8404,35 +8437,27 @@ class App extends React.Component<AppProps, AppState> {
         ? getNormalizedZoom(initialScale * scaleFactor)
         : this.state.zoom.value;
 
-      this.setState((state) => {
-        // Preserve any existing screen-space overscroll through the zoom,
-        // then apply this frame's pan delta on top. `viewport.translate`
-        // rubberband-clamps the combined result against the scroll lock.
-        const zoomedViewport = getViewportForZoomWithScrollConstraints(
-          {
-            viewportX: center.x,
-            viewportY: center.y,
-            nextZoom,
-          },
-          state,
-        );
-        const zoomValue = zoomedViewport.zoom.value;
-
-        this.viewport.translate(
-          {
+      this.viewport.translate(
+        (state) => {
+          const zoomedViewport = getViewportForZoomWithScrollConstraints(
+            { viewportX: center.x, viewportY: center.y, nextZoom },
+            state,
+          );
+          return {
             zoom: zoomedViewport.zoom,
             // 2x multiplier is just a magic number that makes this work correctly
             // on touchscreen devices (note: if we get report that panning is slower/faster
             // than actual movement, consider swapping with devicePixelRatio)
-            scrollX: zoomedViewport.scrollX + (2 * deltaX) / zoomValue,
-            scrollY: zoomedViewport.scrollY + (2 * deltaY) / zoomValue,
+            ...panViewportWithinConstraints(
+              { ...state, ...zoomedViewport },
+              -2 * deltaX,
+              -2 * deltaY,
+            ),
             shouldCacheIgnoreZoom: true,
-          },
-          { zoomPreConstrained: true },
-        );
-
-        return null;
-      });
+          };
+        },
+        { zoomPreConstrained: true },
+      );
       if (!this.viewport.isLockedTransitionPending) {
         this.resetShouldCacheIgnoreZoomDebounced();
       }

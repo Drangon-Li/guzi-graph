@@ -695,6 +695,65 @@ test("save dialog rejects occupied document before writing disk", async (t) => {
   assert.equal(await fs.readFile(target, "utf8"), "another tab");
 });
 
+test("first save suggests the selected category while it belongs to the current project", async (t) => {
+  const { base, calls, invoke } = await harness(t);
+  const root = path.join(base, "workspace");
+  const category = "work/nested";
+  const directory = path.join(root, category);
+  await fs.mkdir(directory, { recursive: true });
+  calls.openResult = { canceled: false, filePaths: [root] };
+  await invoke("choose-directory");
+  const request = {
+    documentId: require("node:crypto").randomUUID(),
+    path: null,
+    name: "canvas",
+    content: "drawing",
+    initialSaveCategory: { rootDirectory: root, category },
+  };
+  const target = path.join(directory, "canvas.excalidraw");
+  assert.equal(await invoke("save-file", request), null);
+  assert.equal(calls.saveDialog.defaultPath, target);
+  assert.deepEqual(await fs.readdir(directory), []);
+  calls.saveResult = { canceled: false, filePath: target };
+  const saved = await invoke("save-file", request);
+  assert.equal(saved.path, target);
+  const index = await invoke("list-projects");
+  assert.equal(index.files[0].category, category);
+  assert.equal(index.history[0].path, target);
+  delete calls.saveResult;
+
+  await fs.rename(directory, path.join(root, "work", "old"));
+  assert.equal(await invoke("save-file", request), null);
+  assert.equal(
+    calls.saveDialog.defaultPath,
+    path.join(root, "canvas.excalidraw"),
+  );
+  const replacement = path.join(base, "replacement");
+  await fs.mkdir(path.join(replacement, category), { recursive: true });
+  calls.openResult = { canceled: false, filePaths: [replacement] };
+  await invoke("choose-directory");
+  assert.equal(await invoke("save-file", request), null);
+  assert.equal(
+    calls.saveDialog.defaultPath,
+    path.join(replacement, "canvas.excalidraw"),
+  );
+  const outside = path.join(base, "outside");
+  await fs.mkdir(outside);
+  for (const category of ["../outside", outside]) {
+    assert.equal(
+      await invoke("save-file", {
+        ...request,
+        initialSaveCategory: { rootDirectory: replacement, category },
+      }),
+      null,
+    );
+    assert.equal(
+      calls.saveDialog.defaultPath,
+      path.join(replacement, "canvas.excalidraw"),
+    );
+  }
+});
+
 test("automation save requires root for new canvas and creates unique files without dialogs", async (t) => {
   const { base, calls, invoke } = await harness(t);
   const request = {

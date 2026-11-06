@@ -50,6 +50,7 @@ import {
 } from "./textMeasurements";
 import { wrapText } from "./textWrapping";
 import { layoutRichText } from "./richText";
+import { getRuledTextLineSpacing } from "./ruledText";
 import {
   isArrowElement,
   isBindingElement,
@@ -320,6 +321,31 @@ export const measureFontSizeFromWidth = (
   };
 };
 
+const getRuledTextResizeUpdate = (
+  original: ExcalidrawTextElement,
+  element: ExcalidrawTextElement,
+  fontSize: number,
+  width: number,
+  renderEnvironment?: RenderEnvironment,
+) => {
+  const customData = { ...element.customData };
+  // Use the size at pointer-down so returning to it restores ruled layout.
+  if (Math.abs(fontSize - original.fontSize) < 1e-8) {
+    customData.guziRuledText = original.customData?.guziRuledText;
+  } else {
+    delete customData.guziRuledText;
+  }
+  if (!element.richText) {
+    return { customData };
+  }
+  const { height, text } = layoutRichText(
+    { ...element, fontSize, customData },
+    element.autoResize ? Infinity : width,
+    renderEnvironment,
+  );
+  return { customData, height, text };
+};
+
 export const resizeSingleTextElement = (
   origElement: NonDeleted<ExcalidrawTextElement>,
   element: NonDeleted<ExcalidrawTextElement>,
@@ -341,22 +367,40 @@ export const resizeSingleTextElement = (
     );
   }
 
-  const metricsWidth = element.width * (nextHeight / element.height);
+  const ruledElement = getRuledTextLineSpacing(origElement)
+    ? origElement
+    : null;
+  const scaleFrom = ruledElement ?? element;
+  const metricsWidth = scaleFrom.width * (nextHeight / scaleFrom.height);
 
-  const metrics = measureFontSizeFromWidth(element, elementsMap, metricsWidth);
+  const metrics = measureFontSizeFromWidth(
+    scaleFrom,
+    elementsMap,
+    metricsWidth,
+  );
   if (metrics === null) {
     return;
   }
 
   if (transformHandleType.includes("n") || transformHandleType.includes("s")) {
     const previousOrigin = pointFrom<GlobalPoint>(origElement.x, origElement.y);
+    const ruledUpdate = ruledElement
+      ? getRuledTextResizeUpdate(
+          ruledElement,
+          element,
+          metrics.size,
+          metricsWidth,
+          renderEnvironment,
+        )
+      : null;
+    const height = ruledUpdate?.height ?? nextHeight;
 
     const newOrigin = getResizedOrigin(
       previousOrigin,
       origElement.width,
       origElement.height,
       metricsWidth,
-      nextHeight,
+      height,
       origElement.angle,
       transformHandleType,
       false,
@@ -366,7 +410,8 @@ export const resizeSingleTextElement = (
     scene.mutateElement(element, {
       fontSize: metrics.size,
       width: metricsWidth,
-      height: nextHeight,
+      height,
+      ...ruledUpdate,
       x: newOrigin.x,
       y: newOrigin.y,
     });
@@ -1432,6 +1477,8 @@ export const resizeMultipleElements = (
       > & {
         points?: ExcalidrawLinearElement["points"];
         fontSize?: ExcalidrawTextElement["fontSize"];
+        customData?: ExcalidrawElement["customData"];
+        text?: ExcalidrawTextElement["text"];
         scale?: ExcalidrawImageElement["scale"];
         boundTextFontSize?: ExcalidrawTextElement["fontSize"];
         startBinding?: ExcalidrawElbowArrowElement["startBinding"];
@@ -1528,6 +1575,18 @@ export const resizeMultipleElements = (
           return;
         }
         update.fontSize = metrics.size;
+        if (getRuledTextLineSpacing(orig) && isTextElement(latest)) {
+          Object.assign(
+            update,
+            getRuledTextResizeUpdate(
+              orig,
+              latest,
+              metrics.size,
+              width,
+              renderEnvironment,
+            ),
+          );
+        }
       }
 
       const boundTextElement = originalElementsMap.get(

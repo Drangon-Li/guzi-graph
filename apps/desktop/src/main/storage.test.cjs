@@ -859,6 +859,23 @@ test("drafts are UUID scoped, reloadable and cannot delete arbitrary files", asy
   assert.deepEqual(await storage.listDrafts(), []);
 });
 
+test("reloads the initial category of an unsaved recovery draft", async (t) => {
+  const { base, root, storage } = await fixture(t);
+  const draft = {
+    id: randomUUID(),
+    path: null,
+    title: "recoverable",
+    content: "draft",
+    modifiedAt: Date.now(),
+    initialSaveCategory: { rootDirectory: root, category: "work/nested" },
+  };
+  await storage.writeDraft(draft);
+  const reopened = await new DesktopStorage(
+    path.join(base, "userData"),
+  ).initialize();
+  assert.deepEqual(await reopened.listDrafts(), [draft]);
+});
+
 test("invalid draft JSON values do not hide valid recovery drafts", async (t) => {
   const { storage } = await fixture(t);
   const draft = {

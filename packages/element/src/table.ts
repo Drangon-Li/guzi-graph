@@ -47,6 +47,7 @@ export type TableCell = {
 export type TableData = {
   version: 1;
   rows: number[];
+  rowMinHeights?: number[];
   columns: number[];
   cells: TableCell[];
 };
@@ -55,12 +56,21 @@ export type TableStructureOperation = {
   axis: "row" | "column";
   index: number;
 };
+type TableRowResizeOperation = {
+  type: "resizeRows";
+  row: number;
+  endRow: number;
+  height: number;
+};
 export type TableRange = {
   row: number;
   column: number;
   endRow: number;
   endColumn: number;
 };
+export type TableCellColors = Partial<
+  Pick<TableCell, "backgroundColor" | "strokeColor" | "textColor">
+>;
 type TableMember = { row: number; column: number; role: "background" | "text" };
 export type TableCellDefaults = Partial<
   Pick<
@@ -100,6 +110,10 @@ const emptyCell = (
 });
 const sum = (values: number[]) =>
   values.reduce((total, value) => total + value, 0);
+export const TABLE_MIN_ROW_HEIGHT = 24;
+export const TABLE_MIN_COLUMN_WIDTH = 40;
+const getTableRowMinHeights = (data: TableData) =>
+  data.rowMinHeights ?? data.rows.map(() => TABLE_MIN_ROW_HEIGHT);
 export const isTableRoot = (
   element: ExcalidrawElement | null | undefined,
 ): element is TableRoot =>
@@ -223,12 +237,21 @@ const readTableDataFromMembers = (
         }
       : current;
   });
+  const storedHeight = sum(data.rows);
+  const storedWidth = sum(data.columns);
+  const rowScale = root.height / storedHeight;
   return {
     ...data,
-    rows: data.rows.map((height) => (height * root.height) / sum(data.rows)),
-    columns: data.columns.map(
-      (width) => (width * root.width) / sum(data.columns),
-    ),
+    rows:
+      rowScale === 1 ? data.rows : data.rows.map((height) => height * rowScale),
+    ...(rowScale !== 1 &&
+      data.rowMinHeights && {
+        rowMinHeights: data.rowMinHeights.map((height) => height * rowScale),
+      }),
+    columns:
+      storedWidth === root.width
+        ? data.columns
+        : data.columns.map((width) => (width * root.width) / storedWidth),
     cells,
   };
 };
@@ -289,6 +312,28 @@ export const syncTableData = <T extends ExcalidrawElement>(
     } as T;
   }
   return next ?? elements;
+};
+
+const layoutTableCellText = (
+  cell: TableCell,
+  width: number,
+  renderEnvironment?: RenderEnvironment,
+) => {
+  const lineHeight = getLineHeight(cell.fontFamily);
+  if (cell.richText) {
+    return layoutRichText(
+      { ...cell, originalText: cell.text, lineHeight },
+      width,
+      renderEnvironment,
+    );
+  }
+  const text = wrapText(
+    cell.text,
+    getFontString(cell),
+    width,
+    renderEnvironment,
+  );
+  return { text, height: getTextHeight(text, cell.fontSize, lineHeight) };
 };
 
 const tableChildren = (
@@ -373,26 +418,11 @@ const tableChildren = (
       renderEnvironment,
     });
     const labelWidth = Math.max(1, width - TABLE_CELL_PADDING * 2);
-    const wrapped = wrapText(
-      cell.text,
-      getFontString(text),
+    const { text: wrapped, height: labelHeight } = layoutTableCellText(
+      cell,
       labelWidth,
       renderEnvironment,
     );
-    const richLayout = cell.richText
-      ? layoutRichText(
-          {
-            ...text,
-            richText: cell.richText,
-            paragraphSpacing: cell.paragraphSpacing,
-          },
-          labelWidth,
-          renderEnvironment,
-        )
-      : null;
-    const labelHeight =
-      richLayout?.height ??
-      getTextHeight(wrapped, text.fontSize, text.lineHeight);
     const label = {
       ...newElementWith(text, {
         x: position[0] - labelWidth / 2,
@@ -400,7 +430,7 @@ const tableChildren = (
         width: labelWidth,
         height: labelHeight,
         angle: root.angle,
-        text: richLayout?.text ?? wrapped,
+        text: wrapped,
         originalText: cell.text,
         richText: cell.richText,
         paragraphSpacing: cell.paragraphSpacing,
@@ -421,51 +451,65 @@ const tableChildren = (
   });
 };
 
+const getCellMinHeight = (
+  cell: TableCell,
+  columns: number[],
+  renderEnvironment?: RenderEnvironment,
+) => {
+  const padding = TABLE_CELL_PADDING * 2;
+  const width = Math.max(
+    1,
+    sum(columns.slice(cell.column, cell.column + cell.columnSpan)) - padding,
+  );
+  return layoutTableCellText(cell, width, renderEnvironment).height + padding;
+};
+
+export const getTableResizeMinScale = (
+  data: TableData,
+  axis: "row" | "column",
+  renderEnvironment?: RenderEnvironment,
+) => {
+  if (axis === "column") {
+    return TABLE_MIN_COLUMN_WIDTH / Math.min(...data.columns);
+  }
+  // Clamp the whole gesture to the first row or merged cell that runs out of room.
+  return data.cells.reduce(
+    (scale, cell) =>
+      Math.max(
+        scale,
+        getCellMinHeight(cell, data.columns, renderEnvironment) /
+          sum(data.rows.slice(cell.row, cell.row + cell.rowSpan)),
+      ),
+    TABLE_MIN_ROW_HEIGHT / Math.min(...data.rows),
+  );
+};
+
 const fitTableData = (
   data: TableData,
   renderEnvironment?: RenderEnvironment,
+  rowResize?: TableRowResizeOperation,
 ): TableData => {
-  const rows = [...data.rows];
-  for (const cell of data.cells) {
-    const width = Math.max(
-      1,
-      sum(data.columns.slice(cell.column, cell.column + cell.columnSpan)) -
-        TABLE_CELL_PADDING * 2,
-    );
-    const lineHeight = getLineHeight(cell.fontFamily);
-    const contentHeight = cell.richText
-      ? layoutRichText(
-          {
-            fontSize: cell.fontSize,
-            fontFamily: cell.fontFamily,
-            lineHeight,
-            textAlign: cell.textAlign,
-            originalText: cell.text,
-            richText: cell.richText,
-            paragraphSpacing: cell.paragraphSpacing,
-          },
-          width,
-          renderEnvironment,
-        ).height
-      : getTextHeight(
-          wrapText(
-            cell.text,
-            getFontString({
-              fontSize: cell.fontSize,
-              fontFamily: cell.fontFamily,
-            }),
-            width,
-            renderEnvironment,
-          ),
-          cell.fontSize,
-          lineHeight,
-        );
+  const minima = getTableRowMinHeights(data);
+  const rows = rowResize
+    ? data.rows.map((height, row) =>
+        row >= rowResize.row && row <= rowResize.endRow ? minima[row] : height,
+      )
+    : [...minima];
+  // Fit spans in end-row order so they share any growth in overlapping rows.
+  const cells = [...data.cells].sort(
+    (a, b) => a.row + a.rowSpan - (b.row + b.rowSpan),
+  );
+  for (const cell of cells) {
+    const end = cell.row + cell.rowSpan;
+    const lastRow = rowResize ? Math.min(end - 1, rowResize.endRow) : end - 1;
+    if (rowResize && lastRow < Math.max(cell.row, rowResize.row)) {
+      continue;
+    }
     const extra =
-      contentHeight +
-      TABLE_CELL_PADDING * 2 -
-      sum(rows.slice(cell.row, cell.row + cell.rowSpan));
+      getCellMinHeight(cell, data.columns, renderEnvironment) -
+      sum(rows.slice(cell.row, end));
     if (extra > 0) {
-      rows[cell.row + cell.rowSpan - 1] += extra;
+      rows[lastRow] += extra;
     }
   }
   return { ...data, rows };
@@ -478,7 +522,10 @@ export const createTableElements = (
   options: Pick<Partial<ExcalidrawElement>, "roughness" | "opacity"> = {},
   renderEnvironment?: RenderEnvironment,
 ): { root: TableRoot; elements: NonDeletedExcalidrawElement[] } => {
-  data = fitTableData(data, renderEnvironment);
+  data = fitTableData(
+    { ...data, rowMinHeights: data.rowMinHeights ?? data.rows },
+    renderEnvironment,
+  );
   const root = newElement({
     type: "rectangle",
     x,
@@ -501,14 +548,27 @@ export const createTableElements = (
 export const updateTableElements = (
   elements: readonly ExcalidrawElement[],
   root: TableRoot,
-  transform: ((data: TableData) => TableData) | TableStructureOperation,
+  transform:
+    | ((data: TableData) => TableData)
+    | TableStructureOperation
+    | TableRowResizeOperation,
   renderEnvironment?: RenderEnvironment,
 ): ExcalidrawElement[] => {
   const previousData = readTableData(root, elements);
   let previousCells: Map<string, TableCell> | undefined;
+  let rowResize: TableRowResizeOperation | undefined;
   let transformed: TableData;
   if (typeof transform === "function") {
     transformed = transform(previousData);
+  } else if (transform.type === "resizeRows") {
+    rowResize = transform;
+    const { row, endRow, height } = transform;
+    transformed = {
+      ...previousData,
+      rowMinHeights: getTableRowMinHeights(previousData).map((value, index) =>
+        index >= row && index <= endRow ? height : value,
+      ),
+    };
   } else {
     const { type, axis, index } = transform;
     if (
@@ -529,7 +589,7 @@ export const updateTableElements = (
       }
     }
   }
-  const data = fitTableData(transformed, renderEnvironment);
+  const data = fitTableData(transformed, renderEnvironment, rowResize);
   const nextRoot = newElementWith(root, {
     width: sum(data.columns),
     height: sum(data.rows),
@@ -572,14 +632,14 @@ export const updateTableElements = (
   return [...result, ...byId.values()];
 };
 
-const inRange = (cell: TableCell, range: TableRange) =>
+export const tableCellIntersectsRange = (cell: TableCell, range: TableRange) =>
   cell.row <= range.endRow &&
   cell.row + cell.rowSpan > range.row &&
   cell.column <= range.endColumn &&
   cell.column + cell.columnSpan > range.column;
 export const canMergeTableCells = (data: TableData, range: TableRange) =>
   data.cells
-    .filter((cell) => inRange(cell, range))
+    .filter((cell) => tableCellIntersectsRange(cell, range))
     .every(
       (cell) =>
         cell.row >= range.row &&
@@ -595,7 +655,7 @@ export const mergeTableCells = (
     return data;
   }
   const selected = data.cells
-    .filter((cell) => inRange(cell, range))
+    .filter((cell) => tableCellIntersectsRange(cell, range))
     .sort((a, b) => a.row - b.row || a.column - b.column);
   if (!selected.length) {
     return data;
@@ -628,7 +688,7 @@ export const splitTableCells = (
   ...data,
   cells: data.cells.flatMap((cell) => {
     if (
-      !inRange(cell, range) ||
+      !tableCellIntersectsRange(cell, range) ||
       (cell.rowSpan === 1 && cell.columnSpan === 1)
     ) {
       return [cell];
@@ -648,7 +708,7 @@ export const splitTableCells = (
 });
 export const styleTableCells = (
   data: TableData,
-  range: TableRange,
+  range: TableRange | null,
   style: Partial<
     Pick<
       TableCell,
@@ -665,12 +725,14 @@ export const styleTableCells = (
 ): TableData => ({
   ...data,
   cells: data.cells.map((cell) =>
-    inRange(cell, range)
+    !range || tableCellIntersectsRange(cell, range)
       ? {
           ...cell,
           ...style,
           ...(style.textColor !== undefined &&
-            cell.richText && {
+            cell.richText?.paragraphs.some((paragraph) =>
+              paragraph.runs.some((run) => run.color !== undefined),
+            ) && {
               richText: {
                 ...cell.richText,
                 paragraphs: cell.richText.paragraphs.map((paragraph) => ({
@@ -683,6 +745,61 @@ export const styleTableCells = (
       : cell,
   ),
 });
+
+export const updateTableColors = (
+  elements: readonly ExcalidrawElement[],
+  root: TableRoot,
+  range: TableRange | null,
+  style: TableCellColors,
+): readonly ExcalidrawElement[] => {
+  const previous = readTableData(root, elements);
+  const { cells } = styleTableCells(previous, range, style);
+  const changed = new Map<string, TableCell>();
+  for (const [index, cell] of cells.entries()) {
+    const old = previous.cells[index];
+    if (
+      cell.backgroundColor !== old.backgroundColor ||
+      cell.strokeColor !== old.strokeColor ||
+      cell.textColor !== old.textColor ||
+      cell.richText !== old.richText
+    ) {
+      changed.set(`${cell.row}:${cell.column}`, cell);
+    }
+  }
+  if (!changed.size) {
+    return elements;
+  }
+  return elements.map((element) => {
+    if (element.id === root.id) {
+      return newElementWith(root, {
+        customData: {
+          ...root.customData,
+          table: { ...root.customData.table, cells },
+        },
+      });
+    }
+    if (!isLiveMemberOf(root, element)) {
+      return element;
+    }
+    const member = getTableMember(element);
+    const cell = member && changed.get(`${member.row}:${member.column}`);
+    if (!cell) {
+      return element;
+    }
+    if (member.role === "background") {
+      return newElementWith(element, {
+        backgroundColor: cell.backgroundColor,
+        strokeColor: cell.strokeColor,
+      });
+    }
+    return isTextElement(element)
+      ? newElementWith(element, {
+          strokeColor: cell.textColor,
+          richText: cell.richText,
+        })
+      : element;
+  });
+};
 
 const transformTableCellAxis = (
   cell: TableCell,
@@ -711,13 +828,24 @@ export const insertTableAxis = (
   index: number,
 ): TableData => {
   const sizes = axis === "row" ? "rows" : "columns";
+  const adjacentIndex = Math.max(0, index - 1);
+  const insertSize = (values: number[], size: number) => [
+    ...values.slice(0, index),
+    size,
+    ...values.slice(index),
+  ];
   const next = {
     ...data,
-    [sizes]: [
-      ...data[sizes].slice(0, index),
-      data[sizes][Math.max(0, index - 1)] ?? (axis === "row" ? 48 : 144),
-      ...data[sizes].slice(index),
-    ],
+    [sizes]: insertSize(
+      data[sizes],
+      data[sizes][adjacentIndex] ?? (axis === "row" ? 48 : 144),
+    ),
+    ...(axis === "row" && {
+      rowMinHeights: insertSize(
+        getTableRowMinHeights(data),
+        data.rowMinHeights?.[adjacentIndex] ?? 48,
+      ),
+    }),
     cells: data.cells.map(
       (cell) => transformTableCellAxis(cell, { type: "insert", axis, index })!,
     ),
@@ -732,8 +860,8 @@ export const insertTableAxis = (
     if (!getTableCellAt(next, row, column)) {
       const adjacent = getTableCellAt(
         data,
-        axis === "row" ? Math.max(0, index - 1) : row,
-        axis === "column" ? Math.max(0, index - 1) : column,
+        axis === "row" ? adjacentIndex : row,
+        axis === "column" ? adjacentIndex : column,
       );
       const {
         text,
@@ -761,6 +889,12 @@ export const deleteTableAxis = (
   return {
     ...data,
     [sizes]: data[sizes].filter((_, position) => position !== index),
+    ...(axis === "row" &&
+      data.rowMinHeights && {
+        rowMinHeights: data.rowMinHeights.filter(
+          (_, position) => position !== index,
+        ),
+      }),
     cells: data.cells.flatMap((cell) => {
       const next = transformTableCellAxis(cell, {
         type: "delete",
@@ -1035,7 +1169,12 @@ export const tableDataFromHTML = (
   const data: TableData = {
     version: 1,
     rows: rowElements.map((row) =>
-      Math.max(36, parseHTMLPixelSize(readStyle(row).height) || 48),
+      Math.max(
+        36,
+        parseHTMLPixelSize(
+          readStyle(row).height || row.getAttribute("height") || "",
+        ) || 48,
+      ),
     ),
     columns: Array.from(
       { length: columnCount },

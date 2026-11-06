@@ -511,6 +511,7 @@ describe("controlled canvas operations", () => {
     const root = result.elements.find(isTableRoot)!;
     expect(root.id).toBe(result.idMap.table);
     expect(root.roughness).toBe(1);
+    expect(root.customData?.table.rowMinHeights).toEqual([50, 50]);
     expect(result.elements).toHaveLength(9);
     const initialCellIds = result.elements
       .filter((element) => getTableMember(element))
@@ -522,6 +523,7 @@ describe("controlled canvas operations", () => {
           type: "table",
           id: root.id,
           cells: [{ row: 1, column: 1, text: "Last", fontSize: 22 }],
+          rows: [56, 60],
           columns: [160, 180],
         },
         { type: "patch", id: root.id, patch: { x: 80, y: 100, opacity: 75 } },
@@ -533,6 +535,8 @@ describe("controlled canvas operations", () => {
       y: 100,
       width: 340,
       opacity: 75,
+      height: 116,
+      customData: { table: { rowMinHeights: [56, 60] } },
     });
     expect(
       updated.elements

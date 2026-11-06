@@ -73,6 +73,7 @@ interface ColorPickerProps {
   palette?: ColorPaletteCustom | null;
   topPicks?: readonly string[];
   updateData: (formData?: any) => void;
+  popoverContainer?: HTMLDivElement | null;
   /** palette colors to hide from the popup, keeping hotkey positions */
   excludedColors?: readonly string[];
   /** allow users to customize the top picks strip by drag & dropping colors
@@ -96,6 +97,7 @@ const ColorPickerPopupContent = ({
   excludedColors,
   onResetTopPicks,
   topPicks,
+  popoverContainer,
 }: Pick<
   ColorPickerProps,
   | "type"
@@ -108,6 +110,7 @@ const ColorPickerPopupContent = ({
   | "appState"
   | "excludedColors"
   | "topPicks"
+  | "popoverContainer"
 > & {
   getOpenPopup: () => AppState["openPopup"];
   ownsPopup: () => boolean;
@@ -140,6 +143,14 @@ const ColorPickerPopupContent = ({
   );
 
   const colorPickerContentRef = useRef<HTMLDivElement>(null);
+  const wasSampling = useRef(false);
+
+  useEffect(() => {
+    if (popoverContainer && wasSampling.current && !eyeDropperState) {
+      colorPickerContentRef.current?.focus();
+    }
+    wasSampling.current = !!eyeDropperState;
+  }, [eyeDropperState, popoverContainer]);
 
   const changeColor = (changedColor: string) => {
     const savedSelection = appState.editingTextElement
@@ -158,7 +169,7 @@ const ColorPickerPopupContent = ({
   return (
     <PropertiesPopover
       className="properties-content"
-      container={container}
+      container={popoverContainer ?? container}
       style={{ maxWidth: "13rem" }}
       // Improve focus handling for text editing scenarios
       preventAutoFocusOnTouch={!!appState.editingTextElement}
@@ -398,6 +409,7 @@ const ColorPickerComponent = ({
   appState,
   excludedColors,
   customizableTopPicks,
+  popoverContainer,
 }: ColorPickerProps) => {
   const app = useApp();
   const pickerId = useId();
@@ -585,6 +597,7 @@ const ColorPickerComponent = ({
               onChange={onChange}
               label={label}
               elements={elements}
+              popoverContainer={popoverContainer}
               palette={palette}
               excludedColors={excludedColors}
               topPicks={effectiveTopPicks.filter(
@@ -646,6 +659,7 @@ const areColorPickerPropsEqual = (
     prev.palette === next.palette &&
     prev.topPicks === next.topPicks &&
     prev.excludedColors === next.excludedColors &&
+    prev.popoverContainer === next.popoverContainer &&
     prev.customizableTopPicks === next.customizableTopPicks &&
     prev.appState.theme === next.appState.theme &&
     prev.appState.colorTopPicks === next.appState.colorTopPicks &&

@@ -37,6 +37,7 @@ import "./Actions.scss";
 
 import { ImageBorderActions } from "./ImageBorderActions";
 import { useExcalidrawContainer } from "./App";
+import { activeEyeDropperAtom } from "./EyeDropper";
 import Stack from "./Stack";
 import { Tooltip } from "./Tooltip";
 import { PropertiesPopover } from "./PropertiesPopover";
@@ -98,6 +99,11 @@ const SelectedTableActions = ({
   if (!compact) {
     return content;
   }
+  const keepOpenWhileSampling = (event: Event) => {
+    if (app.editorStore.get(activeEyeDropperAtom)) {
+      event.preventDefault();
+    }
+  };
   return (
     <div className="compact-action-item">
       <Popover.Root>
@@ -119,6 +125,8 @@ const SelectedTableActions = ({
             maxHeight: "70vh",
             overflowY: "auto",
           }}
+          onFocusOutside={keepOpenWhileSampling}
+          onPointerDownOutside={keepOpenWhileSampling}
           onClose={() => app.focusContainer()}
         >
           {content}

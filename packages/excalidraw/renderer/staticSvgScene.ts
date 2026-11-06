@@ -937,11 +937,6 @@ const renderElementToSvg = (
           for (const line of layout.lines) {
             for (const run of line.runs) {
               const fontSize = getRichTextFontSize(element, run);
-              const baseline = getVerticalOffset(
-                element.fontFamily,
-                fontSize,
-                fontSize * element.lineHeight,
-              );
               if (run.background) {
                 const rect = svgRoot.ownerDocument.createElementNS(
                   SVG_NS,
@@ -950,7 +945,7 @@ const renderElementToSvg = (
                 rect.setAttribute("x", `${run.x}`);
                 rect.setAttribute("y", `${run.y}`);
                 rect.setAttribute("width", `${run.width}`);
-                rect.setAttribute("height", `${fontSize * element.lineHeight}`);
+                rect.setAttribute("height", `${run.height}`);
                 rect.setAttribute("fill", run.background);
                 node.appendChild(rect);
               }
@@ -960,7 +955,7 @@ const renderElementToSvg = (
               );
               text.textContent = run.text;
               text.setAttribute("x", `${run.x}`);
-              text.setAttribute("y", `${run.y + baseline}`);
+              text.setAttribute("y", `${run.y + run.baseline}`);
               text.setAttribute("font-family", getFontFamilyString(element));
               text.setAttribute("font-size", `${fontSize}px`);
               text.setAttribute("font-weight", run.bold ? "bold" : "normal");
@@ -975,7 +970,11 @@ const renderElementToSvg = (
               text.setAttribute("style", "white-space: pre;");
               node.appendChild(text);
               if (run.underline) {
-                const underline = getRichTextUnderline(run, fontSize, baseline);
+                const underline = getRichTextUnderline(
+                  run,
+                  fontSize,
+                  run.baseline,
+                );
                 const rect = svgRoot.ownerDocument.createElementNS(
                   SVG_NS,
                   "rect",

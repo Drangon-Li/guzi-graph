@@ -211,6 +211,8 @@ export const ToolPanel = ({
       aria-label={options.labels.title}
       data-viewport-ui={collapsed || hidden ? undefined : "side"}
       data-viewport-ui-name={collapsed || hidden ? undefined : "toolDock"}
+      data-viewport-dock-width={collapsed || hidden ? undefined : width}
+      data-viewport-dock-side={dock}
     >
       <ToolPanelDockControls
         options={options}

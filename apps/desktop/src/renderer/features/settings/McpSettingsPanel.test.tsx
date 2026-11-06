@@ -154,6 +154,50 @@ it("keeps tokens hidden until explicitly revealed and copies current connection 
   ).toBe(`Bearer \${GUZI_MCP_TOKEN}`);
 });
 
+it("copies an SSH tunnel command only for a running service and a valid destination", async () => {
+  const view = mount();
+  await view.findByText("Disabled");
+  fireEvent.click(view.getByText("Connect from another device"));
+  const destination = view.getByRole("textbox", {
+    name: "Mac SSH destination",
+  });
+  const copy = view.getByRole("button", { name: "Copy SSH command" });
+  fireEvent.change(destination, { target: { value: "user@mac-host" } });
+  expect(copy).toBeDisabled();
+
+  view.emit([
+    {
+      ...plugin,
+      enabled: true,
+      status: "running",
+      port: 29401,
+      endpoint: "http://127.0.0.1:29401/mcp",
+      token: "secret-token",
+    },
+  ]);
+  for (const value of [
+    "",
+    "-Fmalicious",
+    "user@mac-host;whoami",
+    "mac-host -A",
+  ]) {
+    fireEvent.change(destination, { target: { value } });
+    expect(copy).toBeDisabled();
+  }
+  expect(view.writeText).not.toHaveBeenCalled();
+
+  fireEvent.change(view.getByRole("spinbutton", { name: "Local port" }), {
+    target: { value: "29402" },
+  });
+  fireEvent.change(destination, { target: { value: " user@mac-host " } });
+  fireEvent.click(copy);
+  await waitFor(() =>
+    expect(view.writeText).toHaveBeenCalledWith(
+      "ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:29401:127.0.0.1:29401 user@mac-host",
+    ),
+  );
+});
+
 it("uses the mounted document's bridge and clipboard", async () => {
   const iframe = document.createElement("iframe");
   document.body.append(iframe);

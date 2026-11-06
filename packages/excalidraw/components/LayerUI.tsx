@@ -15,6 +15,7 @@ import { getColorUpdate, mutateElement } from "@excalidraw/element";
 import { showSelectedShapeActions } from "@excalidraw/element";
 
 import { ShapeCache } from "@excalidraw/element";
+import { isTableElement } from "@excalidraw/element/table";
 
 import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 
@@ -605,6 +606,9 @@ const LayerUI = ({
                   includeBoundTextElement: property === "strokeColor",
                 });
                 for (const element of targets) {
+                  if (isTableElement(element)) {
+                    continue;
+                  }
                   mutateElement(
                     element,
                     elementsMap,

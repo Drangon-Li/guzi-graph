@@ -42,6 +42,48 @@ describe("secondary-button pan", () => {
     await render(<Excalidraw />);
   });
 
+  it.each(["mouse", "touch", "pen"])(
+    "ignores hover and other pointers during a %s hand drag",
+    (pointerType) => {
+      API.setAppState({
+        activeTool: { ...h.state.activeTool, type: "hand", customType: null },
+      });
+      const drag = {
+        pointerId: 1,
+        pointerType,
+        button: 0,
+        buttons: 1,
+        clientX: 100,
+        clientY: 100,
+      };
+      fireEvent.pointerDown(canvas(), drag);
+      const start = getViewport();
+      fireEvent.pointerMove(canvas(), { ...drag, clientY: 130 });
+      fireEvent.pointerMove(window, {
+        ...drag,
+        buttons: 0,
+        clientX: 517,
+        clientY: 743,
+      });
+      fireEvent.pointerMove(window, {
+        ...drag,
+        pointerId: 2,
+        clientX: 500,
+        clientY: 700,
+      });
+      expect(getViewport()).toEqual({
+        ...start,
+        scrollY: start.scrollY + 30 / start.zoom,
+      });
+      fireEvent.pointerMove(canvas(), { ...drag, clientY: 140 });
+      fireEvent.pointerUp(window, { ...drag, buttons: 0, clientY: 140 });
+      expect(getViewport()).toEqual({
+        ...start,
+        scrollY: start.scrollY + 40 / start.zoom,
+      });
+    },
+  );
+
   it.each([false, true])(
     "pans past five pixels with no context menu (viewModeEnabled=%s)",
     (viewModeEnabled) => {

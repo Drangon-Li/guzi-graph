@@ -1031,6 +1031,19 @@ class DesktopStorage {
     return current;
   }
 
+  async initialSaveDirectory(selection) {
+    const root = this.settings.rootDirectory;
+    if (!root || selection?.rootDirectory !== root || !selection.category) {
+      return null;
+    }
+    try {
+      const directory = await this.categoryDirectory(selection.category);
+      return this.settings.rootDirectory === root ? directory : null;
+    } catch {
+      return null;
+    }
+  }
+
   async relocate(candidate, destination) {
     const source = await this.allowedPath(candidate);
     if (source === destination) {
@@ -1477,11 +1490,22 @@ class DesktopStorage {
           return;
         }
       }
+      const selection = draft.initialSaveCategory;
+      const initialSaveCategory =
+        canonicalPath === null &&
+        typeof selection?.rootDirectory === "string" &&
+        typeof selection.category === "string"
+          ? {
+              rootDirectory: selection.rootDirectory,
+              category: selection.category,
+            }
+          : undefined;
       await atomicWrite(
         destination,
         JSON.stringify({
           id: draft.id,
           path: canonicalPath,
+          initialSaveCategory,
           title: draft.title,
           content: draft.content,
           modifiedAt: draft.modifiedAt,

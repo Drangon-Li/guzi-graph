@@ -760,31 +760,21 @@ const drawElementOnCanvas = (
             for (const line of layout.lines) {
               for (const run of line.runs) {
                 const fontSize = getRichTextFontSize(element, run);
-                const baseline = getVerticalOffset(
-                  element.fontFamily,
-                  fontSize,
-                  fontSize * element.lineHeight,
-                );
                 if (run.background) {
                   context.fillStyle = run.background;
-                  context.fillRect(
-                    run.x,
-                    run.y,
-                    run.width,
-                    fontSize * element.lineHeight,
-                  );
+                  context.fillRect(run.x, run.y, run.width, run.height);
                 }
                 context.font = getRichTextFont(element, run);
                 context.fillStyle = applyDarkModeFilter(
                   run.color ?? element.strokeColor,
                   renderConfig.theme === THEME.DARK,
                 );
-                context.fillText(run.text, run.x, run.y + baseline);
+                context.fillText(run.text, run.x, run.y + run.baseline);
                 if (run.underline) {
                   const underline = getRichTextUnderline(
                     run,
                     fontSize,
-                    baseline,
+                    run.baseline,
                   );
                   context.fillRect(
                     underline.x,

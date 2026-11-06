@@ -33,6 +33,7 @@ import {
 } from "../../shared/model/document";
 import { DEFAULT_EDITOR_PREFERENCES } from "../../shared/config/editorPreferences";
 import { Projects } from "../projects/Projects";
+import { SubcanvasEditor } from "../editor/SubcanvasEditor";
 
 import { bundledExamples } from "../examples/catalog";
 import * as slideRenderer from "../presentation/renderSlide";
@@ -44,6 +45,7 @@ import {
 } from "../presentation/model";
 
 import { useWorkspace } from "./workspace";
+import { holdDocumentAwake, TAB_SLEEP_DELAY } from "./tabSleep";
 
 import type { SceneSnapshot } from "../../shared/model/document";
 import type {
@@ -307,6 +309,7 @@ describe("desktop document workspace", () => {
       isDestroyed: false,
       getSceneElementsIncludingDeleted: () => scene.elements,
       getAppState: () => scene.appState,
+      getViewModePreference: () => scene.appState.viewModeEnabled,
       getFiles: () => scene.files,
       updateScene: vi.fn((update) => {
         scene = {
@@ -316,6 +319,9 @@ describe("desktop document workspace", () => {
         };
       }),
       commitEditing: vi.fn(),
+      history: {
+        checkpoint: vi.fn(() => ({ undo: [], redo: [] })),
+      },
       desktopSave: (saveAs: boolean) =>
         hook.result.current.editorSave(document, scene, saveAs),
     } as unknown as ExcalidrawImperativeAPI;
@@ -345,6 +351,312 @@ describe("desktop document workspace", () => {
       },
     };
   };
+
+  const advanceSleepClock = (milliseconds: number) =>
+    act(async () => vi.advanceTimersByTimeAsync(milliseconds));
+
+  it.each([false, true])(
+    "restores the user's view mode (%s) instead of the background interaction override",
+    async (viewModeEnabled) => {
+      const hook = await mount();
+      let document!: CanvasDocument;
+      act(() => {
+        document = hook.result.current.newDocument();
+      });
+      const editor = (interaction: boolean) =>
+        createElement(SubcanvasEditor, {
+          document,
+          interaction,
+          initialData: document.initialData,
+          ownerDocument: root.ownerDocument,
+          onExcalidrawAPI: (api) => {
+            document.api = api;
+          },
+          onInitialize: (api) => hook.result.current.initialize(document, api),
+        });
+      const original = render(editor(true));
+      await waitFor(() => expect(document.initialized).toBe(true));
+      const firstApi = document.api!;
+      act(() => firstApi.updateScene({ appState: { viewModeEnabled } }));
+      vi.useFakeTimers();
+      try {
+        original.rerender(editor(false));
+        act(() => hook.result.current.showProjects());
+        expect(firstApi.getAppState().viewModeEnabled).toBe(true);
+        await advanceSleepClock(TAB_SLEEP_DELAY);
+        expect(document.asleep).toBe(true);
+        expect(document.initialData.appState?.viewModeEnabled).toBe(
+          viewModeEnabled,
+        );
+        original.unmount();
+        expect(firstApi.isDestroyed).toBe(true);
+        act(() => hook.result.current.activate(document.id));
+      } finally {
+        vi.useRealTimers();
+      }
+      const resumed = render(editor(!viewModeEnabled));
+      await waitFor(() => {
+        expect(document.sleepCheckpoint).toBeUndefined();
+        expect(document.api!.getAppState().viewModeEnabled).toBe(
+          viewModeEnabled,
+        );
+      });
+      if (viewModeEnabled) {
+        resumed.rerender(editor(true));
+        expect(document.api!.getAppState().viewModeEnabled).toBe(true);
+      }
+      fireEvent.doubleClick(
+        resumed.container.querySelector("canvas.interactive")!,
+        {
+          clientX: 200,
+          clientY: 200,
+        },
+      );
+      expect(!!document.api!.getAppState().editingTextElement).toBe(
+        !viewModeEnabled,
+      );
+      resumed.unmount();
+      hook.unmount();
+    },
+  );
+
+  it("checkpoints the latest background scene at five minutes and keeps the selected editor mounted", async () => {
+    const hook = await mount();
+    vi.useFakeTimers();
+    try {
+      const background = addDocument(hook);
+      const edited = snapshot(2);
+      edited.appState.scrollX = 184;
+      edited.appState.zoom = { value: 2 as any };
+      edited.elements = [
+        {
+          ...edited.elements[0],
+          type: "image",
+          fileId: "image",
+        } as ExcalidrawElement,
+      ];
+      edited.files.image = {
+        id: "image" as any,
+        mimeType: "image/png",
+        dataURL: "data:image/png;base64,AAAA" as any,
+        created: 1,
+      };
+      background.captureScene(edited);
+      const selected = addDocument(hook);
+      await advanceSleepClock(TAB_SLEEP_DELAY - 1);
+      expect(background.document.api).toBe(background.api);
+      await advanceSleepClock(1);
+      expect(background.document.asleep).toBe(true);
+      expect(background.document.api).toBeNull();
+      expect(background.document.initialData).toEqual(edited);
+      expect(background.api.history.checkpoint).toHaveBeenCalledWith(Infinity);
+      expect(background.document.dirty).toBe(true);
+      expect(vi.mocked(desktop.writeDraft).mock.lastCall?.[0]).toMatchObject({
+        id: background.document.id,
+        content: background.document.content,
+      });
+      expect(desktop.saveFile).not.toHaveBeenCalled();
+      expect(selected.document.api).toBe(selected.api);
+      expect(selected.document.asleep).toBe(false);
+      act(() => hook.result.current.activate(background.document.id));
+      expect(background.document.asleep).toBe(false);
+      expect(hook.result.current.activeId).toBe(background.document.id);
+    } finally {
+      hook.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps an editor mounted if the final draft write fails", async () => {
+    const hook = await mount();
+    vi.useFakeTimers();
+    try {
+      const background = addDocument(hook);
+      background.edit(2);
+      addDocument(hook);
+      await advanceSleepClock(TAB_SLEEP_DELAY - 1);
+      vi.mocked(desktop.writeDraft).mockRejectedValueOnce(
+        new Error("draft storage unavailable"),
+      );
+      await advanceSleepClock(1);
+      expect(background.document.asleep).toBe(false);
+      expect(background.document.api).toBe(background.api);
+      expect(background.document.dirty).toBe(true);
+      expect(hook.result.current.error).toBe("draft storage unavailable");
+    } finally {
+      hook.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("abandons an in-flight checkpoint when the user switches back to that tab", async () => {
+    const hook = await mount();
+    vi.useFakeTimers();
+    try {
+      const background = addDocument(hook);
+      background.edit(2);
+      const selected = addDocument(hook);
+      await advanceSleepClock(TAB_SLEEP_DELAY - 1);
+      let finish!: () => void;
+      vi.mocked(desktop.writeDraft).mockImplementationOnce(
+        () => new Promise<void>((resolve) => (finish = resolve)),
+      );
+      await advanceSleepClock(1);
+      act(() => hook.result.current.activate(background.document.id));
+      act(() => hook.result.current.activate(selected.document.id));
+      await act(async () => finish());
+      expect(background.document.api).toBe(background.api);
+      expect(background.document.asleep).toBe(false);
+      await advanceSleepClock(TAB_SLEEP_DELAY);
+      expect(background.document.asleep).toBe(true);
+    } finally {
+      hook.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits for saving, playback, image import and pinned work to finish", async () => {
+    const hook = await mount();
+    vi.useFakeTimers();
+    try {
+      const saving = addDocument(hook).document;
+      saving.saving = Promise.resolve(true);
+      const presenting = addDocument(hook).document;
+      presenting.presenting = true;
+      const importing = addDocument(hook).document;
+      importing.hasPendingImages = () => true;
+      const pinned = addDocument(hook).document;
+      const release = holdDocumentAwake(pinned);
+      addDocument(hook);
+      await advanceSleepClock(TAB_SLEEP_DELAY);
+      const busy = [saving, presenting, importing, pinned];
+      expect(busy.every((document) => !!document.api)).toBe(true);
+
+      saving.saving = null;
+      presenting.presenting = false;
+      importing.hasPendingImages = () => false;
+      release();
+      await advanceSleepClock(TAB_SLEEP_DELAY);
+      expect(busy.every((document) => document.asleep)).toBe(true);
+    } finally {
+      hook.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("wakes a sleeping MCP target without changing the selected tab", async () => {
+    const hook = await mount();
+    vi.useFakeTimers();
+    try {
+      const background = addDocument(hook);
+      const selected = addDocument(hook);
+      await advanceSleepClock(TAB_SLEEP_DELAY);
+      expect(background.document.asleep).toBe(true);
+      await act(async () => {
+        plugin({
+          requestId: "wake-on-read",
+          command: "read_canvas",
+          arguments: { documentId: background.document.id },
+        });
+      });
+      expect(background.document.asleep).toBe(false);
+      expect(hook.result.current.activeId).toBe(selected.document.id);
+      act(() =>
+        hook.result.current.initialize(background.document, background.api),
+      );
+      await advanceSleepClock(25);
+      expect(desktop.respondPluginRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestId: "wake-on-read",
+          result: expect.objectContaining({
+            documentId: background.document.id,
+            elements: [expect.objectContaining({ id: "rectangle" })],
+          }),
+        }),
+      );
+      await advanceSleepClock(TAB_SLEEP_DELAY);
+      expect(background.document.asleep).toBe(true);
+      expect(selected.document.asleep).toBe(false);
+    } finally {
+      hook.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("preserves a dirty checkpoint when closing and saving before the editor has woken", async () => {
+    const hook = await mount();
+    vi.useFakeTimers();
+    try {
+      const background = addDocument(hook);
+      background.edit(2);
+      const checkpointContent = background.document.content;
+      addDocument(hook);
+      await advanceSleepClock(TAB_SLEEP_DELAY);
+      expect(background.document.asleep).toBe(true);
+      act(() => {
+        hook.result.current.activate(background.document.id);
+        background.changeWithoutCapture(99);
+        background.setState({ isLoading: true });
+        background.document.api = background.api;
+      });
+      vi.mocked(desktop.saveFile).mockImplementation(async (request) =>
+        disk("/drawings/sleeping.excalidraw", request.content),
+      );
+      let closing!: Promise<boolean>;
+      act(() => {
+        closing = hook.result.current.closeDocument(background.document.id);
+      });
+      expect(hook.result.current.closePrompt?.title).toBe(
+        background.document.title,
+      );
+      await act(async () => {
+        hook.result.current.closePrompt!.resolve("save");
+        expect(await closing).toBe(true);
+      });
+      expect(desktop.saveFile).toHaveBeenCalledWith(
+        expect.objectContaining({ content: checkpointContent }),
+      );
+    } finally {
+      hook.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("applies new drawing preferences to an editor that was asleep when they changed", async () => {
+    const hook = await mount();
+    vi.useFakeTimers();
+    try {
+      const background = addDocument(hook);
+      addDocument(hook);
+      await advanceSleepClock(TAB_SLEEP_DELAY);
+      expect(background.document.asleep).toBe(true);
+      const update = {
+        stickyNoteMode: "subcanvas" as const,
+        editorPreferences: {
+          ...DEFAULT_EDITOR_PREFERENCES,
+          defaultFontFamily: FONT_FAMILY.Nunito,
+          fontTopPicks: [FONT_FAMILY.Nunito],
+          elementStrokeTopPicks: ["#c00000"],
+        },
+      };
+      vi.mocked(desktop.updateSettings).mockResolvedValue({
+        ...settings,
+        ...update,
+      });
+      await act(async () => hook.result.current.updateSettings(update));
+      expect(background.document.asleep).toBe(true);
+      act(() => hook.result.current.activate(background.document.id));
+      expect(background.document.initialData.appState).toMatchObject({
+        currentItemStickyNoteMode: "subcanvas",
+        currentItemFontFamily: FONT_FAMILY.Nunito,
+        fontTopPicks: [FONT_FAMILY.Nunito],
+        colorTopPicks: { elementStroke: ["#c00000"] },
+      });
+    } finally {
+      hook.unmount();
+      vi.useRealTimers();
+    }
+  });
 
   let pluginSequence = 0;
   const sendPlugin = async (
@@ -949,6 +1261,7 @@ describe("desktop document workspace", () => {
       isDestroyed: false,
       getSceneElementsIncludingDeleted: () => scene.elements,
       getAppState: () => scene.appState,
+      getViewModePreference: () => scene.appState.viewModeEnabled,
       getFiles: () => scene.files,
       commitEditing: vi.fn(),
       history: { checkpoint: vi.fn() },
@@ -1640,6 +1953,47 @@ describe("desktop document workspace", () => {
     act(() => hook.result.current.selectSlide(document, "first"));
     attachSlide(hook, document);
     expect(document.initialData.elements![0].x).toBe(33);
+  });
+
+  it("preserves a sleeping slide checkpoint when switching slides during wake", async () => {
+    const hook = await mount();
+    vi.mocked(desktop.openFiles).mockResolvedValue([
+      disk("/drawings/talk.guzi-presentation", presentationContent()),
+    ]);
+    await act(async () => hook.result.current.openFiles());
+    const document = hook.result.current.documents[0];
+    vi.useFakeTimers();
+    try {
+      const first = attachSlide(hook, document);
+      const history = { undo: [], redo: [] };
+      vi.mocked(first.api.history.checkpoint!).mockReturnValue(history);
+      first.edit(snapshot(33));
+      addDocument(hook);
+      await advanceSleepClock(TAB_SLEEP_DELAY);
+      expect(document.asleep).toBe(true);
+      const saved = document.slideRuntime!.get("first");
+      expect(saved?.snapshot?.elements?.[0].x).toBe(33);
+      expect(saved?.history).toBe(history);
+
+      act(() => {
+        hook.result.current.activate(document.id);
+        document.api = {
+          ...first.api,
+          getSceneElementsIncludingDeleted: () => [],
+          getAppState: () => ({ ...snapshot().appState, isLoading: true }),
+          history: { ...first.api.history, checkpoint: vi.fn() },
+        };
+        hook.result.current.selectSlide(document, "second");
+      });
+      expect(document.activeSlideId).toBe("second");
+      expect(document.slideRuntime!.get("first")).toBe(saved);
+
+      act(() => hook.result.current.selectSlide(document, "first"));
+      expect(document.initialData.elements?.[0].x).toBe(33);
+    } finally {
+      hook.unmount();
+      vi.useRealTimers();
+    }
   });
 
   it("undoes a group of notes edits and saves and reopens the exact text", async () => {
@@ -3204,6 +3558,71 @@ describe("desktop document workspace", () => {
     });
     expect(hook.result.current.index.history).toEqual(history);
     expect(desktop.recordOpenedFile).not.toHaveBeenCalled();
+  });
+
+  it("keeps a new canvas unsaved and retains its initial category across cancellation and recovery", async () => {
+    const hook = await mount();
+    const initialSaveCategory = {
+      rootDirectory: "/drawings",
+      category: "work/nested",
+    };
+    act(() => hook.result.current.requestNewDocument(initialSaveCategory));
+    const scene = snapshot();
+    const api = {
+      getSceneElementsIncludingDeleted: () => scene.elements,
+      getAppState: () => scene.appState,
+      getFiles: () => scene.files,
+      commitEditing: vi.fn(),
+      desktopSave: (saveAs: boolean) =>
+        hook.result.current.editorSave(document, scene, saveAs),
+    } as unknown as ExcalidrawImperativeAPI;
+    let document!: CanvasDocument;
+    act(() => {
+      document = hook.result.current.createCanvas(scene, "canvas");
+      hook.result.current.initialize(document, api);
+    });
+    expect(document.path).toBeNull();
+    expect(desktop.saveFile).not.toHaveBeenCalled();
+    vi.mocked(desktop.saveFile).mockResolvedValueOnce(null);
+    await act(async () => {
+      expect(await hook.result.current.requestSave(document)).toBe(false);
+    });
+    expect(desktop.saveFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ path: null, initialSaveCategory }),
+    );
+    await waitFor(() =>
+      expect(desktop.writeDraft).toHaveBeenCalledWith(
+        expect.objectContaining({ path: null, initialSaveCategory }),
+      ),
+    );
+    const draft = vi.mocked(desktop.writeDraft).mock.calls[0][0];
+    hook.unmount();
+
+    const recovered = await mount();
+    await act(async () => {
+      expect(await recovered.result.current.recover(draft)).toBe(true);
+    });
+    document = recovered.result.current.documents[0];
+    const path = "/drawings/work/nested/canvas.excalidraw";
+    vi.mocked(desktop.saveFile).mockResolvedValue(disk(path, draft.content));
+    await act(async () => {
+      recovered.result.current.initialize(document, api);
+      expect(
+        await recovered.result.current.editorSave(document, scene, false),
+      ).toBe(true);
+    });
+    expect(desktop.saveFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ path: null, initialSaveCategory }),
+    );
+    expect(document.path).toBe(path);
+    await act(async () => {
+      expect(
+        await recovered.result.current.editorSave(document, scene, false),
+      ).toBe(true);
+    });
+    const request = vi.mocked(desktop.saveFile).mock.calls.at(-1)![0];
+    expect(request.path).toBe(path);
+    expect(request).not.toHaveProperty("initialSaveCategory");
   });
 
   it("shows external history without a default folder and previews never register opens", async () => {

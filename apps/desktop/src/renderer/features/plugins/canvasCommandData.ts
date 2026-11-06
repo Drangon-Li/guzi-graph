@@ -192,6 +192,7 @@ export const updateTableData = (
   let next = {
     ...data,
     rows,
+    ...(updates.rows !== undefined && { rowMinHeights: rows }),
     columns,
     cells: data.cells.map((cell) => ({ ...cell })),
   };

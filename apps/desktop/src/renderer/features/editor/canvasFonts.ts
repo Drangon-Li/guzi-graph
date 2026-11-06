@@ -11,6 +11,7 @@ import {
   StoreSnapshot,
 } from "@excalidraw/element";
 import { Scene } from "@excalidraw/element/Scene";
+import { getRuledTextFontUpdate } from "@excalidraw/element/ruledText";
 import {
   getTableRoot,
   isTableRoot,
@@ -97,10 +98,13 @@ export const replaceLayerFont = (
   const scene = new Scene(
     elements.map((element) =>
       replaceIds.has(element.id) && isTextElement(element)
-        ? newElementWith(element, {
-            fontFamily,
-            lineHeight: getLineHeight(fontFamily),
-          })
+        ? newElementWith(
+            element,
+            getRuledTextFontUpdate(element, element.fontSize, fontFamily) ?? {
+              fontFamily,
+              lineHeight: getLineHeight(fontFamily),
+            },
+          )
         : deepCopyElement(element),
     ),
     { skipValidation: true },
@@ -291,6 +295,7 @@ export const appendFontReplacementHistory = (
   checkpoint: HistoryCheckpoint | undefined,
   previous: ExcalidrawInitialDataState,
   next: ExcalidrawInitialDataState,
+  limit = 200,
 ): HistoryCheckpoint | undefined => {
   if (previous.elements === next.elements) {
     return checkpoint;
@@ -315,7 +320,7 @@ export const appendFontReplacementHistory = (
     ? checkpoint
     : {
         undo: [...(checkpoint?.undo ?? []), HistoryDelta.inverse(delta)].slice(
-          -200,
+          -limit,
         ),
         redo: [],
       };

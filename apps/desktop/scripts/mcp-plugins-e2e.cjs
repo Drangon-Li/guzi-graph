@@ -128,11 +128,15 @@ const launch = async (profile) => {
     env: { ...process.env, EXCALIDRAW_DESKTOP_USER_DATA: profile },
     timeout: 60000,
   });
+  remember();
+  assert.equal(
+    await application.evaluate(({ app }) => app.getPath("userData")),
+    profile,
+  );
   page = await application.firstWindow();
   page.setDefaultTimeout(15000);
   page.on("pageerror", (error) => report.pageErrors.push(error.message));
-  await page.getByLabel("测试版", { exact: true }).waitFor();
-  remember();
+  await page.getByRole("button", { name: "返回项目页", exact: true }).waitFor();
 };
 const connect = async (service) => {
   const { Client, StreamableHTTPClientTransport } = await import(

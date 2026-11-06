@@ -44,6 +44,7 @@ import {
 } from "@excalidraw/element";
 
 import { getTableRoot, updateTableElements } from "@excalidraw/element/table";
+import { getRuledTextTypography } from "@excalidraw/element/ruledText";
 
 import type { ArrowEndpoint } from "@excalidraw/element";
 import type {
@@ -651,6 +652,7 @@ export class AppText {
     initialSelection,
     arrowEndpoint,
     textElement,
+    useFreeTextPlacement = false,
   }: {
     /** X position to insert text at */
     sceneX: number;
@@ -675,6 +677,7 @@ export class AppText {
      * selected or passed arrow container, else the text at (sceneX, sceneY)
      */
     textElement?: NonDeleted<ExcalidrawTextElement> | null;
+    useFreeTextPlacement?: boolean;
   }) => {
     if (
       container &&
@@ -740,9 +743,30 @@ export class AppText {
     const fontFamily =
       existingTextElement?.fontFamily || this.app.state.currentItemFontFamily;
 
+    const freeTextPlacement =
+      useFreeTextPlacement &&
+      !existingTextElement &&
+      !container &&
+      !arrowEndpointBinding
+        ? this.app.props.desktopIntegration?.getFreeTextPlacement?.({
+            sceneX,
+            sceneY,
+            elements: this.app.scene.getNonDeletedElements(),
+          })
+        : null;
+    const ruledTypography = freeTextPlacement
+      ? getRuledTextTypography(
+          fontFamily,
+          freeTextPlacement.fontSize ?? this.app.state.currentItemFontSize,
+          freeTextPlacement.baselineY,
+          freeTextPlacement.lineSpacing,
+        )
+      : null;
     const lineHeight =
-      existingTextElement?.lineHeight || getLineHeight(fontFamily);
-    const fontSize = this.app.state.currentItemFontSize;
+      ruledTypography?.lineHeight ??
+      (existingTextElement?.lineHeight || getLineHeight(fontFamily));
+    const fontSize =
+      ruledTypography?.fontSize ?? this.app.state.currentItemFontSize;
 
     if (
       !existingTextElement &&
@@ -781,7 +805,7 @@ export class AppText {
 
     const textCreationGridPoint = this.getTextCreationGridPoint(sceneX, sceneY);
 
-    const newTextElementPosition = arrowEndpointBinding
+    const standardTextElementPosition = arrowEndpointBinding
       ? // the anchor is dictated by the arrow, so neither the grid nor the
         // caret-centering fudge may nudge it
         { x: sceneX, y: sceneY }
@@ -803,11 +827,14 @@ export class AppText {
           x: sceneX,
           y: sceneY,
         };
+    const newTextElementPosition =
+      freeTextPlacement && ruledTypography
+        ? { x: freeTextPlacement.x, y: ruledTypography.y }
+        : standardTextElementPosition;
 
-    const topLayerFrame = this.app.getTopLayerFrameAtSceneCoords({
-      x: newTextElementPosition.x,
-      y: newTextElementPosition.y,
-    });
+    const topLayerFrame = freeTextPlacement
+      ? null
+      : this.app.getTopLayerFrameAtSceneCoords(newTextElementPosition);
 
     // container has higher priority. Only add to frame if container is in the same frame.
     const frameId =
@@ -818,7 +845,7 @@ export class AppText {
         ? topLayerFrame.id
         : null;
 
-    const element =
+    let element =
       existingTextElement ||
       newTextElement({
         x: newTextElementPosition.x,
@@ -841,11 +868,12 @@ export class AppText {
             ? fontSize
             : null,
         fontFamily,
-        textAlign:
-          arrowEndpointBinding?.textAlign ??
-          (parentCenterPosition
-            ? "center"
-            : this.app.state.currentItemTextAlign),
+        textAlign: freeTextPlacement
+          ? "left"
+          : arrowEndpointBinding?.textAlign ??
+            (parentCenterPosition
+              ? "center"
+              : this.app.state.currentItemTextAlign),
         verticalAlign:
           arrowEndpointBinding?.verticalAlign ??
           (parentCenterPosition
@@ -857,6 +885,15 @@ export class AppText {
             ? DEFAULT_BOUND_TEXT_LABEL_POSITION
             : null,
         groupIds: shouldBindToContainer ? container?.groupIds ?? [] : [],
+        autoResize: !freeTextPlacement,
+        customData: freeTextPlacement
+          ? {
+              guziRuledText: {
+                version: 1,
+                lineSpacing: freeTextPlacement.lineSpacing,
+              },
+            }
+          : undefined,
         lineHeight,
         angle:
           shouldBindToContainer && container && !isArrowElement(container)
@@ -865,6 +902,10 @@ export class AppText {
         frameId,
         renderEnvironment: this.app.renderEnvironment,
       });
+    if (freeTextPlacement) {
+      // The constructor measures the empty text; wrapping needs the sheet width.
+      element = newElementWith(element, { width: freeTextPlacement.width });
+    }
 
     if (!existingTextElement && shouldBindToContainer && container) {
       this.app.scene.mutateElement(container, {
