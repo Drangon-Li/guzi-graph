@@ -187,6 +187,10 @@ yarn --cwd apps/web vite preview --host 127.0.0.1 --port 4173 --mode single-user
 
 部署时将整个 `apps/web/build/` 目录交给支持 HTTPS 的静态文件服务器托管。首页和 `sw.js` 应使用重新校验缓存策略，带哈希的 `assets/` 文件可长期缓存；更新时保留旧哈希资源，避免已打开的页面加载失败。当前在线站点通过 Caddy 提供 HTTPS，无需画布存储后端。
 
+### 产品页和官网下载
+
+产品页 g.guzilab.com 不在这个仓库里，由维护者另行管理。发布新版本后，维护者会把安装包同步到国内下载镜像 `download.guzilab.com`，并更新产品页上的下载链接；这一步不需要改动本仓库。
+
 ## 上游与许可
 
 本项目基于 [Excalidraw](https://github.com/excalidraw/excalidraw) 修改，遵循 [MIT License](./LICENSE)，保留上游版权与许可声明。Excalidraw-Guzi 是独立修改版本；感谢并致敬 Excalidraw 团队与开源社区。

@@ -81,7 +81,6 @@ try {
   ]);
   write("apps/desktop/resources/icon.ico", ico);
   write("apps/web/public/favicon.ico", ico);
-  write("sites/guzi-product/assets/favicon.ico", ico);
 
   const webReferences = new Map();
   for (const [name, size] of [
@@ -122,9 +121,6 @@ try {
     );
   }
   write("packages/excalidraw/assets/guzi-logo.png", pngs.get(256));
-  write("sites/guzi-product/assets/guzi-logo.png", pngs.get(256));
-  write("sites/guzi-product/assets/favicon-32x32.png", pngs.get(32));
-  write("sites/guzi-product/assets/apple-touch-icon.png", pngs.get(180));
   write(
     "apps/web/public/favicon.svg",
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><image width="256" height="256" href="data:image/png;base64,${pngs
