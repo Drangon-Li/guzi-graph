@@ -301,10 +301,69 @@ describe("desktop nested canvas lifecycle", () => {
         .getByRole("navigation", { name: "画布路径" })
         .querySelectorAll("button"),
     ).toHaveLength(3);
-    fireEvent.click(view.getByRole("button", { name: "返回上一级" }));
+    await waitFor(() =>
+      expect(document.activeEditor?.()?.getAppState().isLoading).toBe(false),
+    );
+    const nestedEditor = document.activeEditor!()!;
+    act(() => {
+      nestedEditor.updateScene({
+        elements: [API.createElement({ type: "rectangle", id: "deep-shape" })],
+        appState: { scrollX: 246, scrollY: -81 },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      parent.updateScene({
+        appState: { scrollX: 123 },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    });
+    const beforeSleepParent = parent;
+    act(() => document.flushEditing!());
+    document.initialData = document.getSnapshot!();
+    document.sleepCheckpoint = document.checkpointEditor!();
+    view.unmount();
+    expect(beforeSleepParent.isDestroyed).toBe(true);
+    expect(nestedEditor.isDestroyed).toBe(true);
+    const restoredView = await render(
+      <SubcanvasEditor
+        document={document}
+        initialData={document.initialData}
+        onExcalidrawAPI={(api) => {
+          if (api) {
+            parent = api;
+          }
+        }}
+        desktopIntegration={{ save, open: async () => {}, localOnly: true }}
+        interaction
+        handleKeyboardGlobally
+        langCode="zh-CN"
+      />,
+    );
+    await waitFor(() => {
+      expect(document.sleepCheckpoint).toBeUndefined();
+      expect(document.activeEditor?.()?.getAppState().isLoading).toBe(false);
+    });
+    expect(parent.getAppState().scrollX).toBe(123);
+    const restoredChild = document.activeEditor!()!;
+    expect(restoredChild.getAppState()).toMatchObject({
+      scrollX: 246,
+      scrollY: -81,
+    });
+    expect(restoredChild.getSceneElements()).toEqual([
+      expect.objectContaining({ id: "deep-shape" }),
+    ]);
+    act(() => restoredChild.history.undo!());
+    expect(restoredChild.getSceneElements()).toHaveLength(0);
+    act(() => restoredChild.history.redo!());
+    expect(restoredChild.getSceneElements()).toHaveLength(1);
+    expect(
+      restoredView
+        .getByRole("navigation", { name: "画布路径" })
+        .querySelectorAll("button"),
+    ).toHaveLength(3);
+    fireEvent.click(restoredView.getByRole("button", { name: "返回上一级" }));
     await waitFor(() =>
       expect(
-        view
+        restoredView
           .getByRole("navigation", { name: "画布路径" })
           .querySelectorAll("button"),
       ).toHaveLength(2),

@@ -1,5 +1,10 @@
-import { getFontString, getVerticalOffset } from "@excalidraw/common";
+import {
+  getFontString,
+  getLineHeight,
+  getVerticalOffset,
+} from "@excalidraw/common";
 
+import { getRuledTextLineSpacing, getRuledTextRunFontLimit } from "./ruledText";
 import { getLineWidth } from "./textMeasurements";
 import { parseTokens } from "./textWrapping";
 
@@ -125,6 +130,8 @@ export type RichTextLayoutRun = RichTextRun & {
   x: number;
   y: number;
   width: number;
+  height: number;
+  baseline: number;
 };
 export type RichTextLayoutLine = {
   runs: RichTextLayoutRun[];
@@ -158,14 +165,22 @@ export const layoutRichText = (
     | "richText"
     | "originalText"
     | "paragraphSpacing"
-  >,
+  > &
+    Partial<Pick<ExcalidrawTextElement, "customData" | "containerId">>,
   maxWidth = Infinity,
   renderEnvironment?: RenderEnvironment,
 ) => {
   const document =
     element.richText ?? richTextFromPlainText(element.originalText);
   const lines: RichTextLayoutLine[] = [];
-  const lineHeight = element.fontSize * element.lineHeight;
+  const ruledSpacing = getRuledTextLineSpacing(element);
+  const lineHeight = ruledSpacing ?? element.fontSize * element.lineHeight;
+  const runHeightRatio = ruledSpacing
+    ? getLineHeight(element.fontFamily)
+    : element.lineHeight;
+  const maxRunFontSize = ruledSpacing
+    ? getRuledTextRunFontLimit(element, ruledSpacing)
+    : Infinity;
   let y = 0;
   let width = 0;
   const counters: number[] = [];
@@ -191,17 +206,18 @@ export const layoutRichText = (
       width: number;
       breakAfter?: boolean;
     };
-    const glyphs: Glyph[] = paragraph.runs.flatMap((run) =>
-      Array.from(run.text).map((text) => ({
+    const glyphs: Glyph[] = paragraph.runs.flatMap((sourceRun) => {
+      const run =
+        getRichTextFontSize(element, sourceRun) > maxRunFontSize
+          ? { ...sourceRun, fontSizeScale: maxRunFontSize / element.fontSize }
+          : sourceRun;
+      const font = getRichTextFont(element, run);
+      return Array.from(run.text).map((text) => ({
         text,
         run,
-        width: getLineWidth(
-          text,
-          getRichTextFont(element, run),
-          renderEnvironment,
-        ),
-      })),
-    );
+        width: getLineWidth(text, font, renderEnvironment),
+      }));
+    });
     // Share Unicode line-break opportunities with ordinary text, across style runs.
     let tokenEnd = 0;
     for (const token of parseTokens(
@@ -216,21 +232,28 @@ export const layoutRichText = (
     let first = true;
     const flush = (last: boolean) => {
       // Keep the base-font strut used by the contenteditable line box.
-      const fontSize = pending.reduce(
-        (maximum, glyph) =>
-          Math.max(maximum, getRichTextFontSize(element, glyph.run)),
-        element.fontSize,
-      );
-      const height = fontSize * element.lineHeight;
+      const fontSize = ruledSpacing
+        ? element.fontSize
+        : pending.reduce(
+            (maximum, glyph) =>
+              Math.max(maximum, getRichTextFontSize(element, glyph.run)),
+            element.fontSize,
+          );
+      const height = ruledSpacing ?? fontSize * element.lineHeight;
       const baseline = getVerticalOffset(element.fontFamily, fontSize, height);
-      const runTop = (runFontSize: number) =>
-        y +
-        baseline -
-        getVerticalOffset(
+      const runGeometry = (runFontSize: number) => {
+        const runHeight = runFontSize * runHeightRatio;
+        const runBaseline = getVerticalOffset(
           element.fontFamily,
           runFontSize,
-          runFontSize * element.lineHeight,
+          runHeight,
         );
+        return {
+          y: y + baseline - runBaseline,
+          baseline: runBaseline,
+          height: runHeight,
+        };
+      };
       const naturalWidth = pending.reduce((sum, glyph) => sum + glyph.width, 0);
       const available = Number.isFinite(maxWidth)
         ? Math.max(0, maxWidth - indent)
@@ -257,7 +280,7 @@ export const layoutRichText = (
         runs.push({
           text: marker,
           x: indent - markerWidth,
-          y: runTop(element.fontSize),
+          ...runGeometry(element.fontSize),
           width: markerWidth,
         });
       }
@@ -283,7 +306,7 @@ export const layoutRichText = (
             ...glyph.run,
             text: glyph.text,
             x,
-            y: runTop(getRichTextFontSize(element, glyph.run)),
+            ...runGeometry(getRichTextFontSize(element, glyph.run)),
             width: glyphWidth,
           });
         }
@@ -330,7 +353,7 @@ export const layoutRichText = (
       pendingWidth += glyph.width;
     }
     flush(true);
-    if (paragraphIndex < document.paragraphs.length - 1) {
+    if (!ruledSpacing && paragraphIndex < document.paragraphs.length - 1) {
       y += (element.paragraphSpacing ?? 0) * element.fontSize;
     }
   });

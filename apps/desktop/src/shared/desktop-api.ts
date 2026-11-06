@@ -81,10 +81,16 @@ export interface ProjectIndex {
   history: RecentFile[];
 }
 
+export interface ProjectCategory {
+  rootDirectory: string;
+  category: string;
+}
+
 export interface SaveRequest {
   format?: "presentation";
   documentId: string;
   path: string | null;
+  initialSaveCategory?: ProjectCategory;
   name: string;
   content: string;
   saveAs?: boolean;
@@ -96,6 +102,7 @@ export interface SaveRequest {
 export interface RecoveryDraft {
   id: string;
   path: string | null;
+  initialSaveCategory?: ProjectCategory;
   title: string;
   content: string;
   modifiedAt: number;

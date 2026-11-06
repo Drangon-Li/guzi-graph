@@ -10,6 +10,7 @@ import type { createSceneTracker } from "../../shared/model/document";
 import type { Presentation } from "../presentation/model";
 import type { PresentationController } from "../presentation/control";
 import type { SceneSnapshot } from "../../shared/model/document";
+import type { ProjectCategory } from "../../../shared/desktop-api";
 
 export type SlideRuntime = {
   snapshot?: SceneSnapshot;
@@ -40,22 +41,37 @@ export interface PresentationHistory {
   pending?: { entry: PresentationHistoryEntry; direction: "undo" | "redo" };
 }
 
+export interface EditorSleepCheckpoint {
+  path: string[];
+  children: Map<string, HistoryCheckpoint>;
+  history?: HistoryCheckpoint;
+  resetScrollConstraints?: boolean;
+  childViewModeEnabled?: boolean;
+}
+
 export interface CanvasDocument {
   presentation?: Presentation;
   activeSlideId?: string;
   activeSlideContent?: string;
   presenting?: boolean;
   presentationController?: PresentationController;
+  presentationPastes?: { slideId: string; event?: ClipboardEvent }[];
   invalidateSubsceneHistory?: (ids: string[]) => void;
   slideRuntime?: Map<string, SlideRuntime>;
   presentationHistory?: PresentationHistory;
   id: string;
   path: string | null;
+  initialSaveCategory?: ProjectCategory;
   title: string;
   modifiedAt: number | null;
   initialData: ExcalidrawInitialDataState;
   api: ExcalidrawImperativeAPI | null;
   initialized: boolean;
+  asleep?: boolean;
+  background?: { since: number; preparing?: boolean };
+  sleepPins?: number;
+  sleepCheckpoint?: EditorSleepCheckpoint;
+  checkpointEditor?: () => EditorSleepCheckpoint;
   flushEditing?: () => void;
   hasPendingImages?: () => boolean;
   flushPendingImages?: () => Promise<void>;

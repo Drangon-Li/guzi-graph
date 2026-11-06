@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { CaptureUpdateAction } from "@excalidraw/element";
 import { constrainScrollState } from "@excalidraw/excalidraw/viewport";
 
@@ -10,6 +10,8 @@ import type {
 
 import { translate } from "../../shared/i18n/i18n";
 
+import { PaperPageManagementPanel } from "./PaperPageManagementPanel";
+import { PaperSettingsPanel } from "./PaperSettingsPanel";
 import {
   appendPaperPage,
   getPaperPages,
@@ -17,11 +19,7 @@ import {
   paperViewport,
   paperViewportOffsets,
 } from "./paper";
-import {
-  PageGesture,
-  PAGE_PULL_THRESHOLD,
-  WHEEL_PAGE_IDLE,
-} from "./pageGesture";
+import { PageGesture, PAGE_PULL_THRESHOLD } from "./pageGesture";
 
 import "./paper.scss";
 
@@ -30,14 +28,54 @@ export type PaperGestureHandler = (
   state: AppState,
 ) => void;
 
+const getAppendableLastPage = (pages: ReturnType<typeof getPaperPages>) => {
+  const last = pages.at(-1);
+  const kind = last?.customData?.guziPaper?.kind;
+  return (kind === "blank" || kind === "ruled") &&
+    !pages.some((page) => page.customData?.guziPaper?.kind === "pdf")
+    ? last
+    : undefined;
+};
+
+const paperConstraint = (
+  api: ExcalidrawImperativeAPI,
+  pages: ReturnType<typeof getPaperPages>,
+  zoom: number,
+): NonNullable<AppState["scrollConstraints"]> => {
+  const left = Math.min(...pages.map((page) => page.x));
+  const right = Math.max(...pages.map((page) => page.x + page.width));
+  const top = Math.min(...pages.map((page) => page.y));
+  const bottom = Math.max(...pages.map((page) => page.y + page.height));
+  const last = getAppendableLastPage(pages);
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+    lockScroll: true,
+    lockZoom: false,
+    zoom,
+    overscroll: 80,
+    elasticPan: true,
+    // If both stacks fit, appending a sheet moves the centered stop by
+    // half the added height. Keep the pull within that available travel.
+    maxOverscrollYInScene: last ? (last.height + PAPER_GAP) / 2 : undefined,
+    offsets: paperViewportOffsets(
+      api.getViewportOffsets({ useSettledToolDock: true }),
+    ),
+  };
+};
+
 export const PaperPageControls = ({
   api,
   active,
+  ownedConstraint,
   language,
   register,
 }: {
   api: ExcalidrawImperativeAPI;
   active: boolean;
+  ownedConstraint: React.RefObject<AppState["scrollConstraints"]>;
   language: "en" | "zh-CN";
   register: (handler: PaperGestureHandler | null) => void;
 }) => {
@@ -47,23 +85,39 @@ export const PaperPageControls = ({
     progress: 0,
     armed: false,
   });
-  const ownedConstraint = useRef<AppState["scrollConstraints"]>(null);
   const cancelGesture = useRef<(() => void) | null>(null);
   const [pageInput, setPageInput] = useState<string | null>(null);
+  const [openPanel, setOpenPanel] = useState<"management" | "settings" | null>(
+    null,
+  );
+  const closePanel = useCallback(() => setOpenPanel(null), []);
+  const managingPages = openPanel === "management";
+  const settingsOpen = openPanel === "settings";
+  const settingsId = useId();
+  const settingsToggle = useRef<HTMLButtonElement>(null);
+  const managementId = useId();
+  const managementToggle = useRef<HTMLButtonElement>(null);
+  const lastJump = useRef<{
+    pageId: string;
+    y: number;
+    scrollY: number;
+    zoom: number;
+  } | null>(null);
   const t = (message: string) => translate(language, message);
   const state = api.getAppState();
   const pages = getPaperPages(api.getSceneElements());
   const visible = active && pages.length > 0;
-  const canAppend = ["blank", "ruled"].includes(
-    pages.at(-1)?.customData?.guziPaper?.kind,
+  const hasRuledPages = pages.some(
+    (page) => page.customData?.guziPaper?.kind === "ruled",
   );
-  const offsets = api.getViewportOffsets();
+  const canAppend = !!getAppendableLastPage(pages) && !state.viewModeEnabled;
+  const offsets = api.getViewportOffsets({ useSettledToolDock: true });
   const centerY =
     ((offsets.top ?? 0) + state.height - (offsets.bottom ?? 0)) /
       2 /
       state.zoom.value -
     state.scrollY;
-  const current = pages.reduce(
+  const closest = pages.reduce(
     (best, page, index) =>
       Math.abs(page.y + page.height / 2 - centerY) <
       Math.abs(pages[best].y + pages[best].height / 2 - centerY)
@@ -71,38 +125,81 @@ export const PaperPageControls = ({
         : best,
     0,
   );
-  const jump = (index: number, fitWidth = false) => {
+  const anchor = lastJump.current;
+  const jumpedTo =
+    anchor &&
+    anchor.zoom === state.zoom.value &&
+    Math.abs(anchor.scrollY - state.scrollY) < 0.01
+      ? pages.findIndex(
+          (page) => page.id === anchor.pageId && page.y === anchor.y,
+        )
+      : -1;
+  const current = jumpedTo < 0 ? closest : jumpedTo;
+  const jumpToPage = (
+    pageId: string,
+    fitWidth = false,
+    layoutChanged = false,
+  ) => {
     cancelGesture.current?.();
-    const page = getPaperPages(api.getSceneElements())[index];
+    const currentPages = getPaperPages(api.getSceneElements());
+    const page = currentPages.find((frame) => frame.id === pageId);
     if (page) {
       const currentState = api.getAppState();
       const viewport = paperViewport(
         page,
         currentState,
-        api.getViewportOffsets(),
+        api.getViewportOffsets({ useSettledToolDock: true }),
         fitWidth,
       );
       // Stop core navigation animations before this event commits its destination.
       api.setViewport(null);
+      let constraint = currentState.scrollConstraints;
+      if (
+        layoutChanged &&
+        (!constraint || constraint === ownedConstraint.current)
+      ) {
+        constraint = paperConstraint(api, currentPages, viewport.zoom.value);
+        ownedConstraint.current = constraint;
+      }
+      const target = constrainScrollState({
+        ...currentState,
+        ...viewport,
+        scrollConstraints: constraint,
+      });
+      // At low zoom, a jump can display several small PDF pages at once.
+      lastJump.current = {
+        pageId: page.id,
+        y: page.y,
+        scrollY: target.scrollY,
+        zoom: target.zoom.value,
+      };
       api.updateScene({
         appState: {
-          ...viewport,
-          scrollConstraints: currentState.scrollConstraints,
-          scrollX: constrainScrollState({ ...currentState, ...viewport })
-            .scrollX,
+          ...target,
+          scrollConstraints: constraint,
         },
         captureUpdate: CaptureUpdateAction.NEVER,
       });
     }
   };
+  const jump = (index: number, fitWidth = false) => {
+    if (pages[index]) {
+      jumpToPage(pages[index].id, fitWidth);
+    }
+  };
 
   useEffect(() => api.onChange(() => refresh((value) => value + 1)), [api]);
+  useEffect(() => {
+    if (!visible || (!hasRuledPages && settingsOpen)) {
+      closePanel();
+    }
+  }, [closePanel, hasRuledPages, settingsOpen, visible]);
   useEffect(() => {
     if (!visible) {
       return;
     }
     let syncing = false;
-    let previousLayout = "";
+    let previousDimensions: [number, number] | null = null;
     const sync = () => {
       if (syncing) {
         return;
@@ -118,51 +215,66 @@ export const PaperPageControls = ({
       if (!currentPages.length) {
         return;
       }
-      const left = Math.min(...currentPages.map((page) => page.x));
-      const right = Math.max(
-        ...currentPages.map((page) => page.x + page.width),
-      );
-      const viewportOffsets = paperViewportOffsets(api.getViewportOffsets());
-      const layout = JSON.stringify([
-        left,
-        right,
-        viewportOffsets,
-        currentState.width,
-      ]);
-      if (layout === previousLayout && currentState.scrollConstraints) {
+      const previous = currentState.scrollConstraints;
+      const next = paperConstraint(api, currentPages, currentState.zoom.value);
+      const sameGeometry =
+        previous?.x === next.x &&
+        previous.y === next.y &&
+        previous.width === next.width &&
+        previous.height === next.height &&
+        previous.maxOverscrollYInScene === next.maxOverscrollYInScene;
+      const sameDimensions =
+        previousDimensions?.[0] === currentState.width &&
+        previousDimensions[1] === currentState.height;
+      const sideChanged =
+        previous?.offsets?.left !== next.offsets?.left ||
+        previous?.offsets?.right !== next.offsets?.right;
+      const sameOffsets =
+        !sideChanged &&
+        previous?.offsets?.top === next.offsets?.top &&
+        previous?.offsets?.bottom === next.offsets?.bottom;
+      if (sameGeometry && sameOffsets && sameDimensions) {
         return;
       }
-      previousLayout = layout;
-      const constraint: NonNullable<AppState["scrollConstraints"]> = {
-        x: left,
-        y: 0,
-        width: right - left,
-        height: 1,
-        lockScroll: "x",
-        lockZoom: false,
-        zoom: currentState.zoom.value,
-        overscroll: 80,
-        offsets: viewportOffsets,
-      };
-      ownedConstraint.current = constraint;
+      previousDimensions = [currentState.width, currentState.height];
+      ownedConstraint.current = next;
       syncing = true;
-      api.updateScene({
-        appState: {
-          scrollConstraints: constraint,
-          scrollX: constrainScrollState({
-            ...currentState,
-            scrollConstraints: constraint,
-          }).scrollX,
-        },
-        captureUpdate: CaptureUpdateAction.NEVER,
-      });
+      if (previous && sameGeometry && sameDimensions && sideChanged) {
+        api.transitionScrollConstraints(next);
+      } else {
+        api.updateScene({
+          appState: {
+            scrollConstraints: next,
+            ...constrainScrollState({
+              ...currentState,
+              scrollConstraints: next,
+            }),
+          },
+          captureUpdate: CaptureUpdateAction.NEVER,
+        });
+      }
       syncing = false;
     };
     const unsubscribe = api.onChange(sync);
+    const root = node.current?.parentElement;
+    const ownerWindow = root?.ownerDocument.defaultView;
+    // Dock collapse is local to LayerUI and need not cause an App update.
+    const observer = ownerWindow && new ownerWindow.MutationObserver(sync);
+    if (observer && root) {
+      observer.observe(root, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["data-viewport-ui", "data-viewport-dock-width"],
+      });
+    }
     sync();
     return () => {
+      observer?.disconnect();
       unsubscribe();
-      if (api.getAppState().scrollConstraints === ownedConstraint.current) {
+      if (
+        !api.isDestroyed &&
+        api.getAppState().scrollConstraints === ownedConstraint.current
+      ) {
         api.updateScene({
           appState: { scrollConstraints: null },
           captureUpdate: CaptureUpdateAction.NEVER,
@@ -170,7 +282,7 @@ export const PaperPageControls = ({
       }
       ownedConstraint.current = null;
     };
-  }, [api, visible]);
+  }, [api, visible, ownedConstraint]);
   useEffect(() => {
     const ownerWindow = node.current?.ownerDocument.defaultView;
     if (!ownerWindow || !visible || !canAppend) {
@@ -178,31 +290,28 @@ export const PaperPageControls = ({
       return;
     }
     const machine = new PageGesture();
-    let timer: number | undefined;
-    let lastState = api.getAppState();
     let streamHasPage = false;
     const handle: PaperGestureHandler = (gesture, nextState) => {
-      ownerWindow.clearTimeout(timer);
-      lastState = nextState;
-      const last = getPaperPages(api.getSceneElements()).at(-1);
-      const kind = last?.customData?.guziPaper?.kind;
-      if (!last || (kind !== "blank" && kind !== "ruled")) {
-        machine.cancel();
+      const last = getAppendableLastPage(getPaperPages(api.getSceneElements()));
+      if (
+        !last ||
+        nextState.viewModeEnabled ||
+        !nextState.scrollConstraints ||
+        nextState.scrollConstraints !== ownedConstraint.current ||
+        gesture.pastEnd == null
+      ) {
+        machine.update({ ...gesture, phase: "cancel" }, 0);
         setPull({ progress: 0, armed: false });
         return;
       }
-      const viewportOffsets = api.getViewportOffsets();
-      const bottom = nextState.height - (viewportOffsets.bottom ?? 24);
+      const viewportOffsets = nextState.scrollConstraints.offsets;
       const pageLeft = (last.x + nextState.scrollX) * nextState.zoom.value;
       const pageRight = pageLeft + last.width * nextState.zoom.value;
       const overlapsPage =
-        pageRight > (viewportOffsets.left ?? 0) &&
-        pageLeft < nextState.width - (viewportOffsets.right ?? 0) &&
+        pageRight > (viewportOffsets?.left ?? 0) &&
+        pageLeft < nextState.width - (viewportOffsets?.right ?? 0) &&
         (last.y + last.height + nextState.scrollY) * nextState.zoom.value >=
-          (viewportOffsets.top ?? 0);
-      const pastEnd =
-        bottom -
-        (last.y + last.height + nextState.scrollY) * nextState.zoom.value;
+          (viewportOffsets?.top ?? 0);
       if (gesture.phase === "begin" || !machine.active) {
         streamHasPage = overlapsPage;
       }
@@ -211,11 +320,10 @@ export const PaperPageControls = ({
         machine.cancel();
       }
       const create = machine.update(
-        streamHasPage || gesture.phase === "end"
+        streamHasPage || gesture.phase === "end" || gesture.phase === "cancel"
           ? gesture
           : { ...gesture, phase: "cancel" },
-        pastEnd,
-        ownerWindow.performance.now(),
+        gesture.pastEnd,
       );
       setPull({
         progress: machine.progress,
@@ -224,27 +332,18 @@ export const PaperPageControls = ({
       if (create) {
         const next = appendPaperPage(api.getSceneElementsIncludingDeleted());
         if (next) {
+          const constraint = paperConstraint(
+            api,
+            getPaperPages(next.elements),
+            nextState.zoom.value,
+          );
+          ownedConstraint.current = constraint;
           api.updateScene({
             elements: next.elements,
+            appState: { scrollConstraints: constraint },
             captureUpdate: CaptureUpdateAction.IMMEDIATELY,
           });
         }
-      }
-      if (
-        gesture.source === "wheel" &&
-        (gesture.phase === "move" || gesture.phase === "cancel")
-      ) {
-        timer = ownerWindow.setTimeout(() => {
-          const currentState = api.getAppState();
-          const unchanged =
-            currentState.scrollY === lastState.scrollY &&
-            currentState.zoom.value === lastState.zoom.value &&
-            !currentState.editingTextElement;
-          if (!unchanged) {
-            machine.cancel();
-          }
-          handle({ source: "wheel", phase: "end", deltaY: 0 }, currentState);
-        }, WHEEL_PAGE_IDLE);
       }
     };
     const cancel = () => {
@@ -257,7 +356,6 @@ export const PaperPageControls = ({
     ownerWindow.addEventListener("pointerdown", cancel, true);
     ownerWindow.addEventListener("keydown", cancel, true);
     return () => {
-      ownerWindow.clearTimeout(timer);
       ownerWindow.removeEventListener("blur", cancel);
       ownerWindow.removeEventListener("pointerdown", cancel, true);
       ownerWindow.removeEventListener("keydown", cancel, true);
@@ -266,7 +364,7 @@ export const PaperPageControls = ({
       machine.cancel();
       setPull({ progress: 0, armed: false });
     };
-  }, [api, visible, canAppend, register]);
+  }, [api, visible, canAppend, ownedConstraint, register]);
 
   // Keep the mounted owner document available even for an infinite canvas.
   if (!visible) {
@@ -320,6 +418,14 @@ export const PaperPageControls = ({
               className="desktop-paper-add-page"
               onClick={() => {
                 cancelGesture.current?.();
+                if (
+                  !getAppendableLastPage(
+                    getPaperPages(api.getSceneElements()),
+                  ) ||
+                  api.getAppState().viewModeEnabled
+                ) {
+                  return;
+                }
                 const next = appendPaperPage(
                   api.getSceneElementsIncludingDeleted(),
                 );
@@ -401,6 +507,62 @@ export const PaperPageControls = ({
         <button type="button" onClick={() => jump(current, true)}>
           {t("适合页宽")}
         </button>
+        <button
+          type="button"
+          ref={managementToggle}
+          className="desktop-paper-page-toggle"
+          aria-expanded={managingPages}
+          aria-controls={managingPages ? managementId : undefined}
+          onClick={() =>
+            setOpenPanel((open) =>
+              open === "management" ? null : "management",
+            )
+          }
+        >
+          {t("页面管理")}
+        </button>
+        {hasRuledPages && (
+          <button
+            type="button"
+            ref={settingsToggle}
+            className="desktop-paper-settings-toggle"
+            aria-haspopup="dialog"
+            aria-expanded={settingsOpen}
+            aria-controls={settingsOpen ? settingsId : undefined}
+            onClick={() =>
+              setOpenPanel((open) => (open === "settings" ? null : "settings"))
+            }
+          >
+            {t("纸张设置")}
+          </button>
+        )}
+        {hasRuledPages && settingsOpen && (
+          <PaperSettingsPanel
+            id={settingsId}
+            api={api}
+            language={language}
+            toggleRef={settingsToggle}
+            onClose={closePanel}
+          />
+        )}
+        {managingPages && (
+          <PaperPageManagementPanel
+            id={managementId}
+            api={api}
+            pages={pages}
+            current={pages[current]}
+            language={language}
+            onClose={(restoreFocus = true) => {
+              closePanel();
+              if (restoreFocus) {
+                managementToggle.current?.focus();
+              }
+            }}
+            onNavigate={(pageId, layoutChanged) =>
+              jumpToPage(pageId, false, layoutChanged)
+            }
+          />
+        )}
       </nav>
     </div>
   );

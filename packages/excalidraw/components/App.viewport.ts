@@ -30,10 +30,19 @@ import {
 import {
   constrainScrollState,
   DEFAULT_OVERSCROLL,
+  getDistancePastEnd,
+  getElasticOverscrollY,
+  panViewportWithinConstraints,
   type SetViewportOptions,
   type SetViewportRect,
   zoomToFitBounds,
 } from "../viewport";
+
+import {
+  PaperMotionSamples,
+  stepPaperSpring,
+  type PaperSpringAxis,
+} from "./App.viewportPaper";
 
 import type {
   AppProps,
@@ -43,6 +52,7 @@ import type {
   ScrollConstraints,
   ViewportOffsets,
   ViewportOffsetsOptions,
+  ViewportGesture,
   ViewportUIDock,
   ViewportUIName,
 } from "../types";
@@ -61,6 +71,7 @@ const DEFAULT_SCROLL_ANIMATION_DURATION = 500;
 /** rubberband snap-back animation duration, in ms — kept snappier than the
  * default scroll animation so releasing an overscroll feels responsive */
 const SNAP_BACK_ANIMATION_DURATION = 250;
+const SCROLL_CONSTRAINTS_TRANSITION_DURATION = 260;
 
 /** how long after the last pan/zoom we animate the rubberband back into the
  * scroll constraints box */
@@ -79,6 +90,14 @@ export const RIGHT_SIDEBAR_WIDTH = 302;
 const STYLES_PANEL_APPROX_WIDTH = { full: 216, compact: 64 };
 
 type Viewport = Pick<AppState, "scrollX" | "scrollY" | "zoom">;
+type SpringAxes = { x: PaperSpringAxis | null; y: PaperSpringAxis | null };
+type PaperSpring = { axes: SpringAxes; geometry: AppState };
+
+const sameScrollGeometry = (a: AppState, b: AppState) =>
+  a.scrollConstraints === b.scrollConstraints &&
+  a.zoom.value === b.zoom.value &&
+  a.width === b.width &&
+  a.height === b.height;
 
 const isSetViewportRect = (target: unknown): target is SetViewportRect => {
   if (!target || typeof target !== "object" || Array.isArray(target)) {
@@ -474,8 +493,17 @@ export class AppViewport {
   readonly scrollToContentAnimationKey = Symbol("scrollToContentAnimation");
   readonly snapBackAnimationKey = Symbol("snapBackAnimation");
   readonly caretFollowAnimationKey = Symbol("caretFollowAnimation");
+  readonly scrollConstraintsAnimationKey = Symbol("scrollConstraintsAnimation");
+  private constraintTransition: {
+    constraint: ScrollConstraints;
+    anchorScrollX: number;
+  } | null = null;
   private caretFollowTarget: { scrollX: number; scrollY: number } | null = null;
   private caretFollowInterrupt: (() => void) | null = null;
+  private paperSpring: PaperSpring | null = null;
+  private paperSpringToken = 0;
+  private paperMotion = new PaperMotionSamples();
+  private paperMotionZoom: number | undefined;
 
   registerCaretFollow = (onInterrupt: () => void) => {
     this.caretFollowInterrupt = onInterrupt;
@@ -502,7 +530,8 @@ export class AppViewport {
       scrollX: state.scrollX + x / state.zoom.value,
       scrollY: state.scrollY + y / state.zoom.value,
     };
-    AnimationController.cancel(this.snapBackAnimationKey);
+    this.cancelSnapBack();
+    this.cancelConstraintTransition();
     AnimationController.cancel(this.caretFollowAnimationKey);
     const reducedMotion = this.app.ownerWindow.matchMedia(
       "(prefers-reduced-motion: reduce)",
@@ -549,6 +578,7 @@ export class AppViewport {
     return (
       AnimationController.running(this.scrollToContentAnimationKey) ||
       AnimationController.running(this.snapBackAnimationKey) ||
+      AnimationController.running(this.scrollConstraintsAnimationKey) ||
       AnimationController.running(this.caretFollowAnimationKey)
     );
   }
@@ -577,6 +607,20 @@ export class AppViewport {
     return left + domRect.width / 2 < this.app.state.width / 2
       ? { side: "left" as const, offset: right }
       : { side: "right" as const, offset: this.app.state.width - left };
+  };
+
+  private measureSettledSide = (
+    node: HTMLElement,
+    containerRect: DOMRect,
+  ): { side: "left" | "right"; offset: number } => {
+    const { viewportDockSide: side, viewportDockWidth: width } = node.dataset;
+    if ((side === "left" || side === "right") && width) {
+      const inset = parseFloat(
+        this.app.ownerWindow.getComputedStyle(node)[side],
+      );
+      return { side, offset: Number(width) + (inset || 0) };
+    }
+    return this.measureSide(node, containerRect);
   };
 
   /**
@@ -927,10 +971,10 @@ export class AppViewport {
             );
             break;
           case "side": {
-            const { side, offset } = this.measureSide(
-              node,
-              excalidrawContainerRect,
-            );
+            const measureSide = opts?.useSettledToolDock
+              ? this.measureSettledSide
+              : this.measureSide;
+            const { side, offset } = measureSide(node, excalidrawContainerRect);
 
             measuredOffsets[side] = Math.max(measuredOffsets[side], offset);
 
@@ -1010,12 +1054,14 @@ export class AppViewport {
    * Navigating stops following a collaborator, as a user's pan does.
    */
   setViewport = (opts: SetViewportOptions | null) => {
+    this.app.wheel.cancelPan();
+    this.cancelConstraintTransition();
     this.cancelCaretFollow();
     this.caretFollowInterrupt?.();
     this.interruptSelectionReveal();
     if (opts === null) {
       this.cancelTransition();
-      AnimationController.cancel(this.snapBackAnimationKey);
+      this.cancelSnapBack();
       this.snapBackDebounced.cancel();
       this.app.setState({
         scrollConstraints: null,
@@ -1064,7 +1110,7 @@ export class AppViewport {
     // A new programmatic navigation supersedes the previous one and starts
     // from whatever viewport its last rendered frame reached.
     this.cancelTransition();
-    AnimationController.cancel(this.snapBackAnimationKey);
+    this.cancelSnapBack();
     this.snapBackDebounced.cancel();
 
     if (duration === null) {
@@ -1080,10 +1126,12 @@ export class AppViewport {
     };
     this.activeTransition = transition;
 
-    // The old lock has been superseded. Keep the new lock pending outside
-    // AppState so it cannot constrain animation frames back toward either
-    // endpoint, and install it together with the final viewport.
-    if (this.app.state.scrollConstraints) {
+    // Paper bounds belong to the host. Keep them installed until the new
+    // viewport commits so the host doesn't reinstall them mid-navigation.
+    if (
+      this.app.state.scrollConstraints &&
+      !this.app.state.scrollConstraints.elasticPan
+    ) {
       this.app.setState({ scrollConstraints: null });
     }
 
@@ -1112,6 +1160,400 @@ export class AppViewport {
     );
   };
 
+  /** Moves with the usable viewport when a dock changes its footprint. */
+  transitionScrollConstraints = (constraint: ScrollConstraints) => {
+    this.app.wheel.cancelPan();
+    if (this.activeTransition) {
+      this.app.setState({ scrollConstraints: constraint });
+      return;
+    }
+    const state = this.app.state;
+    const previous = state.scrollConstraints;
+    const centerOffset = (offsets?: Offsets) =>
+      ((offsets?.left ?? 0) - (offsets?.right ?? 0)) / 2;
+    const anchorScrollX =
+      (this.constraintTransition?.constraint === previous &&
+      AnimationController.running(this.scrollConstraintsAnimationKey)
+        ? this.constraintTransition.anchorScrollX
+        : state.scrollX) +
+      (centerOffset(constraint.offsets) - centerOffset(previous?.offsets)) /
+        state.zoom.value;
+    const target = constrainScrollState({
+      ...state,
+      scrollConstraints: constraint,
+      scrollX: anchorScrollX,
+    });
+    this.cancelConstraintTransition();
+    this.cancelSnapBack();
+    this.snapBackDebounced.cancel();
+    const reducedMotion = this.app.ownerWindow.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    if (
+      reducedMotion ||
+      (target.scrollX === state.scrollX && target.scrollY === state.scrollY)
+    ) {
+      this.app.setState({ ...target, scrollConstraints: constraint });
+      return;
+    }
+
+    const transition = { constraint, anchorScrollX };
+    this.constraintTransition = transition;
+    this.app.setState({ scrollConstraints: constraint }, () => {
+      if (this.constraintTransition !== transition) {
+        return;
+      }
+      AnimationController.start<{ elapsed: number }>(
+        this.scrollConstraintsAnimationKey,
+        ({ deltaTime, state: animationState }) => {
+          if (this.app.state.scrollConstraints !== constraint) {
+            this.cancelConstraintTransition();
+            return null;
+          }
+          const elapsed = (animationState?.elapsed ?? 0) + deltaTime;
+          const progress = Math.min(
+            elapsed / SCROLL_CONSTRAINTS_TRANSITION_DURATION,
+            1,
+          );
+          if (progress > 0) {
+            const { scrollX, scrollY } = interpolateViewport({
+              from: state,
+              target,
+              factor: easeOut(progress),
+            });
+            this.app.setState((current) =>
+              current.scrollConstraints === constraint &&
+              this.constraintTransition === transition
+                ? { scrollX, scrollY }
+                : null,
+            );
+          }
+          return progress < 1 ? { elapsed } : null;
+        },
+        this.app.ownerWindow,
+      );
+    });
+  };
+
+  private cancelConstraintTransition = () => {
+    this.constraintTransition = null;
+    AnimationController.cancel(this.scrollConstraintsAnimationKey);
+  };
+
+  beginPan = (time?: number) => {
+    if (this.app.state.scrollConstraints?.elasticPan) {
+      this.cancelConstraintTransition();
+      this.cancelSnapBack();
+      this.snapBackDebounced.cancel();
+      this.paperMotion.clear();
+      this.recordPaperMotion(this.app.state, time);
+    }
+  };
+
+  panBy = (
+    deltaX: number,
+    deltaY: number,
+    source: ViewportGesture["source"],
+    options?: {
+      time?: number;
+      onCommit?: (state: AppState) => void;
+      isCurrent?: () => boolean;
+    },
+  ) => {
+    let movedState: AppState | undefined;
+    let previousPastEnd: number | undefined;
+    return this.translate(
+      (state) => {
+        if (options?.isCurrent && !options.isCurrent()) {
+          return null;
+        }
+        const update = panViewportWithinConstraints(state, deltaX, deltaY);
+        if (state.scrollConstraints?.elasticPan) {
+          // Several events can commit together; each continuation sample
+          // still needs its own position relative to the end.
+          movedState = { ...state, ...update };
+          previousPastEnd = getDistancePastEnd(state);
+        }
+        return update;
+      },
+      {
+        elasticPanPreConstrained: true,
+        onCommit: () => {
+          if (options?.isCurrent && !options.isCurrent()) {
+            return;
+          }
+          if (movedState) {
+            this.recordPaperMotion(movedState, options?.time);
+          }
+          this.notifyPan(
+            previousPastEnd === undefined
+              ? { source, phase: "move", deltaY }
+              : { source, phase: "move", deltaY, previousPastEnd },
+            movedState,
+          );
+          options?.onCommit?.(movedState ?? this.app.state);
+        },
+      },
+    );
+  };
+
+  notifyPan = (gesture: ViewportGesture, state = this.app.state) => {
+    const onGesture = this.app.props.desktopIntegration?.onViewportGesture;
+    if (onGesture) {
+      const pastEnd = getDistancePastEnd(state);
+      onGesture(
+        pastEnd === undefined ? gesture : { ...gesture, pastEnd },
+        state,
+      );
+    }
+  };
+
+  private recordPaperMotion = (state: AppState, time?: number) => {
+    if (!state.scrollConstraints?.elasticPan) {
+      return;
+    }
+    const zoom = state.zoom.value;
+    if (zoom !== this.paperMotionZoom) {
+      this.paperMotion.clear();
+      this.paperMotionZoom = zoom;
+    }
+    const clock = this.app.ownerWindow.performance;
+    const now = clock.now();
+    const timestamp =
+      time === undefined
+        ? now
+        : time > now + 1000
+        ? time - clock.timeOrigin
+        : time;
+    this.paperMotion.add({
+      x: state.scrollX * zoom,
+      y: state.scrollY * zoom,
+      time: timestamp >= 0 && timestamp <= now + 2 ? timestamp : now,
+    });
+  };
+
+  panMomentum = (
+    deltas: readonly { x: number; y: number; time: number }[],
+    stopped: { x: boolean; y: boolean },
+    isCurrent: () => boolean,
+    onCommit: (blocked: { x: boolean; y: boolean }) => void,
+  ) => {
+    let hit = { x: 0, y: 0 };
+    let blocked = { x: false, y: false };
+    let samples: { state: AppState; time: number }[] = [];
+    const canPan = () =>
+      isCurrent() &&
+      this.app.isNavigationEnabled() &&
+      !this.activeTransition &&
+      !AnimationController.running(this.scrollConstraintsAnimationKey);
+    this.app.setState(
+      (state) => {
+        if (!canPan() || !state.scrollConstraints?.elasticPan) {
+          return null;
+        }
+        const hard = constrainScrollState(state);
+        const zoom = state.zoom.value;
+        const ownsAxis = (axis: keyof SpringAxes) =>
+          !!this.paperSpring?.axes[axis] &&
+          sameScrollGeometry(state, this.paperSpring.geometry);
+        hit = { x: 0, y: 0 };
+        samples = [];
+        blocked = {
+          x: stopped.x || ownsAxis("x") || state.scrollX !== hard.scrollX,
+          y: stopped.y || ownsAxis("y") || state.scrollY !== hard.scrollY,
+        };
+        let { scrollX, scrollY } = state;
+        for (const delta of deltas) {
+          if (blocked.x && blocked.y) {
+            break;
+          }
+          const proposed = {
+            ...state,
+            scrollX: scrollX - delta.x / zoom,
+            scrollY: scrollY - delta.y / zoom,
+          };
+          const next = constrainScrollState(proposed);
+          if (!blocked.x) {
+            scrollX = next.scrollX;
+            hit.x = Math.sign(proposed.scrollX - next.scrollX);
+            blocked.x = hit.x !== 0;
+          }
+          if (!blocked.y) {
+            scrollY = next.scrollY;
+            hit.y = Math.sign(proposed.scrollY - next.scrollY);
+            blocked.y = hit.y !== 0;
+          }
+          samples.push({
+            state: { ...state, scrollX, scrollY },
+            time: delta.time,
+          });
+        }
+        return { scrollX, scrollY };
+      },
+      () => {
+        if (canPan()) {
+          for (const sample of samples) {
+            this.recordPaperMotion(sample.state, sample.time);
+          }
+          this.startPaperSpring(hit);
+        }
+        onCommit(blocked);
+      },
+    );
+  };
+
+  private cancelSnapBack = () => {
+    this.paperSpring = null;
+    this.paperSpringToken++;
+    AnimationController.cancel(this.snapBackAnimationKey);
+  };
+
+  private startPaperSpring = (hit = { x: 0, y: 0 }) => {
+    const state = this.app.state;
+    const constraint = state.scrollConstraints;
+    if (!constraint?.elasticPan) {
+      return;
+    }
+    const hard = constrainScrollState(state);
+    if (
+      this.app.ownerWindow.matchMedia("(prefers-reduced-motion: reduce)")
+        .matches
+    ) {
+      if (hard.scrollX !== state.scrollX || hard.scrollY !== state.scrollY) {
+        this.constrain();
+      }
+      return;
+    }
+    const zoom = state.zoom.value;
+    const velocity =
+      zoom === this.paperMotionZoom
+        ? this.paperMotion.velocity(this.app.ownerWindow.performance.now())
+        : { x: 0, y: 0 };
+    const axis = (
+      current: number,
+      edge: number,
+      speed: number,
+      direction: number,
+      cap: number,
+    ): PaperSpringAxis | null => {
+      const displacement = (current - edge) * zoom;
+      if (!displacement && (!direction || direction !== Math.sign(speed))) {
+        return null;
+      }
+      return {
+        displacement,
+        velocity: speed,
+        edge,
+        limit: Math.max(Math.abs(displacement), cap),
+      };
+    };
+    const x = axis(
+      state.scrollX,
+      hard.scrollX,
+      velocity.x,
+      hit.x,
+      constraint.overscroll,
+    );
+    const y = axis(
+      state.scrollY,
+      hard.scrollY,
+      velocity.y,
+      hit.y,
+      getElasticOverscrollY(constraint, zoom),
+    );
+    if (!x && !y) {
+      return;
+    }
+    if (this.paperSpring) {
+      // Momentum can reach the other edge while one axis is still settling.
+      if (sameScrollGeometry(state, this.paperSpring.geometry)) {
+        this.paperSpring.axes.x ??= x;
+        this.paperSpring.axes.y ??= y;
+      }
+      return;
+    }
+
+    const session: PaperSpring = { axes: { x, y }, geometry: state };
+    const token = ++this.paperSpringToken;
+    this.paperSpring = session;
+    AnimationController.start<PaperSpring>(
+      this.snapBackAnimationKey,
+      ({ deltaTime, state: running = session }) => {
+        const current = this.app.state;
+        if (
+          this.paperSpring !== session ||
+          !current.scrollConstraints?.elasticPan
+        ) {
+          this.paperSpring = null;
+          return null;
+        }
+        if (!sameScrollGeometry(current, running.geometry)) {
+          const rest = constrainScrollState(current);
+          const rebase = (
+            prev: PaperSpringAxis | null,
+            scroll: number,
+            edge: number,
+            cap: number,
+          ) => {
+            const displacement = (scroll - edge) * current.zoom.value;
+            return prev && displacement
+              ? {
+                  ...prev,
+                  displacement,
+                  edge,
+                  limit: Math.max(Math.abs(displacement), cap),
+                }
+              : null;
+          };
+          running.axes.x = rebase(
+            running.axes.x,
+            current.scrollX,
+            rest.scrollX,
+            current.scrollConstraints.overscroll,
+          );
+          running.axes.y = rebase(
+            running.axes.y,
+            current.scrollY,
+            rest.scrollY,
+            getElasticOverscrollY(
+              current.scrollConstraints,
+              current.zoom.value,
+            ),
+          );
+          running.geometry = current;
+        }
+        if (deltaTime > 0 && (running.axes.x || running.axes.y)) {
+          const { x: beforeX, y: beforeY } = running.axes;
+          const nextX = beforeX && stepPaperSpring(beforeX, deltaTime);
+          const nextY = beforeY && stepPaperSpring(beforeY, deltaTime);
+          running.axes = { x: nextX, y: nextY };
+          this.app.setState((state) => {
+            if (
+              token !== this.paperSpringToken ||
+              !sameScrollGeometry(state, current)
+            ) {
+              return null;
+            }
+            return {
+              scrollX: beforeX
+                ? beforeX.edge + (nextX?.displacement ?? 0) / state.zoom.value
+                : state.scrollX,
+              scrollY: beforeY
+                ? beforeY.edge + (nextY?.displacement ?? 0) / state.zoom.value
+                : state.scrollY,
+            };
+          });
+        }
+        if (running.axes.x || running.axes.y) {
+          return running;
+        }
+        this.paperSpring = null;
+        return null;
+      },
+      this.app.ownerWindow,
+    );
+  };
+
   /** Use when changing scrollX/scrollY/zoom based on user interaction. */
   translate = <K extends keyof AppState>(
     state:
@@ -1125,6 +1567,8 @@ export class AppViewport {
     opts?: {
       zoomPreConstrained?: boolean;
       preserveScrollConstraintsSnapBack?: boolean;
+      elasticPanPreConstrained?: boolean;
+      onCommit?: () => void;
     },
   ) => {
     this.interruptSelectionReveal();
@@ -1145,8 +1589,9 @@ export class AppViewport {
       this.app.setState({ shouldCacheIgnoreZoom: false });
     }
     this.cancelTransition();
+    this.cancelConstraintTransition();
     if (!opts?.preserveScrollConstraintsSnapBack) {
-      AnimationController.cancel(this.snapBackAnimationKey);
+      this.cancelSnapBack();
     }
     this.app.requestUnfollow();
 
@@ -1157,7 +1602,11 @@ export class AppViewport {
         return null;
       }
       const nextState = { ...prevState, ...update };
-      if (!nextState.scrollConstraints) {
+      if (
+        !nextState.scrollConstraints ||
+        (nextState.scrollConstraints.elasticPan &&
+          opts?.elasticPanPreConstrained)
+      ) {
         return update;
       }
       const zoomed =
@@ -1168,7 +1617,7 @@ export class AppViewport {
         this.snapBackDebounced();
       }
       return { ...nextState, ...constrainScrollState(nextState, overscroll) };
-    });
+    }, opts?.onCommit);
 
     return true;
   };
@@ -1191,8 +1640,29 @@ export class AppViewport {
     this.snapBack();
   };
 
+  releaseOverscrollAfterCommit = () => {
+    const token = this.paperSpringToken;
+    this.app.setState({}, () => {
+      if (token === this.paperSpringToken) {
+        this.releaseOverscroll();
+      }
+    });
+  };
+
+  scheduleOverscrollRelease = () => {
+    this.snapBackDebounced();
+  };
+
   private snapBack = () => {
-    if (this.app.unmounted || this.dependencies.isGestureActive()) {
+    if (
+      this.app.unmounted ||
+      this.dependencies.isGestureActive() ||
+      AnimationController.running(this.scrollConstraintsAnimationKey)
+    ) {
+      return;
+    }
+    if (this.app.state.scrollConstraints?.elasticPan) {
+      this.startPaperSpring();
       return;
     }
     if (
@@ -1229,7 +1699,8 @@ export class AppViewport {
     this.caretFollowInterrupt = null;
     this.interruptSelectionReveal();
     this.cancelTransition();
-    AnimationController.cancel(this.snapBackAnimationKey);
+    this.cancelConstraintTransition();
+    this.cancelSnapBack();
     this.snapBackDebounced.cancel();
   };
 }

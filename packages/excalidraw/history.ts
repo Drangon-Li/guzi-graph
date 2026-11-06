@@ -115,10 +115,10 @@ export class History {
     this.redoStack.length = 0;
   }
 
-  public checkpoint(): HistoryCheckpoint {
+  public checkpoint(limit = 200): HistoryCheckpoint {
     return {
-      undo: this.undoStack.slice(-200),
-      redo: this.redoStack.slice(-200),
+      undo: this.undoStack.slice(-limit),
+      redo: this.redoStack.slice(-limit),
     };
   }
 

@@ -165,6 +165,33 @@
         font-size: 16px;
       }
     }
+    .desktop-plugin-ssh {
+      margin-top: 20px;
+
+      summary {
+        width: fit-content;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      label {
+        flex-wrap: wrap;
+        font-size: 13px;
+      }
+      input {
+        box-sizing: border-box;
+        max-width: 100%;
+        padding: 8px;
+        border: 1px solid var(--default-border-color);
+        border-radius: 6px;
+        color: inherit;
+        background: var(--color-surface-lowest);
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+    }
   }
   .desktop-settings-item {
     display: flex;

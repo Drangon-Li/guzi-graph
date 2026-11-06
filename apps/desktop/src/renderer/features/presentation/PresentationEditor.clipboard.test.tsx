@@ -626,6 +626,8 @@ describe("presentation thumbnail clipboard and history", () => {
       expect(canvasDocument.activeSlideId).toBe("first");
       expect(canvasDocument.api!.getSceneElements()).toHaveLength(1);
       expect(canvasDocument.api!.getSceneElements()[0].type).toBe("rectangle");
+      expect(canvasDocument.presentationPastes).toHaveLength(1);
+      expect(canvasDocument.sleepPins).toBe(0);
       second.focus();
       fireEvent.click(second);
       await waitFor(() =>
@@ -784,6 +786,8 @@ describe("presentation thumbnail clipboard and history", () => {
       expect(canvasDocument.api?.getAppState().isLoading).toBe(false),
     );
     expect(canvasDocument.api!.getSceneElements()).toHaveLength(0);
+    await waitFor(() => expect(canvasDocument.sleepPins).toBe(0));
+    expect(canvasDocument.presentationPastes).toHaveLength(1);
     act(() => setInteraction(true));
     await waitFor(() =>
       expect(canvasDocument.api?.getSceneElements()).toHaveLength(1),

@@ -40,6 +40,7 @@ import type {
   ExcalidrawElbowArrowElement,
   ExcalidrawFreeDrawElement,
   ExcalidrawLinearElement,
+  ExcalidrawTextElement,
   NonDeleted,
 } from "../src/types";
 import type { TransformHandleDirection } from "../src/transformHandles";
@@ -47,6 +48,28 @@ unmountComponent();
 
 const { h } = window;
 const mouse = new Pointer("mouse");
+
+const makeRuledText = (formatted: boolean) => {
+  const originalText = "first ruled line\nsecond";
+  const richText = formatted ? richTextFromPlainText(originalText) : undefined;
+  if (richText) {
+    richText.paragraphs[0].runs[0].fontSizeScale = 1.5;
+  }
+  return newElementWith(
+    API.createElement({ type: "text", text: originalText, fontSize: 16 }),
+    {
+      width: 240,
+      height: 64,
+      lineHeight: 2 as ExcalidrawTextElement["lineHeight"],
+      autoResize: false,
+      richText,
+      customData: {
+        guziRuledText: { version: 1, lineSpacing: 32 },
+        extra: "keep",
+      },
+    },
+  );
+};
 
 const getBoundsFromPoints = (
   element: ExcalidrawLinearElement | ExcalidrawFreeDrawElement,
@@ -721,6 +744,49 @@ describe("arrow element", () => {
 });
 
 describe("text element", () => {
+  it.each([false, true])(
+    "preserves ruled text when wrapping and detaches it when scaling (rich: %s)",
+    (formatted) => {
+      const text = makeRuledText(formatted);
+      API.setElements([text]);
+      UI.resize(text, "e", [-150, 0]);
+      expect(text.fontSize).toBe(16);
+      expect(text.height).toBeGreaterThan(64);
+      expect(text.height % 32).toBe(0);
+      expect(text.customData?.guziRuledText).toEqual({
+        version: 1,
+        lineSpacing: 32,
+      });
+
+      const original = { ...text };
+      const scene = h.app.scene;
+      const resize = (scale: number) =>
+        act(() =>
+          resizeSingleElement(
+            original.width * scale,
+            original.height * scale,
+            text,
+            original,
+            new Map([[text.id, original]]),
+            scene,
+            "se",
+          ),
+        );
+      resize(1.5);
+      expect(text.fontSize).toBeCloseTo(24);
+      expect(text.customData).toEqual({ extra: "keep" });
+      if (formatted) {
+        const layout = layoutRichText(text, text.width);
+        expect(text.height).toBeCloseTo(layout.height);
+        expect(text.text).toBe(layout.text);
+      }
+      resize(1);
+      expect(text.fontSize).toBe(16);
+      expect(text.height).toBeCloseTo(original.height);
+      expect(text.customData).toEqual(original.customData);
+    },
+  );
+
   it("resizes", async () => {
     const text = UI.createElement("text");
     await UI.editText(text, "hello\nworld");
@@ -1077,6 +1143,26 @@ describe("image element", () => {
 });
 
 describe("multiple selection", () => {
+  it("detaches ruled text when a group resize scales its font", () => {
+    const text = makeRuledText(true);
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 280,
+      width: 100,
+      height: 80,
+    });
+    API.setElements([text, rectangle]);
+
+    UI.resize([text, rectangle], "se", [100, 40]);
+
+    expect(rectangle.width).toBeGreaterThan(100);
+    expect(text.fontSize).toBeGreaterThan(16);
+    expect(text.customData).toEqual({ extra: "keep" });
+    const layout = layoutRichText(text, text.width);
+    expect(text.height).toBeCloseTo(layout.height);
+    expect(text.text).toBe(layout.text);
+  });
+
   it("keeps a flipped text container anchored when its label requires extra height", async () => {
     const rectangle = UI.createElement("rectangle", {
       position: 0,

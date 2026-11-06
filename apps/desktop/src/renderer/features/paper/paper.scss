@@ -173,7 +173,6 @@
   border-radius: inherit;
   background: var(--color-primary, #6965db);
   transform-origin: left;
-  transition: transform 80ms linear;
 }
 .desktop-paper-add-page {
   padding: 4px 6px;
@@ -200,8 +199,7 @@
   clip-path: inset(50%);
 }
 @media (prefers-reduced-motion: reduce) {
-  .desktop-paper-pull-hint,
-  .desktop-paper-pull-progress-fill {
+  .desktop-paper-pull-hint {
     transition: none;
   }
   .desktop-paper-next-outline {

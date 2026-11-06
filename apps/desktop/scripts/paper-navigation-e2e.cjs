@@ -12,10 +12,10 @@ const progressOnly = process.argv.includes("--progress-only");
 const artifacts = path.resolve(desktop, `../../output/playwright/${progressOnly ? "paper-progress" : "paper-navigation"}`);
 const report = {
   passed: false, checks: [], evidence: {}, errors: [],
-  evidenceBoundary: "Playwright sends native renderer mouse, wheel and keyboard events. Physical macOS touchpad finger release, OS momentum phases and actual two-finger system gestures require manual verification and are not claimed by this test.",
+  evidenceBoundary: "Playwright exercises real renderer mouse, wheel and keyboard input. The momentum-specific cases inject DOM WheelEvent instances with Chromium’s momentum flag. They validate the application’s phase handling but do not reproduce the macOS touchpad or physical finger release.",
 };
 const owned = new Map();
-let application, page, client, isolated, stopping;
+let application, page, client, isolated, profile, launching, stopping;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const bounded = (promise, ms, label) => {
   let timeout;
@@ -42,12 +42,12 @@ const remember = () => {
   const main = table.find((item) => item.pid === application?.process()?.pid);
   if (main) owned.set(main.pid, main.command);
   for (const item of table) {
-    if (item.parent === process.pid && item.command.includes(desktop) && /[Ee]lectron/.test(item.command)) owned.set(item.pid, item.command);
+    if (profile && item.command.split(" ").includes(`--user-data-dir=${profile}`)) owned.set(item.pid, item.command);
   }
   let changed;
   do {
     changed = false;
-    for (const item of table) if (owned.has(item.parent) && !owned.has(item.pid)) {
+    for (const item of table) if (table.some((parent) => parent.pid === item.parent && owned.get(parent.pid) === parent.command) && !owned.has(item.pid)) {
       owned.set(item.pid, item.command); changed = true;
     }
   } while (changed);
@@ -85,27 +85,32 @@ const editor = async (operation = {}) => page.locator(".desktop-editor-pane.is-a
   if (command.position) {
     app.viewport.interruptSelectionReveal();
     const state = app.state;
-    const sheet = papers().at(-1);
     const zoom = state.zoom.value;
     const constraints = state.scrollConstraints;
-    const offsets = model.api.getViewportOffsets();
     const patch = { selectedElementIds: {} };
+    const offsets = constraints.offsets;
+    const minX = state.width / zoom - constraints.x - constraints.width - (offsets.right ?? 0) / zoom;
+    const maxX = -constraints.x + (offsets.left ?? 0) / zoom;
+    const minY = state.height / zoom - constraints.y - constraints.height - (offsets.bottom ?? 0) / zoom;
+    const maxY = -constraints.y + (offsets.top ?? 0) / zoom;
+    const clamp = (value, min, max) => min > max ? (min + max) / 2 : Math.max(min, Math.min(max, value));
     if (command.position === "end" || command.position === "below") {
-      patch.scrollY = (state.height - (offsets.bottom ?? 24)) / zoom - sheet.y - sheet.height;
+      patch.scrollY = clamp(minY, minY, maxY);
       if (command.position === "below") patch.scrollY -= (state.height + 200) / zoom;
     }
-    if (command.position === "left") patch.scrollX = -constraints.x + (constraints.offsets?.left ?? 0) / zoom;
-    if (command.position === "right") patch.scrollX = state.width / zoom - (constraints.x + constraints.width) - (constraints.offsets?.right ?? 0) / zoom;
+    if (command.position === "top") patch.scrollY = clamp(maxY, minY, maxY) - (command.inside ?? 0) / zoom;
+    if (command.position === "left") patch.scrollX = clamp(maxX, minX, maxX) + (command.overBy ?? 0) / zoom;
+    if (command.position === "right") patch.scrollX = clamp(minX, minX, maxX);
     if (command.position === "center") {
-      const max = -constraints.x + (constraints.offsets?.left ?? 0) / zoom;
-      const min = state.width / zoom - constraints.x - constraints.width - (constraints.offsets?.right ?? 0) / zoom;
-      patch.scrollX = min > max ? (min + max) / 2 : Math.max(min, Math.min(max, state.scrollX));
+      patch.scrollX = (minX + maxX) / 2;
+      patch.scrollY = clamp(state.scrollY, minY, maxY);
     }
     model.api.updateScene({ appState: patch });
   }
   const read = () => {
     const state = app.state;
     return {
+    t: mounted.ownerDocument.defaultView.performance.now(),
     scrollX: state.scrollX, scrollY: state.scrollY, zoom: state.zoom.value,
     width: state.width, height: state.height, constraints: state.scrollConstraints,
     offsets: model.api.getViewportOffsets(), animating: app.viewport.isAnimating,
@@ -113,6 +118,70 @@ const editor = async (operation = {}) => page.locator(".desktop-editor-pane.is-a
     papers: papers().map(({ id, x, y, width, height, customData }) => ({ id, x, y, width, height, kind: customData.guziPaper.kind })),
     };
   };
+  const view = mounted.ownerDocument.defaultView;
+  if (command.probeMomentum) {
+    const defaults = new view.WheelEvent("wheel");
+    const direct = new view.WheelEvent("wheel", { momentum: false });
+    const inertia = new view.WheelEvent("wheel", { momentum: true });
+    return {
+      exposed: "momentum" in defaults,
+      defaultMomentum: defaults.momentum,
+      direct: direct.momentum,
+      inertia: inertia.momentum,
+      userAgent: view.navigator.userAgent,
+    };
+  }
+  if (command.wheelInput) {
+    const canvas = mounted.querySelector("canvas.interactive");
+    const box = canvas.getBoundingClientRect();
+    const trace = [];
+    for (const input of command.wheelInput) {
+      const before = read();
+      const event = new view.WheelEvent("wheel", {
+        bubbles: true, cancelable: true,
+        clientX: box.left + box.width / 2, clientY: box.top + box.height / 2,
+        deltaX: input.x ?? 0, deltaY: input.y ?? 0, momentum: input.momentum,
+      });
+      canvas.dispatchEvent(event);
+      await new Promise((resolve) => view.requestAnimationFrame(() => view.requestAnimationFrame(resolve)));
+      trace.push({
+        input,
+        momentum: event.momentum,
+        trusted: event.isTrusted,
+        consumed: event.defaultPrevented,
+        before, after: read(),
+      });
+    }
+    return trace;
+  }
+  if (command.startSpringTrace) {
+    const frames = [];
+    const trace = () => {
+      frames.push(read());
+      if (frames.length < 180) view.__paperSpring.frame = view.requestAnimationFrame(trace);
+    };
+    view.__paperSpring = { frames, frame: view.requestAnimationFrame(trace) };
+  }
+  if (command.takeSpringTrace) {
+    const recording = view.__paperSpring;
+    view.cancelAnimationFrame(recording.frame);
+    delete view.__paperSpring;
+    return recording.frames;
+  }
+  if (command.startContinuationTrace) {
+    view.__paperContinuation?.unsubscribe();
+    const frames = [];
+    const unsubscribe = model.api.onChange(() => {
+      if (papers().length === command.startContinuationTrace) frames.push(read());
+    });
+    view.__paperContinuation = { frames, unsubscribe };
+  }
+  if (command.takeContinuationTrace) {
+    const recording = view.__paperContinuation;
+    recording.unsubscribe();
+    delete view.__paperContinuation;
+    return recording.frames;
+  }
   if (command.frames) {
     const trace = [];
     for (let index = 0; index < command.frames; index++) {
@@ -150,6 +219,10 @@ const installFrameTrace = () => page.locator(".desktop-editor-pane.is-active").e
   for (const type of ["pointerdown", "pointermove", "pointerup"]) {
     view.addEventListener(type, (event) => push({ kind: type, x: event.clientX, y: event.clientY, buttons: event.buttons }), { capture: true, passive: true });
   }
+  view.addEventListener("wheel", (event) => push({
+    kind: "wheel", deltaX: event.deltaX, deltaY: event.deltaY,
+    momentum: event.momentum, trusted: event.isTrusted,
+  }), { capture: true, passive: true });
   view.addEventListener("resize", () => push({ kind: "resize", innerWidth: view.innerWidth, innerHeight: view.innerHeight }));
 });
 const sample = async (label) => {
@@ -159,15 +232,25 @@ const sample = async (label) => {
 };
 const screenshot = async (name) => page.screenshot({ path: path.join(artifacts, `${name}.png`) });
 const close = (actual, expected, message, tolerance = 1) => assert.ok(Math.abs(actual - expected) <= tolerance, `${message}: ${actual} vs ${expected}`);
-const hardX = (state) => {
+const hard = (state, axis, value = axis === "x" ? state.scrollX : state.scrollY) => {
   const lock = state.constraints;
-  assert.equal(lock?.lockScroll, "x", "paper must expose a horizontal-only lock");
+  assert.equal(lock?.lockScroll, true, "paper constrains both axes");
+  assert.equal(lock.elasticPan, true);
   assert.equal(lock.lockZoom, false);
-  const max = -lock.x + (lock.offsets?.left ?? 0) / state.zoom;
-  const min = state.width / state.zoom - lock.x - lock.width - (lock.offsets?.right ?? 0) / state.zoom;
-  return { min, max, target: min > max ? (min + max) / 2 : Math.max(min, Math.min(max, state.scrollX)) };
+  const [size, start, end] = axis === "x" ? ["width", "left", "right"] : ["height", "top", "bottom"];
+  const max = -lock[axis] + (lock.offsets?.[start] ?? 0) / state.zoom;
+  const min = state[size] / state.zoom - lock[axis] - lock[size] - (lock.offsets?.[end] ?? 0) / state.zoom;
+  return { min, max, target: min > max ? (min + max) / 2 : Math.max(min, Math.min(max, value)) };
 };
-const stable = async () => { await delay(550); return editor(); };
+const hardX = (state) => hard(state, "x");
+const stable = async () => {
+  // Wheel-only input still uses an idle fallback before spring motion can start.
+  await delay(300);
+  return until(async () => {
+    const state = await editor();
+    return !state.animating && state;
+  }, "paper viewport settles", 5000);
+};
 const canvasBox = async () => page.locator(".desktop-editor-pane.is-active canvas.interactive").boundingBox();
 const pointerBegin = async () => {
   const box = await canvasBox();
@@ -180,6 +263,164 @@ const atEnd = async () => { await editor({ position: "end" }); await delay(60); 
 const wheel = async (dx, dy, ticks = 1) => {
   for (let index = 0; index < ticks; index++) { await page.mouse.wheel(dx, dy); await delay(25); }
 };
+const visibleNewPage = (state) => {
+  const sheet = state.papers.at(-1);
+  const offsets = state.constraints.offsets;
+  const pageTop = (sheet.y + state.scrollY) * state.zoom;
+  const pageBottom = pageTop + sheet.height * state.zoom;
+  return Math.max(0, Math.min(state.height - (offsets.bottom ?? 0), pageBottom) - Math.max(offsets.top ?? 0, pageTop));
+};
+const checkContinuation = async (label, held, { expectBoundarySpring = false } = {}) => {
+  await count(held.papers.length + 1);
+  const finish = await stable();
+  const frames = await editor({ takeContinuationTrace: true });
+  assert.ok(frames.length >= 1, `${label}: captured the appended viewport`);
+  const targetY = expectBoundarySpring ? hard(finish, "y", held.scrollY).target : held.scrollY;
+  report.evidence[label] = { held, frames, finish, targetY, visiblePixels: visibleNewPage(finish) };
+  close((frames[0].scrollY - held.scrollY) * held.zoom, 0, `${label}: append is atomic before any spring`, 0.02);
+  if (expectBoundarySpring) {
+    assert.ok(Math.abs(targetY - held.scrollY) * held.zoom > 0.2, "The low-zoom fixture is outside the new boundary at append");
+    assert.ok(frames.some(({ animating, scrollY }) => animating &&
+      scrollY > Math.min(held.scrollY, targetY) && scrollY < Math.max(held.scrollY, targetY)),
+    "Out-of-bounds continuation returns through intermediate spring frames");
+    for (let index = 1; index < frames.length; index++) {
+      const previousDistance = Math.abs(frames[index - 1].scrollY - targetY);
+      const distance = Math.abs(frames[index].scrollY - targetY);
+      assert.ok((distance - previousDistance) * held.zoom < 0.02, "Every spring frame approaches the new boundary");
+    }
+    close((finish.scrollY - targetY) * finish.zoom, 0, `${label}: settles exactly at the new boundary`, 0.02);
+  }
+  for (const frame of [...frames, finish]) {
+    assert.ok(
+      frame.scrollY >= Math.min(held.scrollY, targetY) - 0.02 &&
+      frame.scrollY <= Math.max(held.scrollY, targetY) + 0.02,
+      `${label}: no camera motion beyond the held and legal boundary positions`,
+    );
+    close(frame.scrollX, held.scrollX, `${label}: horizontal camera stays in place`, 0.02);
+    close(frame.zoom, held.zoom, `${label}: zoom stays in place`, 0.0001);
+  }
+  const expectedVisible = visibleNewPage({ ...held, papers: frames[0].papers });
+  close(visibleNewPage(frames[0]), expectedVisible, `${label}: newly visible area follows the continuous geometry`, 0.05);
+  return finish;
+};
+const injectWheel = async (inputs) => {
+  const samples = await editor({ wheelInput: inputs });
+  for (const sample of samples) {
+    assert.equal(sample.trusted, false, "Momentum cases use explicitly injected DOM events");
+    assert.equal(sample.momentum, sample.input.momentum);
+    assert.equal(sample.consumed, true, "Injected wheel reaches the production canvas listener");
+  }
+  return samples;
+};
+const momentum = (y) => ({ y, momentum: true });
+const direct = (y) => ({ y, momentum: false });
+
+async function checkWheelPhases() {
+  const probe = await editor({ probeMomentum: true });
+  report.evidence.momentumFeature = probe;
+  assert.equal(probe.exposed, true, "The packaged Chromium exposes WheelEvent.momentum");
+  assert.equal(probe.defaultMomentum, false);
+  assert.equal(probe.direct, false);
+  assert.equal(probe.inertia, true);
+
+  const hint = page.getByText("松手新建一页", { exact: true });
+  await zoomTo(0.3);
+  for (const [label, initial] of [["inertia-only", []], ["unarmed-direct-to-inertia", [direct(15), direct(15)]]]) {
+    const before = await atEnd();
+    const inputs = [...initial, momentum(180), momentum(120), momentum(65)];
+    const trace = await injectWheel(inputs);
+    const after = await stable();
+    report.evidence[label] = { before, trace, after };
+    assert.ok(trace.every(({ after }) => after.papers.length === before.papers.length), `${label}: inertial travel cannot arm continuation`);
+    assert.equal(after.papers.length, before.papers.length);
+    assert.equal(await hint.count(), 0);
+  }
+
+  const before = await atEnd();
+  const arming = await injectWheel([direct(44), direct(44), direct(44)]);
+  const held = arming.at(-1).after;
+  await hint.waitFor();
+  assert.equal(held.papers.length, before.papers.length);
+  await editor({ startContinuationTrace: before.papers.length + 1 });
+  const transition = await injectWheel([momentum(34)]);
+  assert.equal(transition[0].before.papers.length, before.papers.length, "The idle fallback did not append before momentum arrived");
+  const first = transition[0].after;
+  close((held.scrollY - first.scrollY) * first.zoom, 34, "The first inertia delta is consumed after the atomic append", 1);
+  assert.equal(first.papers.length, before.papers.length + 1, "The first momentum event finishes an armed gesture once");
+  const commits = await editor({ takeContinuationTrace: true });
+  assert.ok(commits.length >= 1, "Capture the appended camera before inertia advances it");
+  for (const axis of ["scrollX", "scrollY", "zoom"]) {
+    close(commits[0][axis], held[axis], `append commits at the held ${axis}`, 0.02);
+  }
+  assert.ok(visibleNewPage(commits[0]) > 0, "The appended sheet intersects the viewport on the commit frame");
+
+  const tail = await injectWheel([momentum(35), momentum(22), momentum(10)]);
+  for (const { input, before, after } of tail) {
+    assert.equal(after.papers.length, first.papers.length);
+    close((before.scrollY - after.scrollY) * after.zoom, input.y, "OS momentum pans one for one within the new sheet", 1);
+    close(after.scrollX, held.scrollX, "inertia does not alter horizontal viewport", 0.01);
+    close(after.zoom, held.zoom, "inertia does not alter zoom", 0.0001);
+  }
+  const settled = await stable();
+  const last = tail.at(-1).after;
+  close(settled.scrollY, last.scrollY, "No extra motion or alignment after the last momentum delta", 0.02);
+  assert.equal(settled.papers.length, first.papers.length);
+  assert.ok(visibleNewPage(settled) > visibleNewPage(commits[0]));
+  report.evidence["armed-direct-to-inertia"] = { before, arming, held, transition, commits, tail, settled };
+  await screenshot("momentum-entered-new-page");
+  report.checks.push("Chromium momentum feature detected; injected inertia alone or after an unarmed pull cannot append; first inertia after arming appends once at the held camera, and later inertia moves one for one with no synthetic travel");
+}
+
+async function checkSpring() {
+  await zoomTo(1.8);
+  const release = async ({ slow }) => {
+    await atEnd();
+    await editor({ position: "left" });
+    const edge = await editor();
+    const point = await pointerBegin();
+    await page.mouse.move(point.x + 48, point.y, { steps: 4 });
+    await editor({ startSpringTrace: true });
+    await page.mouse.move(point.x + 104, point.y, { steps: 4 });
+    if (slow) await delay(180);
+    await pointerEnd();
+    const settled = await stable();
+    const frames = await editor({ takeSpringTrace: true });
+    const spring = frames.filter(({ animating }) => animating);
+    assert.ok(spring.length > 3, "A release produces multiple spring frames");
+    close(settled.scrollX, edge.scrollX, "spring returns to its boundary", 0.1);
+    close(settled.scrollY, edge.scrollY, "spring leaves the other axis unchanged", 0.01);
+    const velocities = spring.slice(1).map((frame, index) => (
+      (frame.scrollX - spring[index].scrollX) * frame.zoom * 1000 / (frame.t - spring[index].t)
+    ));
+    assert.ok(velocities.every(Number.isFinite), "Each spring frame supplies a finite velocity sample");
+    return { edge, frames, spring, velocities, settled, duration: spring.at(-1).t - spring[0].t };
+  };
+  const slow = await release({ slow: true });
+  const fast = await release({ slow: false });
+  report.evidence.springReleases = { slow, fast };
+  close(slow.spring[0].scrollX * slow.spring[0].zoom, fast.spring[0].scrollX * fast.spring[0].zoom, "Slow and fast release start at the same held viewport", 0.5);
+  const initialDifference = Math.abs(slow.velocities[0] - fast.velocities[0]);
+  assert.ok(initialDifference > 5, "Stationary and moving releases produce distinguishable spring starts");
+  assert.ok(Math.abs(slow.duration - fast.duration) > 5 || initialDifference > 15, "Spring is not a fixed-duration replay of the same path");
+
+  await atEnd();
+  await editor({ position: "left" });
+  const point = await pointerBegin();
+  await page.mouse.move(point.x + 150, point.y, { steps: 6 });
+  await pointerEnd();
+  const moving = await until(async () => {
+    const frame = await editor();
+    return frame.animating && frame;
+  }, "spring begins before new direct input");
+  const takeover = await injectWheel([{ x: 16, momentum: false }]);
+  const { before, after } = takeover[0];
+  assert.equal(before.animating, true, "The next direct gesture starts during the old spring");
+  assert.equal(after.animating, false, "Direct input cancels the old spring immediately");
+  assert.ok(after.scrollX < before.scrollX, "The new inward input moves from the current frame");
+  close(after.scrollY, before.scrollY, "spring takeover leaves Y unchanged", 0.001);
+  report.evidence.springTakeover = { moving, takeover, settled: await stable() };
+  report.checks.push("Native slow and fast releases record different spring trajectories; new direct wheel input immediately takes over mid-spring");
+}
 const count = async (number) => until(async () => (await editor()).papers.length === number, `${number} paper pages`);
 const newDocument = async (template = "blank", orientation = "portrait") => {
   await page.locator(".desktop-titlebar-new").click();
@@ -216,13 +457,14 @@ async function jumpDuringRebound(mode) {
   }
   const trace = await editor({ frames: 5 }); report.evidence[`rebound-${mode}-frames`] = trace;
   for (const state of trace) {
-    assert.equal(state.constraints.lockScroll, "x");
+    assert.equal(state.constraints.lockScroll, true);
     const sheet = mode === "fit-width" ? state.papers.at(-1) : state.papers[0];
     const offsets = state.constraints.offsets;
     const available = state.width - (offsets.left ?? 0) - (offsets.right ?? 0);
     const targetX = ((offsets.left ?? 0) + available / 2) / state.zoom - sheet.x - sheet.width / 2;
     close(state.scrollX, targetX, `${mode} does not inherit old elastic X`, 0.1);
-    close(state.scrollY, (state.offsets.top ?? 24) / state.zoom - sheet.y, `${mode} stays at the requested page top`, 0.1);
+    const targetY = (offsets.top ?? 24) / state.zoom - sheet.y;
+    close(state.scrollY, hard(state, "y", targetY).target, `${mode} stays at the requested page within the hard bounds`, 0.1);
   }
   const end = await stable(); report.evidence[`rebound-${mode}-settled`] = end;
   close(end.scrollX, trace[0].scrollX, `${mode} target stays stable after old animation duration`, 0.1);
@@ -251,20 +493,40 @@ async function boundaries(prefix) {
   await screenshot(`${prefix}-small-settled`);
 
   await zoomTo(1.8); await atEnd();
-  for (const [side, dx] of [["left", 320], ["right", -320]]) {
+  for (const [side, axis, distance] of [["left", "x", 320], ["right", "x", -320], ["top", "y", 320], ["end", "y", -320]]) {
     await editor({ position: side }); await delay(80);
     const before = await sample(`${prefix}-${side}-before`);
-    assert.ok(hardX(before).min < hardX(before).max, "zoomed paper must be wider than available viewport");
+    const get = axis === "x" ? "scrollX" : "scrollY";
+    const orthogonal = axis === "x" ? "scrollY" : "scrollX";
+    const bounds = hard(before, axis);
+    assert.ok(bounds.min < bounds.max, "zoomed paper must exceed the available viewport");
     const start = await pointerBegin();
-    await page.mouse.move(start.x + dx, start.y, { steps: 8 });
+    const move = async (delta) => page.mouse.move(
+      start.x + (axis === "x" ? delta : 0),
+      start.y + (axis === "y" ? delta : 0),
+      { steps: 5 },
+    );
+    await move(Math.sign(distance) * 40); await delay(40);
+    const first = (await editor())[get];
+    await move(Math.sign(distance) * 80); await delay(40);
+    const second = (await editor())[get];
+    const firstTravel = (first - before[get]) * before.zoom * Math.sign(distance);
+    const secondTravel = (second - before[get]) * before.zoom * Math.sign(distance);
+    assert.ok(firstTravel > 0 && firstTravel < 40, `${side} begins to resist movement`);
+    assert.ok(secondTravel > firstTravel && secondTravel < 2 * firstTravel, `${side} incremental resistance grows`);
+    await move(distance); await delay(40);
     const during = await sample(`${prefix}-${side}-elastic`);
-    assert.ok(Math.abs(during.scrollX - hardX(during).target) * during.zoom <= 81, "wide paper elastic cap");
+    assert.ok(Math.abs(during[get] - hard(during, axis).target) * during.zoom < 80, `${side} elastic cap`);
     await screenshot(`${prefix}-${side}-elastic`);
-    await pointerEnd(); await delay(60); await sample(`${prefix}-${side}-pointer-middle`);
+    if (side === "end" && prefix === "a4") await page.keyboard.press("Escape");
+    await pointerEnd(); await delay(60);
+    const middle = await sample(`${prefix}-${side}-pointer-middle`);
     const end = await stable();
     report.evidence[`${prefix}-${side}-settled`] = end;
-    close(end.scrollX, hardX(end).target, `${side} edge reachable after pointer release`);
-    close(end.scrollY, during.scrollY, `${side} rebound preserves Y`, 0.001);
+    assert.ok(Math.abs(middle[get] - end[get]) < Math.abs(during[get] - end[get]), `${side} rebound moves toward the edge`);
+    close(end[get], bounds.target, `${side} returns to the original hard boundary`);
+    close(end[orthogonal], during[orthogonal], `${side} rebound preserves the other axis`, 0.001);
+    assert.equal(end.papers.length, before.papers.length);
   }
   await editor({ position: "left" }); await delay(60);
   const wheelStart = await sample(`${prefix}-wheel-before`);
@@ -277,7 +539,7 @@ async function boundaries(prefix) {
   close(wheelEnd.scrollX, hardX(wheelEnd).target, "wheel idle returns to hard edge");
   close(wheelEnd.scrollY, wheelStart.scrollY, "horizontal wheel rebound preserves Y", 0.001);
   await screenshot(`${prefix}-wide-settled`);
-  report.checks.push(`${prefix}: narrow page centered; wide paper both edges accessible; native pointer/wheel elastic cap and rebound preserve vertical viewport`);
+  report.checks.push(`${prefix}: narrow page centered; all four edges resist nonlinearly, stay within 80px, and rebound on release; horizontal wheel also returns on idle`);
   if (prefix === "a4") {
     await editor({ position: "left" }); await delay(60);
     await page.mouse.wheel(-240, 0); await delay(25);
@@ -296,19 +558,64 @@ async function boundaries(prefix) {
     close(elasticSettled.scrollX, hardX(elasticSettled).target, "elastic zoom rebounds smoothly to its new edge");
     close(elasticSettled.scrollY, elasticAfter.scrollY, "elastic zoom rebound preserves its resulting Y", 0.001);
     report.checks.push("Ctrl wheel during horizontal elasticity preserves screen displacement and then rebounds at the new zoom without Y movement");
+
+    await editor({ position: "top", inside: 4 }); await delay(60);
+    const inside = await sample("wheel-top-inside");
+    await wheel(0, -2);
+    const near = await sample("wheel-top-near-edge");
+    await wheel(0, -4);
+    const crossing = await sample("wheel-top-crossing-edge");
+    close((near.scrollY - inside.scrollY) * inside.zoom, 2, "the interior still pans one for one", 0.1);
+    close((crossing.scrollY - near.scrollY) * inside.zoom, 4, "the first two elastic pixels enter the curve without a velocity cliff", 0.2);
+    await stable();
+
+    const runs = [];
+    for (const deltas of [[40, 40, 40, 40], [160]]) {
+      await editor({ position: "top" }); await delay(60);
+      const before = await editor();
+      const samples = [];
+      for (const delta of deltas) {
+        await page.mouse.wheel(0, -delta);
+        samples.push(await editor());
+      }
+      const travel = (samples.at(-1).scrollY - before.scrollY) * before.zoom;
+      runs.push({ before, samples, travel });
+      await stable();
+    }
+    report.evidence.wheelStepComparison = runs;
+    close(runs[0].travel, runs[1].travel, "the same wheel distance yields the same camera stretch whether split into steps or applied once", 0.2);
+    assert.ok(runs[0].travel > 45 && runs[0].travel < 65, "wheel steps produced a nonzero elastic stretch");
+
+    await editor({ position: "left", overBy: 110 }); await delay(60);
+    const takeOver = await sample("wheel-takeover-before");
+    await wheel(-1, 0);
+    const outward = await sample("wheel-takeover-outward");
+    close(outward.scrollX, takeOver.scrollX, "taking over outside a moved bound does not jump on a tiny outward tick", 0.001);
+    await wheel(12, 0);
+    const inward = await sample("wheel-takeover-inward");
+    const retracted = (outward.scrollX - inward.scrollX) * inward.zoom;
+    assert.ok(retracted > 0 && retracted <= 12.2, "the first inward tick starts from the current frame without jumping");
+    await stable();
+    report.checks.push("Native vertical wheel stays smooth through the hard edge and composes equal total travel, while input can take over a camera already outside a moved bound");
   }
 }
 
 async function main() {
   await fs.mkdir(artifacts, { recursive: true });
   isolated = await fs.mkdtemp(path.join(os.tmpdir(), "guzi-paper-navigation-"));
-  const profile = path.join(isolated, "profile"), drawings = path.join(isolated, "drawings");
+  profile = path.join(isolated, "profile");
+  const drawings = path.join(isolated, "drawings");
   await fs.mkdir(profile); await fs.mkdir(drawings);
-  await fs.writeFile(path.join(profile, "settings.json"), JSON.stringify({ rootDirectory: drawings, language: "zh-CN", theme: progressOnly ? "dark" : "light" }));
+  await fs.writeFile(path.join(profile, "settings.json"), JSON.stringify({ rootDirectory: drawings, language: "zh-CN", theme: progressOnly ? "dark" : "light", toolPanelDock: "left", toolPanelPinned: false }));
   const electronDirectory = path.dirname(require.resolve("electron/package.json"));
   const executablePath = path.resolve(electronDirectory, "dist", (await fs.readFile(path.join(electronDirectory, "path.txt"), "utf8")).trim());
-  application = await _electron.launch({ executablePath, args: [desktop], env: { ...process.env, EXCALIDRAW_DESKTOP_USER_DATA: profile, EXCALIDRAW_DESKTOP_DEV_URL: "" }, timeout: 30000 });
+  launching = _electron.launch({ executablePath, args: [desktop, `--user-data-dir=${profile}`], env: { ...process.env, EXCALIDRAW_DESKTOP_USER_DATA: profile, EXCALIDRAW_DESKTOP_DEV_URL: process.env.EXCALIDRAW_DESKTOP_DEV_URL ?? "" }, timeout: 30000 });
+  application = await launching; launching = undefined;
   remember(); report.pid = application.process().pid; report.profile = profile; report.project = drawings;
+  report.runtime = await application.evaluate(({ app }) => ({
+    electron: process.versions.electron, chromium: process.versions.chrome, userData: app.getPath("userData"),
+  }));
+  assert.equal(report.runtime.userData, profile);
   page = await application.firstWindow(); page.setDefaultTimeout(20000);
   await page.emulateMedia({ reducedMotion: "no-preference" });
   page.on("pageerror", (error) => report.errors.push(error.message));
@@ -320,7 +627,7 @@ async function main() {
   process.stdout.write(`Electron ready ${report.pid}\n`);
 
   await newDocument();
-  await zoomTo(0.6);
+  await zoomTo(0.9);
   await installFrameTrace();
   const initial = await atEnd();
   const progress = async (label, expected) => {
@@ -371,25 +678,27 @@ async function main() {
   await page.mouse.move(point.x, point.y - 76, { steps: 4 });
   await page.getByText("松手新建一页", { exact: true }).waitFor();
   await progress("a4-full-before-pullback", 100);
-  await page.mouse.move(point.x, point.y - 32, { steps: 4 });
-  await progress("a4-progress-pulled-back", 50);
-  assert.equal(await page.getByText("松手新建一页", { exact: true }).count(), 0, "pullback below threshold disarms the gesture");
-  await page.mouse.move(point.x, point.y - 76, { steps: 4 });
+  await page.mouse.move(point.x, point.y - 64, { steps: 4 });
+  await progress("a4-progress-pulled-back", Math.round((64 - 12) / 64 * 100));
+  assert.equal(await page.getByText("松手新建一页", { exact: true }).count(), 0, "a short retreat below 56px disarms saturated intent");
+  await page.mouse.move(point.x, point.y, { steps: 4 });
+  await progress("a4-progress-cleared-at-origin", 0);
+  assert.equal(await page.locator(".desktop-paper-next-outline").count(), 0);
+  const returned = await editor();
+  const inside = Math.max(0, (returned.scrollY - hard(returned, "y").min) * returned.zoom);
+  await page.mouse.move(point.x, point.y - inside - 76, { steps: 8 });
   await page.getByText("松手新建一页", { exact: true }).waitFor();
   await progress("a4-armed-before-release", 100);
   const armed = await sample("pointer-armed-before-release");
-  await pointerEnd(); await count(2);
-  const appended = await sample("pointer-appended-after-release");
-  close(appended.zoom, initial.zoom, "append keeps zoom", 0.0001);
-  close(appended.scrollX, initial.scrollX, "append keeps X", 0.001);
-  close(appended.scrollY, initial.scrollY - 76 / initial.zoom, "append keeps the continuously dragged Y", 2);
-  close(appended.scrollY, armed.scrollY, "append preserves armed viewport", 0.001);
-  await screenshot("a4-created-after-release"); await stable();
-  const releaseBefore = await editor();
-  close(releaseBefore.scrollY, appended.scrollY, "release does not jump to new page top", 0.001);
+  await editor({ startContinuationTrace: 2 });
+  await pointerEnd();
+  const appended = await checkContinuation("pointer-append-motion", armed);
+  const armedTravel = (initial.scrollY - armed.scrollY) * initial.zoom;
+  assert.ok(armedTravel > 0 && armedTravel < 76, "the raw 76px pull arms through visual resistance");
+  await screenshot("a4-created-after-release");
   assert.equal(appended.papers[1].y, appended.papers[0].y + appended.papers[0].height + 48);
-  report.checks.push("Native Space drag shows a 6px horizontal bar at 50%, fills at 100%, disarms back to 50%, and rearms at 100%; incomplete release and held full progress never append");
-  report.checks.push("Native Space drag arms after 64px, appends only on release and preserves continuous viewport; new paper gap is 48");
+  report.checks.push("Native Space drag shows a 6px horizontal bar at 50%, saturates at 100%, disarms on a short retreat, clears at the origin and rearms; incomplete release and held full progress never append");
+  report.checks.push("Native Space drag arms after 64px, commits the page in the held frame, and stays at the held viewport until subsequent input");
   if (progressOnly) {
     assert.deepEqual(report.errors, [], "renderer emitted no uncaught page errors");
     report.passed = true;
@@ -409,14 +718,17 @@ async function main() {
   const fresh = await pointerBegin();
   await page.mouse.move(fresh.x, fresh.y - 76, { steps: 5 });
   await page.getByText("松手新建一页", { exact: true }).waitFor();
-  await pointerEnd(); await count(3);
-  const freshAfter = await sample("fresh-after-cancel-created");
-  close(freshAfter.scrollY, freshBefore.scrollY - 76 / freshBefore.zoom, "fresh gesture in original viewport resumes continuation", 2);
-  report.checks.push("After Escape and release, a fresh 76px drag in the unchanged view appends normally without repositioning");
+  const freshArmed = await sample("fresh-after-cancel-armed");
+  await editor({ startContinuationTrace: 3 });
+  await pointerEnd();
+  await checkContinuation("fresh-after-cancel-motion", freshArmed);
+  assert.ok(freshBefore.scrollY > freshArmed.scrollY);
+  report.checks.push("After Escape and release, a fresh 76px drag appends normally without automatic viewport motion");
 
   await delay(850);
   await zoomTo(0.3); await atEnd();
   const wheelPageCount = (await editor()).papers.length;
+  await editor({ startContinuationTrace: wheelPageCount + 1 });
   const box = await canvasBox(); await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   const wheelTrace = [];
   for (let index = 0; index < 4; index++) {
@@ -424,22 +736,29 @@ async function main() {
     wheelTrace.push(await editor());
   }
   report.evidence.continuousWheel = wheelTrace;
+  const nativeInputs = await page.locator(".desktop-editor-pane.is-active").evaluate(
+    (mounted) => mounted.ownerDocument.defaultView.__paperNavigationTrace
+      .filter((event) => event.kind === "wheel")
+      .slice(-4),
+  );
+  assert.equal(nativeInputs.length, 4);
+  assert.ok(nativeInputs.every((event) => event.trusted && event.momentum === false && event.deltaY === 40));
+  report.evidence.nativeWheelInputs = nativeInputs;
   assert.ok(wheelTrace.every((state) => state.papers.length === wheelPageCount), "one wheel segment must wait for idle before appending");
+  let lastWheelTravel = 40;
   for (let index = 1; index < wheelTrace.length; index++) {
     const previous = wheelTrace[index - 1], next = wheelTrace[index];
-    close(next.scrollY, previous.scrollY - 40 / next.zoom, "wheel append preserves vertical delta", 3);
+    const travel = (previous.scrollY - next.scrollY) * next.zoom;
+    assert.ok(travel > 0 && travel < lastWheelTravel, "successive equal wheel deltas have decreasing visual travel beyond the bound");
+    lastWheelTravel = travel;
     close(next.scrollX, previous.scrollX, "wheel append preserves X", 0.001);
     close(next.zoom, previous.zoom, "wheel append preserves zoom", 0.0001);
   }
   const wheelArmed = wheelTrace.at(-1);
   await page.getByText("松手新建一页", { exact: true }).waitFor();
   await screenshot("a4-wheel-armed");
-  await count(wheelPageCount + 1);
-  const wheelCreated = await sample("wheel-appended-after-idle");
-  close(wheelCreated.scrollY, wheelArmed.scrollY, "wheel idle append preserves Y", 0.001);
-  close(wheelCreated.scrollX, wheelArmed.scrollX, "wheel idle append preserves X", 0.001);
-  close(wheelCreated.zoom, wheelArmed.zoom, "wheel idle append preserves zoom", 0.0001);
-  await stable(); await screenshot("a4-continuous-wheel");
+  await checkContinuation("wheel-appended-after-idle", wheelArmed);
+  await screenshot("a4-continuous-wheel");
   await delay(850);
   const beforeEscapeWheel = (await atEnd()).papers.length;
   await wheel(0, 40, 3);
@@ -452,17 +771,34 @@ async function main() {
   report.checks.push("One continuous native wheel segment reaches the boundary and appends one page on idle without viewport resets; Escape suppresses remaining ticks and idle append");
   await delay(850); await atEnd();
   const longStart = await editor();
+  await editor({ startContinuationTrace: longStart.papers.length + 1 });
   await wheel(0, 85, 18);
   const longArmed = await sample("long-wheel-armed");
   assert.equal(longArmed.papers.length, longStart.papers.length, "long wheel still waits for release");
+  const longTravel = (longStart.scrollY - longArmed.scrollY) * longStart.zoom;
+  assert.ok(longTravel > 70 && longTravel < 80, "long pulls stay below the visual cap while still armed");
   await page.getByText("松手新建一页", { exact: true }).waitFor();
   await screenshot("a4-long-wheel-armed");
-  await count(longStart.papers.length + 1);
-  const longCreated = await sample("long-wheel-created");
-  close(longCreated.scrollY, longArmed.scrollY, "long pull creates without Y jump", 0.001);
-  close(longCreated.scrollX, longArmed.scrollX, "long pull creates without X jump", 0.001);
-  await stable();
-  report.checks.push("A long valid wheel pull stays armed after the old page bottom leaves view and creates one page on idle without a viewport jump");
+  await checkContinuation("long-wheel-created", longArmed);
+  report.checks.push("A long valid wheel pull stays armed near the visual cap and creates one page on idle without a viewport jump");
+
+  await delay(850); await atEnd();
+  const retreatStart = await sample("wheel-retreat-start");
+  await wheel(0, 130, 12);
+  const beforeRetreat = await sample("wheel-retreat-stretched");
+  await page.getByText("松手新建一页", { exact: true }).waitFor();
+  await wheel(0, -12);
+  const firstRetreat = await sample("wheel-retreat-first-tick");
+  const firstReverse = (firstRetreat.scrollY - beforeRetreat.scrollY) * firstRetreat.zoom;
+  assert.ok(firstReverse > 0 && firstReverse <= 12.2, "deep stretch reverses immediately without overshooting the input");
+  assert.equal(await page.getByText("松手新建一页", { exact: true }).count(), 0, "a short reverse tick disarms even after a long saturated pull");
+  await wheel(0, -100, 2);
+  assert.equal(await page.getByText("松手新建一页", { exact: true }).count(), 0, "continued retreat disarms the pending page");
+  assert.equal((await stable()).papers.length, retreatStart.papers.length, "retreat before wheel idle doesn't create a page");
+  report.checks.push("A deep native wheel stretch responds visibly to the first reverse tick, then disarms and returns without creating a page");
+
+  await checkWheelPhases();
+  await checkSpring();
 
   await editor({ position: "below" }); await delay(60);
   const blankBefore = await sample("blank-start-before");
@@ -476,11 +812,72 @@ async function main() {
   await page.keyboard.press("Meta+z"); await count(total - 1);
   await page.keyboard.press("Meta+Shift+z"); await count(total);
   const saved = await call("save_canvas", { documentId });
+  const demoPath = saved.path;
   await call("close_document", { documentId }); await call("open_canvas", { path: saved.path }); await count(total); await stable();
   report.checks.push("Native keyboard undo/redo and save/reopen preserve continued paper pages");
   await boundaries("a4");
   await jumpDuringRebound("fit-width");
   await jumpDuringRebound("page-one");
+
+  const editorPane = page.locator(".desktop-editor-pane.is-active");
+  const expandDock = editorPane.getByRole("button", { name: "展开工具侧栏", exact: true });
+  const collapseDock = editorPane.getByRole("button", { name: "收起工具侧栏", exact: true });
+  const selectDocument = (await current()).documentId;
+  for (const side of ["left", "right"]) {
+    if (side === "right") {
+      await expandDock.click();
+      await editorPane.getByRole("button", { name: "放到右侧", exact: true }).click();
+      await collapseDock.click();
+      await stable();
+    }
+    await zoomTo(2); await atEnd();
+    const before = await sample(`selection-dock-${side}-before`);
+    const canvas = await canvasBox();
+    const point = { x: before.width * 0.53, y: before.height * (side === "left" ? 0.44 : 0.55) };
+    const scene = await call("read_canvas", { documentId: selectDocument });
+    await call("apply_operations", {
+      documentId: selectDocument,
+      expectedRevision: scene.revision,
+      requestId: `camera-dock-${side}`,
+      operations: [{
+        type: "create",
+        element: {
+          type: "rectangle",
+          x: point.x / before.zoom - before.scrollX - 40,
+          y: point.y / before.zoom - before.scrollY - 24,
+          width: 80,
+          height: 48,
+          backgroundColor: "#dbe4ff",
+          fillStyle: "solid",
+        },
+      }],
+    });
+    const [opening] = await Promise.all([
+      editor({ frames: 26 }),
+      page.mouse.click(canvas.x + point.x, canvas.y + point.y),
+    ]);
+    report.evidence[`selection-dock-${side}-opening`] = opening;
+    await collapseDock.waitFor();
+    const opened = await stable();
+    const signedDistance = (opened.scrollX - before.scrollX) * (side === "left" ? 1 : -1);
+    assert.ok(signedDistance > 10, `${side} dock moves the camera toward the available area`);
+    const between = (from, to, value) =>
+      value > Math.min(from, to) + 1 && value < Math.max(from, to) - 1;
+    assert.ok(opening.some((frame) => between(before.scrollX, opened.scrollX, frame.scrollX)), "opening has an intermediate camera frame");
+    await screenshot(`a4-selection-${side}-open`);
+    const [closing] = await Promise.all([
+      editor({ frames: 26 }),
+      page.keyboard.press("Escape"),
+    ]);
+    report.evidence[`selection-dock-${side}-closing`] = closing;
+    await expandDock.waitFor();
+    const closed = await stable();
+    assert.ok(closing.some((frame) => between(opened.scrollX, closed.scrollX, frame.scrollX)), "closing has an intermediate camera frame");
+    close(closed.scrollX, before.scrollX, `${side} closing returns the camera to the original high zoom view`, 0.2);
+    close(closed.scrollY, before.scrollY, `${side} selection preserves the vertical position`, 0.2);
+    await screenshot(`a4-selection-${side}-closed`);
+  }
+  report.checks.push("At high zoom, native selection and Escape animate the left and right docks in both directions, including intermediate camera frames");
 
   await zoomTo(0.4); await atEnd();
   const sidebarBefore = await sample("sidebar-before");
@@ -506,6 +903,7 @@ async function main() {
   const ruled = await pointerBegin(); await page.mouse.move(ruled.x, ruled.y - 90, { steps: 6 }); await pointerEnd(); await count(2);
   assert.ok((await editor()).papers.every((paper) => paper.kind === "ruled"));
   report.checks.push("Landscape ruled A4 uses the same native continuation path");
+  await stable();
   const buttonBefore = await atEnd();
   await page.locator(".desktop-editor-pane.is-active .desktop-paper-add-page").click(); await count(3);
   const buttonAfter = await sample("add-page-button");
@@ -514,6 +912,27 @@ async function main() {
   close(buttonAfter.zoom, buttonBefore.zoom, "add page button preserves zoom", 0.0001);
   report.checks.push("Page-end add button appends a ruled page without moving the viewport");
 
+  await newDocument("blank"); await zoomTo(0.1); await atEnd();
+  const tiny = await sample("low-zoom-before-wheel");
+  const tinyCanvas = await canvasBox();
+  await page.mouse.move(tinyCanvas.x + tinyCanvas.width / 2, tinyCanvas.y + tinyCanvas.height / 2);
+  await editor({ startContinuationTrace: 2 });
+  const fallbackTail = [];
+  for (const delta of [300, 220, 160, 100, 64, 48, 24, 12, 4]) {
+    await page.mouse.wheel(0, delta);
+    const frame = await editor();
+    assert.equal(frame.papers.length, 1, "wheel release waits through the decreasing tail");
+    fallbackTail.push({ delta, scrollY: frame.scrollY });
+  }
+  report.evidence.lowZoomWheelTail = fallbackTail;
+  const lowHeld = await sample("low-zoom-wheel-held");
+  assert.ok(lowHeld.scrollY < tiny.scrollY);
+  const lowFinished = await checkContinuation("low-zoom-wheel-motion", lowHeld, { expectBoundarySpring: true });
+  assert.equal(lowFinished.papers.length, 2, "the whole wheel stream appends one page");
+  assert.ok(visibleNewPage(lowFinished) > 0, "The low-zoom newly appended page is already in view");
+  assert.ok(lowFinished.scrollY <= lowHeld.scrollY, "short sheets absorb the held stretch without pulling the camera backwards");
+  report.checks.push("At 10% zoom the wheel tail waits for idle, adds one page at the held position, and springs only as far as the new centered boundary");
+
   await newDocument("infinite");
   const infiniteStart = await sample("infinite-before");
   assert.ok(!infiniteStart.constraints, "ordinary infinite canvas has no paper scroll constraints");
@@ -521,6 +940,10 @@ async function main() {
   const infiniteEnd = await stable(); report.evidence["infinite-after"] = infiniteEnd;
   close((infiniteEnd.scrollX - infiniteStart.scrollX) * infiniteEnd.zoom, 280, "infinite canvas horizontal pan stays free", 3);
   assert.equal(infiniteEnd.papers.length, 0);
+  const [infiniteInertia] = await injectWheel([momentum(44)]);
+  close((infiniteInertia.before.scrollY - infiniteInertia.after.scrollY) * infiniteInertia.after.zoom, 44, "infinite canvas retains normal momentum displacement", 1);
+  assert.equal(infiniteInertia.after.papers.length, 0);
+  report.evidence.infiniteInertia = infiniteInertia;
   report.checks.push("Infinite canvas has no horizontal lock, paper controls or continuation");
 
   const source = path.join(isolated, "navigation.pdf"); await fs.writeFile(source, fixturePdf());
@@ -530,19 +953,24 @@ async function main() {
   const importer = page.getByRole("dialog", { name: "导入 PDF", exact: true });
   await importer.getByRole("button", { name: "选择 PDF 文件", exact: true }).click(); await importer.waitFor({ state: "hidden" });
   await until(async () => (await current())?.title === "navigation" && (await current()).initialized, "PDF ready"); await stable();
-  await boundaries("pdf"); await atEnd(); await wheel(0, 120, 6); await stable();
+  await boundaries("pdf"); await atEnd(); await wheel(0, 120, 3);
+  report.evidence.pdfMomentum = await injectWheel([momentum(150), momentum(100), momentum(40)]);
+  await stable();
   const pdf = await sample("pdf-no-continuation"); assert.equal(pdf.papers.length, 1); assert.equal(pdf.papers[0].kind, "pdf");
   assert.equal(await page.locator(".desktop-editor-pane.is-active .desktop-paper-add-page").count(), 0);
-  report.checks.push("Imported PDF shares horizontal bounds and never auto-appends A4 pages");
+  report.checks.push("Imported PDF shares four elastic bounds and never auto-appends A4 pages");
   await screenshot("pdf-no-continuation");
   assert.deepEqual(report.errors, [], "renderer emitted no uncaught page errors");
+  report.manualDemo = "manual-demo.excalidraw";
+  await fs.copyFile(demoPath, path.join(artifacts, report.manualDemo));
   report.passed = true;
 }
 
 async function stop() {
   if (stopping) return stopping;
   stopping = (async () => {
-    await client?.close().catch(() => {});
+    await launching?.catch(() => {});
+    await bounded(client?.close() ?? Promise.resolve(), 5000, "MCP client close").catch(() => {});
     remember();
     if (application) {
       await bounded(application.evaluate(({ app }) => app.exit(0)), 5000, "isolated app exit").catch(() => {});
@@ -556,6 +984,7 @@ async function stop() {
     report.ownedProcesses = [...owned].map(([pid, command]) => ({ pid, command }));
     report.remainingProcesses = remaining(); report.cleanupPassed = report.remainingProcesses.length === 0;
     if (!report.cleanupPassed) { report.passed = false; process.exitCode = 1; }
+    if (isolated && report.cleanupPassed) await fs.rm(isolated, { recursive: true, force: true });
     await fs.mkdir(artifacts, { recursive: true });
     await fs.writeFile(path.join(artifacts, "report.json"), JSON.stringify(report, null, 2));
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

@@ -60,6 +60,10 @@ import {
   richTextToPlainText,
   redrawTextBoundingBox,
 } from "@excalidraw/element";
+import {
+  getRuledTextLineSpacing,
+  getRuledTextRunFontLimit,
+} from "@excalidraw/element/ruledText";
 
 import type {
   RichTextDocument,
@@ -104,6 +108,8 @@ import type {
 import type { RichTextCommand } from "./editorBridge";
 import type { TextWysiwygOptions } from "../../wysiwyg/textWysiwyg";
 
+type FontSizeProperty = "font-size" | "--rich-run-font-size";
+
 const getFontSizeScale = (style: string | null) => {
   const value = style?.trim();
   return (
@@ -127,7 +133,10 @@ export const $readRichText = (): RichTextDocument => {
         );
         const fontSizeScale = normalizeRichTextFontSizeScale(
           getFontSizeScale(
-            node.getStyle().match(/font-size:\s*([^;]+)/i)?.[1] ?? null,
+            node
+              .getStyle()
+              .match(/(?:^|;)\s*(?:--rich-run-)?font-size:\s*([^;]+)/i)?.[1] ??
+              null,
           ),
         );
         runs.push({
@@ -184,6 +193,7 @@ export const $writeRichText = (
   document: RichTextDocument,
   selection?: { start: number; end: number } | null,
   selectAll = false,
+  fontSizeProperty: FontSizeProperty = "font-size",
 ) => {
   const root = $getRoot();
   root.clear();
@@ -230,7 +240,11 @@ export const $writeRichText = (
         text.setStyle(
           `${run.background ? `background-color: ${run.background};` : ""}${
             run.color ? `color: ${run.color};` : ""
-          }${run.fontSizeScale ? `font-size: ${run.fontSizeScale}em;` : ""}`,
+          }${
+            run.fontSizeScale
+              ? `${fontSizeProperty}: ${run.fontSizeScale}em;`
+              : ""
+          }`,
         );
       }
       target.append(text);
@@ -286,6 +300,8 @@ export const $getRichTextSelectionOffsets = (selection = $getSelection()) => {
 export const applyRichTextEditorCommand = (
   editor: LexicalEditor,
   command: RichTextCommand,
+  fontSizeProperty: FontSizeProperty = "font-size",
+  fontSizeLimit = Infinity,
 ) => {
   if (
     command.type === "bold" ||
@@ -320,19 +336,20 @@ export const applyRichTextEditorCommand = (
         command.baseFontSize > 0
       ) {
         $patchStyleText(selection, {
-          "font-size": (current) => {
+          [fontSizeProperty]: (current) => {
             const size =
               "value" in command
                 ? command.value
                 : Math.max(
                     1,
                     Math.round(
-                      command.baseFontSize *
-                        getFontSizeScale(current) *
-                        command.scale,
+                      Math.min(
+                        command.baseFontSize * getFontSizeScale(current),
+                        fontSizeLimit,
+                      ) * command.scale,
                     ),
                   );
-            return `${size / command.baseFontSize}em`;
+            return `${Math.min(size, fontSizeLimit) / command.baseFontSize}em`;
           },
         });
       }
@@ -390,8 +407,17 @@ export const richTextWysiwyg = ({
     zIndex: "var(--zIndex-wysiwyg)",
   });
   const style = ownerDocument.createElement("style");
+  const fontSizeProperty: FontSizeProperty = getRuledTextLineSpacing(element)
+    ? "--rich-run-font-size"
+    : "font-size";
   style.textContent =
     ".excalidraw-rich-text p{margin:0;margin-bottom:var(--rich-paragraph-gap,0)}.excalidraw-rich-text p:last-child{margin-bottom:0}.excalidraw-rich-text ul,.excalidraw-rich-text ol{margin:0;padding-left:1.5em}.excalidraw-rich-text li{margin-bottom:var(--rich-paragraph-gap,0)}.excalidraw-rich-text .rich-bold{font-weight:bold}.excalidraw-rich-text .rich-italic{font-style:italic}.excalidraw-rich-text .rich-underline{text-decoration:underline;text-decoration-thickness:max(1px,.05em);text-underline-offset:max(1px,.06em);text-decoration-skip-ink:none}.excalidraw-rich-text [data-lexical-text]::selection{-webkit-text-fill-color:HighlightText}";
+  if (fontSizeProperty === "--rich-run-font-size") {
+    // The paragraph strut sets the ruled line box even with mixed inline sizes.
+    style.textContent +=
+      ".excalidraw-rich-text[data-ruled-text] [data-lexical-text]{line-height:0;font-size:min(var(--rich-run-font-size,1em),var(--rich-run-font-cap))}";
+    editable.dataset.ruledText = "true";
+  }
   box.append(style, editable);
   const editor = createEditor({
     namespace: `excalidraw-${element.id}`,
@@ -424,6 +450,7 @@ export const richTextWysiwyg = ({
         lastDocument,
         initialSelection,
         autoSelect && !initialCaretSceneCoords,
+        fontSizeProperty,
       ),
     { discrete: true },
   );
@@ -496,9 +523,10 @@ export const richTextWysiwyg = ({
     box.style.right = `${insets.right}px`;
     const angle = getTextElementAngle(current, container);
     const zoom = app.state.zoom.value;
+    const ruledSpacing = getRuledTextLineSpacing(current);
     Object.assign(editable.style, {
       font: getFontString(current),
-      lineHeight: `${current.lineHeight}`,
+      lineHeight: ruledSpacing ? `${ruledSpacing}px` : `${current.lineHeight}`,
       width: `${Math.max(1, current.width)}px`,
       minHeight: `${current.height}px`,
       left: `${x - insets.left}px`,
@@ -517,8 +545,16 @@ export const richTextWysiwyg = ({
     });
     editable.style.setProperty(
       "--rich-paragraph-gap",
-      `${(current.paragraphSpacing ?? 0) * current.fontSize}px`,
+      ruledSpacing
+        ? "0px"
+        : `${(current.paragraphSpacing ?? 0) * current.fontSize}px`,
     );
+    if (ruledSpacing) {
+      editable.style.setProperty(
+        "--rich-run-font-cap",
+        `${getRuledTextRunFontLimit(current, ruledSpacing)}px`,
+      );
+    }
     updateTextColors();
   };
   updateStyle();
@@ -577,7 +613,7 @@ export const richTextWysiwyg = ({
       );
       const fontSizeStyle = $getSelectionStyleValueForProperty(
         selection,
-        "font-size",
+        fontSizeProperty,
         "1em",
       );
       const nativeSelection = ownerWindow.getSelection();
@@ -597,6 +633,11 @@ export const richTextWysiwyg = ({
           ? nativeRange.getBoundingClientRect()
           : null;
       const offsets = $getRichTextSelectionOffsets(selection);
+      const current = latest();
+      const ruledSpacing = getRuledTextLineSpacing(current);
+      const fontSizeLimit = ruledSpacing
+        ? getRuledTextRunFontLimit(current, ruledSpacing)
+        : Infinity;
       publishRichTextSelectionState(ownerDocument, {
         bold: selection.hasFormat("bold"),
         italic: selection.hasFormat("italic"),
@@ -613,8 +654,11 @@ export const richTextWysiwyg = ({
           : null,
         elementId: element.id,
         fontSize: fontSizeStyle
-          ? getBaseFontSize(latest(), app.scene.getNonDeletedElementsMap()) *
-            getFontSizeScale(fontSizeStyle)
+          ? Math.min(
+              getBaseFontSize(current, app.scene.getNonDeletedElementsMap()) *
+                getFontSizeScale(fontSizeStyle),
+              fontSizeLimit,
+            )
           : null,
         background: background || null,
         color:
@@ -700,12 +744,21 @@ export const richTextWysiwyg = ({
     if (!inputHasFocus) {
       editable.focus({ preventScroll: true });
     }
+    const current = latest();
+    const ruledSpacing = getRuledTextLineSpacing(current);
     editor.update(
       () => {
         if (!$isRangeSelection($getSelection()) && savedSelection) {
           $setSelection(savedSelection.clone());
         }
-        applyRichTextEditorCommand(editor, command);
+        applyRichTextEditorCommand(
+          editor,
+          command,
+          fontSizeProperty,
+          ruledSpacing
+            ? getRuledTextRunFontLimit(current, ruledSpacing)
+            : Infinity,
+        );
       },
       {
         tag: inputHasFocus
@@ -884,7 +937,7 @@ export const richTextWysiwyg = ({
             const offsets = $getRichTextSelectionOffsets(
               $isRangeSelection(selection) ? selection : savedSelection,
             );
-            $writeRichText(lastDocument, offsets);
+            $writeRichText(lastDocument, offsets, false, fontSizeProperty);
           },
           { tag: HISTORY_MERGE_TAG },
         );

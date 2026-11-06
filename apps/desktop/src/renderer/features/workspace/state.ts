@@ -8,6 +8,7 @@ import type {
   DesktopCommand,
   DesktopSettings,
   DiskDocument,
+  ProjectCategory,
   ProjectIndex,
   RecoveryDraft,
 } from "../../../shared/desktop-api";
@@ -90,7 +91,9 @@ export const useWorkspaceState = (
   ) => setFailure({ message, params });
   const [drafts, setDrafts] = useState<RecoveryDraft[]>([]);
   const [closePrompt, setClosePrompt] = useState<ClosePrompt | null>(null);
-  const [newCanvasDialog, setNewCanvasDialog] = useState(false);
+  const [newCanvasDialog, setNewCanvasDialog] = useState<{
+    initialSaveCategory?: ProjectCategory;
+  } | null>(null);
   const [pdfImportDialog, setPdfImportDialog] = useState(false);
   const handlers = useRef({
     command: (_command: DesktopCommand) => {},

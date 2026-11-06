@@ -32,6 +32,7 @@ import {
   syncTableData,
   tableDataFromHTML,
   tableDataFromTSV,
+  updateTableColors,
   updateTableElements,
 } from "../src/table";
 
@@ -42,6 +43,89 @@ import type {
 } from "../src/types";
 
 const range = { row: 0, column: 0, endRow: 1, endColumn: 1 };
+
+it.each([undefined, [44, 55]])(
+  "changes colors without reflowing rows or text (row baselines %j)",
+  (rowMinHeights) => {
+    const data = createTableData(2, 3);
+    data.rows = [70, 90];
+    data.cells[0].text = "Rich text";
+    data.cells[0].richText = {
+      version: 1,
+      paragraphs: [
+        {
+          runs: [
+            { text: "Rich ", bold: true, color: "#123456" },
+            { text: "text", italic: true, color: "#abcdef" },
+          ],
+        },
+      ],
+    };
+    const table = createTableElements(mergeTableCells(data, range), 100, 200);
+    const root = newElementWith(table.root, {
+      customData: {
+        table: { ...table.root.customData.table, rowMinHeights },
+      },
+    });
+    const original = [root, ...table.elements.slice(1)];
+    const colors = {
+      backgroundColor: "#0a0b0c",
+      strokeColor: "#0d0e0f",
+      textColor: "#ab1234",
+    };
+    const updated = updateTableColors(
+      original,
+      root,
+      { row: 1, column: 1, endRow: 1, endColumn: 1 },
+      colors,
+    );
+    expect(updated).toHaveLength(original.length);
+    for (const [index, element] of updated.entries()) {
+      const previous = original[index];
+      expect(element).toMatchObject({
+        id: previous.id,
+        x: previous.x,
+        y: previous.y,
+        width: previous.width,
+        height: previous.height,
+        angle: previous.angle,
+        boundElements: previous.boundElements,
+      });
+    }
+    const updatedRoot = updated.find(isTableRoot)!;
+    expect(updatedRoot.customData.table.rows).toEqual([70, 90]);
+    expect(updatedRoot.customData.table.rowMinHeights).toEqual(rowMinHeights);
+    expect(
+      getTableCellAt(readTableData(updatedRoot, updated), 1, 1),
+    ).toMatchObject({
+      ...colors,
+      richText: {
+        version: 1,
+        paragraphs: [
+          {
+            runs: [
+              { text: "Rich ", bold: true },
+              { text: "text", italic: true },
+            ],
+          },
+        ],
+      },
+    });
+    const label = updated.find(
+      (element) =>
+        element.type === "text" && getTableMember(element)?.column === 0,
+    ) as ExcalidrawTextElement;
+    expect(
+      label.richText?.paragraphs[0].runs.every(
+        (run) => run.color === undefined,
+      ),
+    ).toBe(true);
+    expect(updateTableColors(updated, updatedRoot, range, colors)).toBe(
+      updated,
+    );
+  },
+);
+
 const expectCompleteGrid = (data: TableData) => {
   for (let row = 0; row < data.rows.length; row++) {
     for (let column = 0; column < data.columns.length; column++) {
@@ -214,6 +298,140 @@ it("fits table row heights to wrapped text before generating native cells", () =
   const label = elements.find((element) => element.type === "text")!;
   expect(root.height).toBeGreaterThan(48);
   expect(label.height + 16).toBeLessThanOrEqual(root.height + 0.01);
+});
+
+it.each([false, true])(
+  "reclaims wrapped height as columns widen while still fitting other cells (rich=%s)",
+  (rich) => {
+    const data = createTableData(2, 2);
+    data.columns[0] = 80;
+    data.cells[0].text = "Multiple words that will wrap across many lines";
+    data.cells[1].text = "first\nsecond";
+    if (rich) {
+      data.cells[0].richText = richTextFromPlainText(data.cells[0].text);
+    }
+    const { root, elements } = createTableElements(data, 0, 0);
+    const otherLabel = elements.find(
+      (element) =>
+        element.type === "text" && getTableMember(element)?.column === 1,
+    )!;
+    const wide = updateTableElements(elements, root, (table) => ({
+      ...table,
+      columns: [600, 144],
+    }));
+    const wideRoot = wide.find(isTableRoot)!;
+    expect(wideRoot.customData.table.rows).toEqual([
+      otherLabel.height + 16,
+      48,
+    ]);
+    expect(wideRoot.customData.table.rows[0]).toBeLessThan(
+      root.customData.table.rows[0],
+    );
+    expect(wide.find((element) => element.type === "text")).toMatchObject({
+      text: data.cells[0].text,
+      fontSize: data.cells[0].fontSize,
+    });
+    const narrowAgain = updateTableElements(wide, wideRoot, (table) => ({
+      ...table,
+      columns: data.columns,
+    }));
+    expect(narrowAgain.find(isTableRoot)?.customData.table.rows).toEqual(
+      root.customData.table.rows,
+    );
+  },
+);
+
+it("reflows rich text across a merged range while preserving row minima through structure changes", () => {
+  const data = mergeTableCells(createTableData(2, 2), range);
+  data.rows = [52, 64];
+  data.columns = [40, 40];
+  data.cells[0].text =
+    "Multiple words that wrap across many lines\nSecond line";
+  data.cells[0].richText = richTextFromPlainText(data.cells[0].text);
+  const { root, elements } = createTableElements(data, 0, 0);
+  expect(root.height).toBeGreaterThan(116);
+  const inserted = updateTableElements(elements, root, {
+    type: "insert",
+    axis: "row",
+    index: 1,
+  });
+  const insertedRoot = inserted.find(isTableRoot)!;
+  expect(insertedRoot.customData.table.rowMinHeights).toEqual([52, 52, 64]);
+  expect(insertedRoot.customData.table.cells[0].rowSpan).toBe(3);
+  const deleted = updateTableElements(inserted, insertedRoot, {
+    type: "delete",
+    axis: "row",
+    index: 0,
+  });
+  const wide = updateTableElements(
+    deleted,
+    deleted.find(isTableRoot)!,
+    (table) => ({
+      ...table,
+      columns: [600, 40],
+    }),
+  );
+  expect(wide.find(isTableRoot)?.customData.table).toMatchObject({
+    rows: [52, 64],
+    rowMinHeights: [52, 64],
+  });
+  expect(
+    wide.find((element) => element.type === "text" && !element.isDeleted),
+  ).toMatchObject({ text: data.cells[0].text });
+});
+
+it.each([false, true])(
+  "reflows a reopened table with or without persisted row minima (legacy=%s)",
+  (legacy) => {
+    const data = createTableData(1, 1);
+    data.columns[0] = 40;
+    data.rows[0] = 96;
+    data.cells[0].text = "Multiple words that will wrap across many lines";
+    const { elements } = createTableElements(data, 0, 0);
+    const saved = JSON.parse(
+      JSON.stringify(syncTableData(elements)),
+    ) as typeof elements;
+    const savedRoot = saved.find(isTableRoot)!;
+    if (legacy) {
+      delete savedRoot.customData.table.rowMinHeights;
+    }
+    const wide = updateTableElements(saved, savedRoot, (table) => ({
+      ...table,
+      columns: [600],
+    }));
+    const label = wide.find((element) => element.type === "text")!;
+    expect(wide.find(isTableRoot)?.height).toBe(
+      legacy ? label.height + 16 : 96,
+    );
+  },
+);
+
+it("retains explicit HTML row heights as the baseline for reflow", () => {
+  const data = tableDataFromHTML(
+    '<table><tr style="height:85px"><td>First</td></tr><tr height="95"><td>Second</td></tr></table>',
+    document,
+  )!;
+  const { root } = createTableElements(data, 0, 0);
+  expect(root.customData.table.rowMinHeights).toEqual([85, 95]);
+});
+
+it("fits a merged cell by clamping the row being resized", () => {
+  const data = mergeTableCells(createTableData(2, 2), range);
+  data.rows = [70, 70];
+  data.cells[0].text = "one\ntwo\nthree\nfour\nfive";
+  data.cells[0].richText = richTextFromPlainText(data.cells[0].text);
+  const { root, elements } = createTableElements(data, 0, 0);
+  const label = elements.find((element) => element.type === "text")!;
+  const resized = updateTableElements(elements, root, {
+    type: "resizeRows",
+    row: 0,
+    endRow: 0,
+    height: 24,
+  });
+  expect(resized.find(isTableRoot)?.customData.table).toMatchObject({
+    rows: [label.height + 16 - 70, 70],
+    rowMinHeights: [24, 70],
+  });
 });
 
 it("uses supplied defaults and inherits neighboring cell styles when inserting axes", () => {

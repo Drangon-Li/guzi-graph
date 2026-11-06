@@ -1,4 +1,8 @@
-import { FONT_FAMILY, getLineHeight } from "@excalidraw/common";
+import {
+  FONT_FAMILY,
+  getLineHeight,
+  getVerticalOffset,
+} from "@excalidraw/common";
 import { isTextElement, StoreSnapshot } from "@excalidraw/element";
 import {
   createTableData,
@@ -9,7 +13,10 @@ import {
 import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
 import { API } from "@excalidraw/excalidraw/tests/helpers/api";
 
-import type { SceneElementsMap } from "@excalidraw/element/types";
+import type {
+  ExcalidrawTextElement,
+  SceneElementsMap,
+} from "@excalidraw/element/types";
 
 import {
   appendFontReplacementHistory,
@@ -20,6 +27,35 @@ import {
 } from "./canvasFonts";
 
 describe("desktop scene font replacement", () => {
+  it("preserves the ruled text baseline and fixed line spacing when changing the canvas font", () => {
+    const text = {
+      ...API.createElement({
+        type: "text",
+        text: "first\nsecond",
+        y: 100,
+        fontFamily: FONT_FAMILY.Excalifont,
+        fontSize: 16,
+      }),
+      customData: { guziRuledText: { version: 1, lineSpacing: 32 } },
+      autoResize: false,
+      width: 200,
+      lineHeight: 2 as ExcalidrawTextElement["lineHeight"],
+    };
+    const replaced = replaceLayerFont([text], FONT_FAMILY.Nunito).find(
+      isTextElement,
+    )!;
+    expect(replaced.fontFamily).toBe(FONT_FAMILY.Nunito);
+    expect(replaced.width).toBe(200);
+    expect(replaced.fontSize * replaced.lineHeight).toBeCloseTo(32);
+    expect(replaced.height).toBeCloseTo(64);
+    expect(
+      replaced.y +
+        getVerticalOffset(replaced.fontFamily, replaced.fontSize, 32),
+    ).toBeCloseTo(
+      text.y + getVerticalOffset(text.fontFamily, text.fontSize, 32),
+    );
+  });
+
   it("updates the scene default even when no text needs replacement", () => {
     const previous = {
       elements: [],

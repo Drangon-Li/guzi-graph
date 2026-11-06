@@ -29,7 +29,8 @@ import {
   serializePresentation,
 } from "../presentation/model";
 
-import { apiSnapshot } from "./editorSnapshot";
+import { apiSnapshot, isEditorReady } from "./editorSnapshot";
+import { pinDocumentSleep } from "./tabSleep";
 
 import type { Presentation } from "../presentation/model";
 import type { SceneSnapshot } from "../../shared/model/document";
@@ -112,7 +113,7 @@ export const createPresentationActions = (
 
   const checkpointSlide = (document: CanvasDocument) => {
     commitText(document);
-    if (!document.activeSlideId || !document.api || document.api.isDestroyed) {
+    if (!document.activeSlideId || !isEditorReady(document.api)) {
       return;
     }
     const previous = document.slideRuntime!.get(document.activeSlideId);
@@ -146,7 +147,10 @@ export const createPresentationActions = (
             next?.forEach((action) => action());
           }
         })
-        .catch(reportError);
+        .catch((failure) => {
+          pendingImageActions.current.delete(document);
+          reportError(failure);
+        });
     }
     return true;
   };
@@ -173,6 +177,7 @@ export const createPresentationActions = (
     }
     const cached = document.slideRuntime!.get(id);
     document.activeSlideId = id;
+    delete document.sleepCheckpoint;
     const preferences = resolveEditorPreferences(
       settingsRef.current.editorPreferences,
     );
@@ -578,42 +583,43 @@ export const createPresentationActions = (
     return serializePresentation({ ...document.presentation, slides: [slide] });
   };
 
-  const pasteSlide = async (document: CanvasDocument, content: string) => {
-    const deck = document.presentation;
-    const canPaste = () =>
-      !!deck &&
-      document.presentation === deck &&
-      documentsRef.current.includes(document) &&
-      !document.presenting &&
-      !document.removalPhase &&
-      !closingRef.current;
-    if (!canPaste()) {
-      return;
-    }
-    const source = await parsePresentation(content, ownerWindow);
-    if (!source || !canPaste()) {
-      return;
-    }
-    const slides = source.slides.map((slide) => ({
-      id: ownerWindow.crypto.randomUUID(),
-      notes: slide.notes,
-      title: `${slide.title} ${
-        settingsRef.current.language === "en" ? "copy" : "副本"
-      }`,
-      bounds: { ...getSlideBounds(slide, source.width, source.height) },
-      scene: copyPresentationScene(slide.scene),
-    }));
-    changeSlides(
-      document,
-      (deck) => {
-        const index = deck.slides.findIndex(
-          (slide) => slide.id === document.activeSlideId,
-        );
-        deck.slides.splice(index + 1, 0, ...slides);
-      },
-      () => slides[0].id,
-    );
-  };
+  const pasteSlide = (document: CanvasDocument, content: string) =>
+    pinDocumentSleep(document, async () => {
+      const deck = document.presentation;
+      const canPaste = () =>
+        !!deck &&
+        document.presentation === deck &&
+        documentsRef.current.includes(document) &&
+        !document.presenting &&
+        !document.removalPhase &&
+        !closingRef.current;
+      if (!canPaste()) {
+        return;
+      }
+      const source = await parsePresentation(content, ownerWindow);
+      if (!source || !canPaste()) {
+        return;
+      }
+      const slides = source.slides.map((slide) => ({
+        id: ownerWindow.crypto.randomUUID(),
+        notes: slide.notes,
+        title: `${slide.title} ${
+          settingsRef.current.language === "en" ? "copy" : "副本"
+        }`,
+        bounds: { ...getSlideBounds(slide, source.width, source.height) },
+        scene: copyPresentationScene(slide.scene),
+      }));
+      changeSlides(
+        document,
+        (deck) => {
+          const index = deck.slides.findIndex(
+            (slide) => slide.id === document.activeSlideId,
+          );
+          deck.slides.splice(index + 1, 0, ...slides);
+        },
+        () => slides[0].id,
+      );
+    });
 
   const deleteSlide = (document: CanvasDocument, id: string) => {
     const deck = document.presentation;

@@ -14,11 +14,31 @@ const artifacts = path.resolve(
   desktop,
   "../../output/playwright/a4-continuation",
 );
-const report = { passed: false, checks: [], errors: [] };
+const report = {
+  passed: false,
+  checks: [],
+  errors: [],
+  evidence: {},
+  evidenceBoundary:
+    "This suite uses Playwright mouse/keyboard input. Renderer-injected momentum phases and natural continuous wheel travel are exercised separately in paper-navigation-e2e.",
+};
+const owned = new Map();
+let profile;
+let launching;
 let application;
 let page;
 let client;
 let isolated;
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const bounded = (task, ms, label) => {
+  let timer;
+  return Promise.race([
+    task,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Timed out: ${label}`)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+};
 const processTable = () =>
   execFileSync("ps", ["-axo", "pid=,ppid=,command="], { encoding: "utf8" })
     .trim()
@@ -35,6 +55,35 @@ const processTable = () =>
           ]
         : [];
     });
+function rememberProcesses() {
+  const current = processTable();
+  const pid = application ? report.pid : undefined;
+  for (const item of current) {
+    if (
+      item.pid === pid ||
+      (profile &&
+        item.command.split(" ").includes(`--user-data-dir=${profile}`))
+    ) {
+      owned.set(item.pid, item.command);
+    }
+  }
+  const known = new Set(
+    current
+      .filter(({ pid, command }) => owned.get(pid) === command)
+      .map(({ pid }) => pid),
+  );
+  let size;
+  do {
+    size = known.size;
+    for (const item of current) {
+      if (known.has(item.parent)) {
+        owned.set(item.pid, item.command);
+        known.add(item.pid);
+      }
+    }
+  } while (size !== known.size);
+  return current.filter(({ pid, command }) => owned.get(pid) === command);
+}
 const freePort = () =>
   new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -106,7 +155,7 @@ async function main() {
   await fs.mkdir(artifacts, { recursive: true });
   isolated = await fs.mkdtemp(path.join(os.tmpdir(), "guzi-a4-continuation-"));
   const drawings = path.join(isolated, "drawings");
-  const profile = path.join(isolated, "profile");
+  profile = path.join(isolated, "profile");
   await fs.mkdir(drawings);
   await fs.mkdir(profile);
   await fs.writeFile(
@@ -117,17 +166,24 @@ async function main() {
       theme: "light",
     }),
   );
-  application = await _electron.launch({
+  launching = _electron.launch({
     executablePath: require("electron"),
-    args: [desktop],
+    args: [desktop, `--user-data-dir=${profile}`],
     env: {
       ...process.env,
       EXCALIDRAW_DESKTOP_USER_DATA: profile,
-      EXCALIDRAW_DESKTOP_DEV_URL: "",
+      EXCALIDRAW_DESKTOP_DEV_URL: process.env.EXCALIDRAW_DESKTOP_DEV_URL ?? "",
     },
     timeout: 30000,
   });
+  application = await launching;
+  launching = undefined;
   report.pid = application.process().pid;
+  rememberProcesses();
+  assert.equal(
+    await application.evaluate(({ app }) => app.getPath("userData")),
+    profile,
+  );
   report.profile = profile;
   page = await application.firstWindow();
   page.setDefaultTimeout(30000);
@@ -165,7 +221,79 @@ async function main() {
       action: "fit",
       ids: [sheets.at(-1).id],
     });
+    await page
+      .locator(".desktop-editor-pane.is-active")
+      .evaluate(async (pane) => {
+        const container = pane.querySelector(".excalidraw");
+        const key = Object.keys(container).find((name) =>
+          name.startsWith("__reactFiber$"),
+        );
+        let fiber = container[key];
+        while (fiber && !fiber.stateNode?.viewport) fiber = fiber.return;
+        if (!fiber) throw new Error("Cannot locate mounted paper editor");
+        const app = fiber.stateNode;
+        const state = app.state;
+        const lock = state.scrollConstraints;
+        if (!lock?.elasticPan)
+          throw new Error("Paper bounds are not installed");
+        const zoom = state.zoom.value;
+        const min =
+          (state.height - (lock.offsets?.bottom ?? 0)) / zoom -
+          lock.y -
+          lock.height;
+        const max = (lock.offsets?.top ?? 0) / zoom - lock.y;
+        app.api.updateScene({
+          appState: { scrollY: min > max ? (min + max) / 2 : min },
+        });
+        const ownerWindow = pane.ownerDocument.defaultView;
+        await new Promise((resolve) =>
+          ownerWindow.requestAnimationFrame(() =>
+            ownerWindow.requestAnimationFrame(resolve),
+          ),
+        );
+      });
   };
+  const viewportTrace = (action, expected) =>
+    page.locator(".desktop-editor-pane.is-active .excalidraw").evaluate(
+      (mounted, { action, expected }) => {
+        const ownerWindow = mounted.ownerDocument.defaultView;
+        const ownerKey = Object.keys(mounted).find((key) =>
+          key.startsWith("__reactFiber$"),
+        );
+        let fiber = mounted[ownerKey];
+        while (fiber && !fiber.stateNode?.viewport) fiber = fiber.return;
+        if (!fiber) throw new Error("Cannot locate mounted paper editor");
+        const app = fiber.stateNode;
+        const read = () => {
+          const { scrollX, scrollY, zoom } = app.state;
+          return {
+            t: ownerWindow.performance.now(),
+            scrollX,
+            scrollY,
+            zoom: zoom.value,
+            animating: app.viewport.isAnimating,
+            pages: app.scene
+              .getNonDeletedElements()
+              .filter((element) => element.customData?.guziPaper).length,
+          };
+        };
+        if (action === "start") {
+          const frames = [];
+          const unsubscribe = app.api.onChange(() => {
+            const sample = read();
+            if (sample.pages === expected) frames.push(sample);
+          });
+          ownerWindow.__a4ContinuationTrace = { frames, unsubscribe };
+        } else if (action === "take") {
+          const { frames, unsubscribe } = ownerWindow.__a4ContinuationTrace;
+          unsubscribe();
+          delete ownerWindow.__a4ContinuationTrace;
+          return { frames, end: read() };
+        }
+        return read();
+      },
+      { action, expected },
+    );
   const drag = async (distance, { retreat = 0, release = true } = {}) => {
     const box = await page
       .locator(".desktop-editor-pane.is-active canvas.interactive")
@@ -216,18 +344,18 @@ async function main() {
       await newDocument(template, orientation);
       const initial = (await frames())[0];
       await fitLast();
-      await drag(80);
+      await drag(48);
       assert.equal(
         (await frames()).length,
         1,
-        "release before 96 screen pixels must not add a sheet",
+        "release before 64 raw screen pixels must not add a sheet",
       );
       await fitLast();
       await drag(160, { retreat: 140 });
       assert.equal(
         (await frames()).length,
         1,
-        "retreat below 48 pixels must disarm",
+        "retreat below 56 raw screen pixels must disarm",
       );
       await fitLast();
       await drag(160, { release: false });
@@ -278,8 +406,31 @@ async function main() {
             `${template}-${orientation}-armed-${expected}.png`,
           ),
         });
+        const held = await viewportTrace("start", expected);
         await release();
         await count(expected);
+        await delay(260);
+        const { frames: appended, end } = await viewportTrace("take");
+        assert.ok(
+          appended.length > 0,
+          "The atomic append emits a viewport change",
+        );
+        for (const frame of [...appended, end]) {
+          assert.ok(
+            Math.abs(frame.scrollX - held.scrollX) < 0.02,
+            "Continuation preserves horizontal camera position",
+          );
+          assert.ok(
+            Math.abs(frame.scrollY - held.scrollY) < 0.02,
+            "Continuation neither jumps nor automatically peeks after release",
+          );
+          assert.equal(frame.zoom, held.zoom);
+        }
+        report.evidence[`${template}-${orientation}-append-${expected}`] = {
+          held,
+          appended,
+          end,
+        };
       }
       const sheets = await frames();
       assert.ok(
@@ -363,11 +514,15 @@ async function main() {
       await call("close_document", { documentId });
       const reopened = await call("open_canvas", { path: saved.path });
       await count(3);
+      if (template === "blank" && orientation === "portrait") {
+        report.manualDemo = "manual-demo.excalidraw";
+        await fs.copyFile(saved.path, path.join(artifacts, report.manualDemo));
+      }
       assert.ok(
         (await activeScene()).elements.some((element) => element.id === ink.id),
       );
       report.checks.push(
-        `${template} ${orientation}: native Space drag, threshold/retreat/Escape, two continued sheets, ink order, undo/redo, page jump, fit width, save/reopen`,
+        `${template} ${orientation}: native Space drag, threshold/retreat/Escape, two continuously appended sheets without automated camera travel, ink order, undo/redo, page jump, fit width, save/reopen`,
       );
       process.stdout.write(`Passed ${template} ${orientation}\n`);
 
@@ -476,76 +631,77 @@ async function main() {
 
 let stopping;
 async function stop() {
-  if (stopping) {
-    return stopping;
-  }
-  stopping = (async () => {
-    await client?.close().catch(() => {});
+  stopping ??= (async () => {
+    await launching?.catch(() => {});
+    await bounded(
+      client?.close() ?? Promise.resolve(),
+      5000,
+      "MCP client close",
+    ).catch(() => {});
+    rememberProcesses();
     if (application) {
-      const child = application.process();
-      const table = processTable();
-      const owned = new Set([child.pid]);
-      let size;
-      do {
-        size = owned.size;
-        for (const process of table)
-          if (owned.has(process.parent)) owned.add(process.pid);
-      } while (owned.size !== size);
-      const tracked = table.filter((process) => owned.has(process.pid));
-      report.ownedPids = [...owned];
-      await application.evaluate(({ app }) => app.exit(0)).catch(() => {});
-      await application.close().catch(() => {});
-      if (child.exitCode === null) {
-        child.kill("SIGKILL");
-      }
-      const remaining = () =>
-        processTable().filter((process) =>
-          tracked.some(
-            (item) =>
-              item.pid === process.pid && item.command === process.command,
-          ),
-        );
-      for (const processInfo of remaining())
-        process.kill(processInfo.pid, "SIGTERM");
-      await waitFor(() => remaining().length === 0).catch(() => {});
-      report.remainingPids = remaining().map((process) => process.pid);
-      if (report.remainingPids.length) {
-        report.passed = false;
-        process.exitCode = 1;
-      }
-      report.processExited = child.exitCode !== null || child.killed;
+      const current = application;
+      application = undefined;
+      await bounded(
+        current.evaluate(({ app }) => app.exit(0)),
+        5000,
+        "isolated Electron exit",
+      ).catch(() => {});
+      await bounded(current.close(), 5000, "Electron transport close").catch(
+        () => {},
+      );
     }
-  })();
-  return stopping;
-}
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.once(signal, () => {
-    void stop().finally(() => process.exit(1));
-  });
-}
-let timeout;
-Promise.race([
-  main(),
-  new Promise((_, reject) => {
-    timeout = setTimeout(
-      () => reject(new Error("Desktop A4 continuation test timed out")),
-      240000,
-    );
-  }),
-])
-  .catch(async (error) => {
-    report.failure = error.stack;
-    process.exitCode = 1;
-    await page
-      ?.screenshot({ path: path.join(artifacts, "failure.png") })
-      .catch(() => {});
-  })
-  .finally(async () => {
-    clearTimeout(timeout);
-    await stop();
+    for (const signal of ["SIGTERM", "SIGKILL"]) {
+      const deadline = Date.now() + 2500;
+      while (rememberProcesses().length && Date.now() < deadline)
+        await delay(50);
+      for (const { pid } of rememberProcesses()) {
+        try {
+          process.kill(pid, signal);
+        } catch (error) {
+          if (error.code !== "ESRCH") throw error;
+        }
+      }
+    }
+    const deadline = Date.now() + 2500;
+    while (rememberProcesses().length && Date.now() < deadline) await delay(50);
+    report.ownedPids = [...owned.keys()];
+    report.remainingProcesses = rememberProcesses();
+    report.remainingPids = report.remainingProcesses.map(({ pid }) => pid);
+    report.cleanupPassed = report.remainingProcesses.length === 0;
+    if (!report.cleanupPassed) report.passed = false;
+    if (isolated && report.cleanupPassed)
+      await fs.rm(isolated, { recursive: true, force: true });
+    await fs.mkdir(artifacts, { recursive: true });
     await fs.writeFile(
       path.join(artifacts, "report.json"),
       JSON.stringify(report, null, 2),
     );
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    process.stdout.write(`${path.join(artifacts, "report.json")}\n`);
+  })();
+  return stopping;
+}
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => {
+    report.passed = false;
+    report.failure = `Interrupted by ${signal}`;
+    void stop().finally(() => process.exit(1));
+  });
+}
+bounded(main(), 240000, "Desktop A4 continuation regression")
+  .catch(async (error) => {
+    report.failure = error.stack || String(error);
+    console.error(report.failure);
+    await page
+      ?.screenshot({ path: path.join(artifacts, "failure.png"), timeout: 5000 })
+      .catch(() => {});
+  })
+  .finally(async () => {
+    await stop();
+    process.exitCode = report.passed ? 0 : 1;
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
   });

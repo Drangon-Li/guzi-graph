@@ -15,8 +15,12 @@ import { createCloseActions } from "./closeActions";
 import { createProjectFileActions } from "./projectFileActions";
 import { createPluginRequestActions } from "./pluginRequests";
 import { useWorkspaceState } from "./state";
+import { useTabSleep } from "./tabSleep";
 
-import type { DiskDocument } from "../../../shared/desktop-api";
+import type {
+  DiskDocument,
+  ProjectCategory,
+} from "../../../shared/desktop-api";
 import type { PluginResponse } from "../../../shared/plugins";
 
 export type { CanvasDocument, ClosePrompt, PresentationHistory } from "./types";
@@ -68,6 +72,7 @@ export const useWorkspace = (
     setPdfImportDialog,
   } = workspace;
   const documentActions = createDocumentActions(workspace);
+  useTabSleep(workspace, documentActions);
   const presentationActions = createPresentationActions(
     workspace,
     documentActions,
@@ -174,7 +179,7 @@ export const useWorkspace = (
       );
       switch (command) {
         case "new":
-          setNewCanvasDialog(true);
+          setNewCanvasDialog({});
           break;
         case "new-presentation":
           newPresentation();
@@ -373,20 +378,22 @@ export const useWorkspace = (
       : null,
     drafts,
     closePrompt,
-    newCanvasDialog,
+    newCanvasDialog: !!newCanvasDialog,
     pdfImportDialog,
-    requestNewDocument: () => setNewCanvasDialog(true),
-    closeNewDocument: () => setNewCanvasDialog(false),
+    requestNewDocument: (initialSaveCategory?: ProjectCategory) =>
+      setNewCanvasDialog({ initialSaveCategory }),
+    closeNewDocument: () => setNewCanvasDialog(null),
     requestPdfImport: () => setPdfImportDialog(true),
     closePdfImport: () => setPdfImportDialog(false),
     createCanvas: (initialData: ExcalidrawInitialDataState, title: string) => {
       const document = createDocument(initialData);
       document.title = title;
+      document.initialSaveCategory = newCanvasDialog?.initialSaveCategory;
       if (initialData.elements?.length) {
         document.unsavedCopy = true;
         document.dirty = true;
       }
-      setNewCanvasDialog(false);
+      setNewCanvasDialog(null);
       setPdfImportDialog(false);
       refresh();
       return document;

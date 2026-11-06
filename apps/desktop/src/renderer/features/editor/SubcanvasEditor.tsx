@@ -20,6 +20,7 @@ import type {
 import type { HistoryCheckpoint } from "@excalidraw/excalidraw/history";
 
 import { PaperPageControls } from "../paper/PaperPageControls";
+import { getPaperTextPlacement } from "../paper/paperWriting";
 
 import {
   appendFontReplacementHistory,
@@ -51,10 +52,14 @@ export const SubcanvasEditor = ({
   document: CanvasDocument;
   historyCache?: Map<string, HistoryCheckpoint>;
 }) => {
-  const [path, setPath] = useState<string[]>([]);
+  const [path, setPath] = useState(() => document.sleepCheckpoint?.path ?? []);
+  const [rootReady, setRootReady] = useState(false);
+  const rootHistory = useRef(document.sleepCheckpoint?.history);
+  const childViewMode = useRef(document.sleepCheckpoint?.childViewModeEnabled);
   const root = useRef<ExcalidrawImperativeAPI | null>(null);
   const [rootApi, setRootApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const paperGesture = useRef<PaperGestureHandler | null>(null);
+  const paperScrollConstraint = useRef<AppState["scrollConstraints"]>(null);
   const registerPaperGesture = useCallback(
     (handler: PaperGestureHandler | null) => {
       paperGesture.current = handler;
@@ -68,7 +73,9 @@ export const SubcanvasEditor = ({
   const lastRootMap = useRef<SubcanvasScenes | null>(null);
   const lastChildMap = useRef<SubcanvasScenes | null>(null);
   const checkpoints = useRef(
-    historyCache ?? new Map<string, HistoryCheckpoint>(),
+    historyCache ??
+      document.sleepCheckpoint?.children ??
+      new Map<string, HistoryCheckpoint>(),
   );
   const latest = useRef(props);
   latest.current = props;
@@ -147,7 +154,7 @@ export const SubcanvasEditor = ({
   const flushChild = () => {
     const api = child.current;
     const id = currentId.current;
-    if (!api || api.isDestroyed || !id) {
+    if (!api || api.isDestroyed || !id || !childReady.current) {
       return;
     }
     flushSync(() => api.commitEditing());
@@ -182,6 +189,8 @@ export const SubcanvasEditor = ({
     flushChild();
     child.current = null;
     childReady.current = false;
+    childViewMode.current = undefined;
+    delete document.sleepCheckpoint;
     lastChildMap.current = null;
     setPath(nextPath);
   };
@@ -246,6 +255,23 @@ export const SubcanvasEditor = ({
       flushSync(() => root.current?.commitEditing());
     };
     document.getSnapshot = snapshot;
+    document.checkpointEditor = () => {
+      const id = currentId.current;
+      const history = child.current?.history.checkpoint?.(Infinity);
+      if (id && history) {
+        checkpoints.current.set(id, history);
+      }
+      return {
+        path,
+        children: checkpoints.current,
+        history: root.current?.history.checkpoint?.(Infinity),
+        childViewModeEnabled: child.current?.getViewModePreference(),
+        resetScrollConstraints:
+          !!paperScrollConstraint.current &&
+          root.current?.getAppState().scrollConstraints ===
+            paperScrollConstraint.current,
+      };
+    };
     document.invalidateSubsceneHistory = (ids) => {
       ids.forEach((id) => checkpoints.current.delete(id));
     };
@@ -315,6 +341,7 @@ export const SubcanvasEditor = ({
       delete document.flushPendingImages;
       delete document.flushEditing;
       delete document.getSnapshot;
+      delete document.checkpointEditor;
       delete document.invalidateSubsceneHistory;
       delete document.activeEditor;
       delete document.replaceAllSceneFonts;
@@ -329,6 +356,9 @@ export const SubcanvasEditor = ({
   };
   const integration = {
     ...props.desktopIntegration,
+    getFreeTextPlacement: document.presentation
+      ? undefined
+      : getPaperTextPlacement,
     onViewportGesture,
     open: () => latest.current.desktopIntegration!.open(),
     subcanvas: { open },
@@ -346,13 +376,14 @@ export const SubcanvasEditor = ({
       );
     },
   };
-  const scene = activeId ? scenes.current[activeId] : null;
+  const scene = rootReady && activeId ? scenes.current[activeId] : null;
 
   return (
     <>
       <div className="desktop-root-canvas" inert={!!scene}>
         <Excalidraw
           {...props}
+          autoFocus={props.autoFocus && !activeId}
           interaction={props.interaction !== false && !scene}
           handleKeyboardGlobally={!!props.handleKeyboardGlobally && !scene}
           desktopIntegration={integration}
@@ -366,6 +397,11 @@ export const SubcanvasEditor = ({
             scenes.current = api.getAppState().subscenes;
             lastRootMap.current = scenes.current;
             files.current = api.getFiles();
+            if (rootHistory.current) {
+              api.history.restoreCheckpoint?.(rootHistory.current);
+              rootHistory.current = undefined;
+            }
+            setRootReady(true);
             props.onInitialize?.(api);
           }}
           onChange={(elements, appState, nextFiles) => {
@@ -385,6 +421,7 @@ export const SubcanvasEditor = ({
           <PaperPageControls
             api={rootApi}
             active={!scene && !document.presentation}
+            ownedConstraint={paperScrollConstraint}
             language={english ? "en" : "zh-CN"}
             register={registerPaperGesture}
           />
@@ -454,6 +491,7 @@ export const SubcanvasEditor = ({
                   scrollToContent: scene.appState.scrollX === undefined,
                   appState: {
                     ...scene.appState,
+                    viewModeEnabled: childViewMode.current,
                     subscenes: scenes.current,
                     fontTopPicks: root.current?.getAppState().fontTopPicks,
                     currentItemFontFamily:
@@ -472,7 +510,9 @@ export const SubcanvasEditor = ({
                   if (checkpoint) {
                     api.history.restoreCheckpoint?.(checkpoint);
                   }
+                  childViewMode.current = undefined;
                   childReady.current = true;
+                  delete document.sleepCheckpoint;
                 }}
                 onChange={(elements, state, nextFiles) =>
                   captureChild(activeId, elements, state, nextFiles)
@@ -480,13 +520,14 @@ export const SubcanvasEditor = ({
                 onDuplicate={duplicate}
                 desktopIntegration={{
                   ...integration,
+                  getFreeTextPlacement: undefined,
                   onViewportGesture: undefined,
                   history: undefined,
                   elementPastePosition: undefined,
                 }}
                 interaction={props.interaction}
                 handleKeyboardGlobally={props.handleKeyboardGlobally}
-                autoFocus
+                autoFocus={props.interaction !== false}
                 langCode={props.langCode}
                 theme={props.theme}
                 name={scene.title}

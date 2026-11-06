@@ -26,6 +26,7 @@ const setup = () => {
     ownerWindow: container.ownerDocument.defaultView!,
     isInteractionEnabled: () => true,
     requestUnfollow: vi.fn(),
+    wheel: { cancelPan: vi.fn() },
     editorInterface: { formFactor: "desktop" },
     isDefaultUIEnabled: () => true,
   } as unknown as App;
@@ -380,6 +381,7 @@ describe("selection visibility behind the properties panel", () => {
       }
       if (mode === "navigation") {
         viewport.setViewport(null);
+        expect(app.wheel.cancelPan).toHaveBeenCalledTimes(1);
       }
       if (mode === "destroy") {
         viewport.destroy();

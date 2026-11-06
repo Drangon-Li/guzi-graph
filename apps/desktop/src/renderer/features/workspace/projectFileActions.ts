@@ -1,6 +1,9 @@
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 
-import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
+import type {
+  AppState,
+  ExcalidrawInitialDataState,
+} from "@excalidraw/excalidraw/types";
 
 import { fileTitle } from "../../shared/model/document";
 import {
@@ -67,30 +70,43 @@ export const createProjectFileActions = (
       try {
         const next = await desktop.updateSettings(update);
         settingsRef.current = next;
-        if (update.stickyNoteMode) {
+        const { editorPreferences: preferences, stickyNoteMode } = update;
+        if (stickyNoteMode) {
+          const appState = { currentItemStickyNoteMode: stickyNoteMode };
           for (const document of documentsRef.current) {
+            document.initialData = {
+              ...document.initialData,
+              appState: { ...document.initialData.appState, ...appState },
+            };
             for (const editor of new Set([
               document.api,
               document.activeEditor?.(),
             ])) {
               editor?.updateScene({
-                appState: { currentItemStickyNoteMode: update.stickyNoteMode },
+                appState,
                 captureUpdate: CaptureUpdateAction.NEVER,
               });
             }
           }
         }
-        if (update.editorPreferences) {
-          const preferences = update.editorPreferences;
+        if (preferences) {
           const registry = registerPreferenceFonts(preferences);
+          const defaultsFor = (appState?: Partial<AppState> | null) => ({
+            currentItemFontFamily: preferences.defaultFontFamily,
+            fontRegistry: { ...appState?.fontRegistry, ...registry },
+            fontTopPicks: preferences.fontTopPicks,
+            colorTopPicks: getPreferenceColorTopPicks(
+              preferences,
+              appState?.colorTopPicks,
+            ),
+          });
           const applyDefaults = <T extends ExcalidrawInitialDataState>(
             scene: T,
           ): T => ({
             ...scene,
             appState: {
               ...scene.appState,
-              currentItemFontFamily: preferences.defaultFontFamily,
-              fontRegistry: { ...scene.appState?.fontRegistry, ...registry },
+              ...defaultsFor(scene.appState),
             },
           });
           for (const document of documentsRef.current) {
@@ -107,21 +123,12 @@ export const createProjectFileActions = (
               document.api,
               document.activeEditor?.(),
             ])) {
-              editor?.updateScene({
-                appState: {
-                  currentItemFontFamily: preferences.defaultFontFamily,
-                  fontRegistry: {
-                    ...editor.getAppState().fontRegistry,
-                    ...registry,
-                  },
-                  fontTopPicks: update.editorPreferences.fontTopPicks,
-                  colorTopPicks: getPreferenceColorTopPicks(
-                    update.editorPreferences,
-                    editor.getAppState().colorTopPicks,
-                  ),
-                },
-                captureUpdate: CaptureUpdateAction.NEVER,
-              });
+              if (editor && !editor.isDestroyed) {
+                editor.updateScene({
+                  appState: defaultsFor(editor.getAppState()),
+                  captureUpdate: CaptureUpdateAction.NEVER,
+                });
+              }
             }
           }
         }

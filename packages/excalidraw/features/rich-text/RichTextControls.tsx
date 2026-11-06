@@ -13,6 +13,7 @@ import {
   redrawTextBoundingBox,
   richTextFromPlainText,
 } from "@excalidraw/element";
+import { getRuledTextLineSpacing } from "@excalidraw/element/ruledText";
 
 import type { ExcalidrawTextElement } from "@excalidraw/element/types";
 
@@ -62,6 +63,7 @@ const labels = {
     indent: "增加缩进",
     line: "行间距",
     paragraph: "段间距",
+    paperSpacing: "行距随纸张设置调整",
     custom: "自定义",
     compact: "紧凑",
     standard: "标准",
@@ -77,6 +79,7 @@ const labels = {
     indent: "Increase indent",
     line: "Line spacing",
     paragraph: "Paragraph spacing",
+    paperSpacing: "Spacing follows the paper settings",
     custom: "Custom",
     compact: "Compact",
     standard: "Standard",
@@ -98,6 +101,7 @@ const SpacingControl = ({
   minimum,
   icons,
   onChange,
+  disabledReason,
 }: {
   app: AppClassProperties;
   appState: UIAppState;
@@ -107,6 +111,7 @@ const SpacingControl = ({
   minimum: number;
   icons: readonly React.JSX.Element[];
   onChange: (value: number) => void;
+  disabledReason?: string;
 }) => {
   const t = getLanguage().code === "en" ? labels.en : labels["zh-CN"];
   const { container } = useExcalidrawContainer();
@@ -114,7 +119,11 @@ const SpacingControl = ({
   const savedCaret = useRef<CaretPosition | null>(null);
   const customLabel = `${t.custom} ${label}`;
   return (
-    <fieldset className="rich-text-spacing">
+    <fieldset
+      className="rich-text-spacing"
+      disabled={!!disabledReason}
+      title={disabledReason}
+    >
       <legend>{label}</legend>
       <div className="buttonList">
         {presets.map((preset, index) => {
@@ -125,7 +134,7 @@ const SpacingControl = ({
               type="button"
               className={value === preset ? "active" : undefined}
               aria-label={title}
-              title={title}
+              title={disabledReason ?? title}
               aria-pressed={value === preset}
               onClick={() => onChange(preset)}
             >
@@ -149,12 +158,15 @@ const SpacingControl = ({
                 value !== null && !presets.includes(value) ? " active" : ""
               }`}
               aria-label={customLabel}
-              title={`${customLabel}${value === null ? "" : `: ${value}`}`}
+              title={
+                disabledReason ??
+                `${customLabel}${value === null ? "" : `: ${value}`}`
+              }
             >
               {pencilIcon}
             </button>
           </Popover.Trigger>
-          {open && (
+          {open && !disabledReason && (
             <PropertiesPopover
               container={container}
               className="properties-content rich-text-spacing-popover"
@@ -314,11 +326,13 @@ const useRichTextControls = ({
       });
     });
   };
+  const paperSpacing = texts.some((text) => getRuledTextLineSpacing(text));
   const spacing = (
     property: "lineHeight" | "paragraphSpacing",
     value: number,
   ) => {
     if (
+      paperSpacing ||
       !Number.isFinite(value) ||
       value < (property === "lineHeight" ? 0.5 : 0) ||
       value > 10
@@ -334,7 +348,7 @@ const useRichTextControls = ({
       }),
     );
   };
-  return { t, texts, background, list, command, spacing };
+  return { t, texts, background, list, command, spacing, paperSpacing };
 };
 
 type RichTextControlsProps = { app: AppClassProperties; appState: UIAppState };
@@ -389,10 +403,11 @@ export const RichTextHighlightControls = ({
 };
 
 export const RichTextControls = ({ app, appState }: RichTextControlsProps) => {
-  const { t, texts, list, command, spacing } = useRichTextControls({
-    app,
-    appState,
-  });
+  const { t, texts, list, command, spacing, paperSpacing } =
+    useRichTextControls({
+      app,
+      appState,
+    });
   if (!texts.length) {
     return null;
   }
@@ -461,6 +476,7 @@ export const RichTextControls = ({ app, appState }: RichTextControlsProps) => {
         icons={RichTextLineSpacingIcons}
         presets={[1, 1.25, 1.75]}
         minimum={0.5}
+        disabledReason={paperSpacing ? t.paperSpacing : undefined}
         onChange={(value) => spacing("lineHeight", value)}
       />
       <SpacingControl
@@ -471,6 +487,7 @@ export const RichTextControls = ({ app, appState }: RichTextControlsProps) => {
         icons={RichTextParagraphSpacingIcons}
         presets={[0, 0.5, 1]}
         minimum={0}
+        disabledReason={paperSpacing ? t.paperSpacing : undefined}
         onChange={(value) => spacing("paragraphSpacing", value)}
       />
     </div>

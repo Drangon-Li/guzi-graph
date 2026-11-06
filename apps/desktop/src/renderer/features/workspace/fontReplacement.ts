@@ -18,6 +18,7 @@ import {
 import { serializePresentation } from "../presentation/model";
 
 import { apiSnapshot } from "./editorSnapshot";
+import { pinDocumentSleep } from "./tabSleep";
 
 import type { SceneSnapshot } from "../../shared/model/document";
 import type { CanvasDocument } from "./types";
@@ -42,51 +43,54 @@ export const createFontActions = (
 ) => {
   const { root, ownerDocument, documentsRef, refresh } = workspace;
 
-  const applyFontToCurrentLayer = async (
+  const applyFontToCurrentLayer = (
     document: CanvasDocument,
     fontFamily: FontFamilyValues,
-  ) => {
-    commitText(document);
-    const api = document.activeEditor ? document.activeEditor() : document.api;
-    if (!api || api.isDestroyed) {
-      return;
-    }
-    await loadReplacementFont(
-      api.getSceneElementsIncludingDeleted(),
-      fontFamily,
-      ownerDocument,
-    );
-    if (
-      !documentsRef.current.includes(document) ||
-      api.isDestroyed ||
-      (document.activeEditor ? document.activeEditor() : document.api) !== api
-    ) {
-      return;
-    }
-    commitText(document);
-    const previous = api.getSceneElementsIncludingDeleted();
-    const elements = replaceLayerFont(previous, fontFamily);
-    if (
-      elements === previous &&
-      api.getAppState().currentItemFontFamily === fontFamily
-    ) {
-      return;
-    }
-    flushSync(() =>
-      api.updateScene({
-        elements,
-        appState: {
-          currentItemFontFamily: fontFamily,
-          fontRegistry: replacementFontRegistry(
-            api.getAppState().fontRegistry,
-            fontFamily,
-          ),
-        },
-        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-      }),
-    );
-    captureAPI(document);
-  };
+  ) =>
+    pinDocumentSleep(document, async () => {
+      commitText(document);
+      const api = document.activeEditor
+        ? document.activeEditor()
+        : document.api;
+      if (!api || api.isDestroyed) {
+        return;
+      }
+      await loadReplacementFont(
+        api.getSceneElementsIncludingDeleted(),
+        fontFamily,
+        ownerDocument,
+      );
+      if (
+        !documentsRef.current.includes(document) ||
+        api.isDestroyed ||
+        (document.activeEditor ? document.activeEditor() : document.api) !== api
+      ) {
+        return;
+      }
+      commitText(document);
+      const previous = api.getSceneElementsIncludingDeleted();
+      const elements = replaceLayerFont(previous, fontFamily);
+      if (
+        elements === previous &&
+        api.getAppState().currentItemFontFamily === fontFamily
+      ) {
+        return;
+      }
+      flushSync(() =>
+        api.updateScene({
+          elements,
+          appState: {
+            currentItemFontFamily: fontFamily,
+            fontRegistry: replacementFontRegistry(
+              api.getAppState().fontRegistry,
+              fontFamily,
+            ),
+          },
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        }),
+      );
+      captureAPI(document);
+    });
 
   const applyFontToOpenDocuments = async (fontFamily: FontFamilyValues) => {
     const toSnapshot = (
@@ -221,17 +225,25 @@ export const createFontActions = (
               }
             }
             slide.scene = next;
+            const history = appendFontReplacementHistory(
+              runtime?.history,
+              previous,
+              next,
+              document.sleepCheckpoint && slide.id === document.activeSlideId
+                ? Infinity
+                : undefined,
+            );
             document.slideRuntime!.set(slide.id, {
               snapshot: toSnapshot(next, document.api?.getAppState()),
-              history: appendFontReplacementHistory(
-                runtime?.history,
-                previous,
-                next,
-              ),
+              history,
               children,
             });
             if (slide.id === document.activeSlideId) {
               document.initialData = next;
+              if (document.sleepCheckpoint) {
+                document.sleepCheckpoint.children = children;
+                document.sleepCheckpoint.history = history;
+              }
             }
           }
           recordContent(document, serializePresentation(document.presentation));
@@ -243,6 +255,29 @@ export const createFontActions = (
           if (!document.initialized) {
             document.unsavedCopy = true;
             document.dirty = true;
+          }
+          const checkpoint = document.sleepCheckpoint;
+          if (checkpoint) {
+            const previous = document.initialData;
+            checkpoint.history = appendFontReplacementHistory(
+              checkpoint.history,
+              previous,
+              next,
+              Infinity,
+            );
+            for (const [id, child] of Object.entries(
+              previous.appState?.subscenes ?? {},
+            )) {
+              const history = appendFontReplacementHistory(
+                checkpoint.children.get(id),
+                child,
+                next.appState!.subscenes![id],
+                Infinity,
+              );
+              if (history) {
+                checkpoint.children.set(id, history);
+              }
+            }
           }
           document.initialData = next;
           capture(document, toSnapshot(document.initialData));

@@ -126,10 +126,9 @@ export class AppPan {
     this.secondary = isSecondary
       ? { engaged: false, nativeMenuSeen: false }
       : null;
-    app.props.desktopIntegration?.onViewportGesture?.(
-      { source: "pointer", phase: "begin", deltaY: 0 },
-      app.state,
-    );
+    app.wheel.cancelPan();
+    app.viewport.beginPan(event.timeStamp);
+    app.viewport.notifyPan({ source: "pointer", phase: "begin", deltaY: 0 });
 
     // due to event.preventDefault below, container wouldn't get focus
     // automatically
@@ -152,92 +151,102 @@ export class AppPan {
     }
     const { clientX: startX, clientY: startY } = event;
     const pointerId = "pointerId" in event ? event.pointerId : undefined;
+    const pressedButtons = event.buttons;
     let { clientX: lastX, clientY: lastY } = event;
-    const onPointerMove = withBatchedUpdatesThrottled((event: PointerEvent) => {
-      if (this.secondary && !this.secondary.engaged) {
-        // a right-click until the pointer travels far enough for a drag
-        if (
-          Math.hypot(event.clientX - startX, event.clientY - startY) <=
-          SECONDARY_BUTTON_PAN_THRESHOLD
-        ) {
+    const applyPointerMove = withBatchedUpdatesThrottled(
+      (event: PointerEvent) => {
+        if (this.secondary && !this.secondary.engaged) {
+          // a right-click until the pointer travels far enough for a drag
+          if (
+            Math.hypot(event.clientX - startX, event.clientY - startY) <=
+            SECONDARY_BUTTON_PAN_THRESHOLD
+          ) {
+            return;
+          }
+          this.secondary.engaged = true;
+          app.cursor.set(CURSOR_TYPE.GRABBING);
+          // pans from here on; the threshold distance is not caught up
+          lastX = event.clientX;
+          lastY = event.clientY;
           return;
         }
-        this.secondary.engaged = true;
-        app.cursor.set(CURSOR_TYPE.GRABBING);
-        // pans from here on; the threshold distance is not caught up
+
+        const deltaX = lastX - event.clientX;
+        const deltaY = lastY - event.clientY;
         lastX = event.clientX;
         lastY = event.clientY;
-        return;
-      }
-
-      const deltaX = lastX - event.clientX;
-      const deltaY = lastY - event.clientY;
-      lastX = event.clientX;
-      lastY = event.clientY;
-
-      /*
-       * Prevent paste event if we move while middle clicking on Linux.
-       * See issue #1383.
-       */
-      if (
-        isLinux &&
-        !nextPastePrevented &&
-        (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1)
-      ) {
-        nextPastePrevented = true;
-
-        /* Prevent the next paste event */
-        const preventNextPaste = (event: ClipboardEvent) => {
-          app.ownerDocument.body.removeEventListener(
-            EVENT.PASTE,
-            preventNextPaste,
-          );
-          event.stopPropagation();
-        };
 
         /*
-         * Reenable next paste in case of disabled middle click paste for
-         * any reason:
-         * - right click paste
-         * - empty clipboard
+         * Prevent paste event if we move while middle clicking on Linux.
+         * See issue #1383.
          */
-        const enableNextPaste = () => {
-          app.ownerWindow.setTimeout(() => {
+        if (
+          isLinux &&
+          !nextPastePrevented &&
+          (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1)
+        ) {
+          nextPastePrevented = true;
+
+          /* Prevent the next paste event */
+          const preventNextPaste = (event: ClipboardEvent) => {
             app.ownerDocument.body.removeEventListener(
               EVENT.PASTE,
               preventNextPaste,
             );
-            app.ownerWindow.removeEventListener(
-              EVENT.POINTER_UP,
-              enableNextPaste,
-            );
-          }, 100);
-        };
+            event.stopPropagation();
+          };
 
-        app.ownerDocument.body.addEventListener(EVENT.PASTE, preventNextPaste);
-        app.ownerWindow.addEventListener(EVENT.POINTER_UP, enableNextPaste);
+          /*
+           * Reenable next paste in case of disabled middle click paste for
+           * any reason:
+           * - right click paste
+           * - empty clipboard
+           */
+          const enableNextPaste = () => {
+            app.ownerWindow.setTimeout(() => {
+              app.ownerDocument.body.removeEventListener(
+                EVENT.PASTE,
+                preventNextPaste,
+              );
+              app.ownerWindow.removeEventListener(
+                EVENT.POINTER_UP,
+                enableNextPaste,
+              );
+            }, 100);
+          };
+
+          app.ownerDocument.body.addEventListener(
+            EVENT.PASTE,
+            preventNextPaste,
+          );
+          app.ownerWindow.addEventListener(EVENT.POINTER_UP, enableNextPaste);
+        }
+
+        // an updater, not a snapshot of `app.state`: a wheel zoom queued in
+        // the same React flush would otherwise be overwritten by a pan
+        // computed from the pre-zoom state
+        app.viewport.panBy(deltaX, deltaY, "pointer", {
+          time: event.timeStamp,
+        });
+      },
+      app.ownerWindow,
+    );
+    const onPointerMove = (event: PointerEvent) => {
+      // Filter before throttling so hover cannot replace a queued drag sample.
+      if (
+        (pointerId !== undefined && event.pointerId !== pointerId) ||
+        (pressedButtons !== 0 && (event.buttons & pressedButtons) === 0)
+      ) {
+        return;
       }
-
-      // an updater, not a snapshot of `app.state`: a wheel zoom queued in
-      // the same React flush would otherwise be overwritten by a pan
-      // computed from the pre-zoom state
-      app.viewport.translate((state) => ({
-        scrollX: state.scrollX - deltaX / state.zoom.value,
-        scrollY: state.scrollY - deltaY / state.zoom.value,
-      }));
-      app.setState({}, () => {
-        app.props.desktopIntegration?.onViewportGesture?.(
-          { source: "pointer", phase: "move", deltaY },
-          app.state,
-        );
-      });
-    }, app.ownerWindow);
-    this.pendingMoveFlush = onPointerMove.flush;
+      applyPointerMove(event);
+    };
+    this.pendingMoveFlush = applyPointerMove.flush;
     const teardown = withBatchedUpdates(
       (upEvent?: PointerEvent | FocusEvent) => {
         const { secondary } = this;
         // Flush the final navigation before the release callback observes it.
-        onPointerMove.flush();
+        applyPointerMove.flush();
         this.teardown = null;
         this.pendingMoveFlush = null;
         this.active = false;
@@ -265,22 +274,26 @@ export class AppPan {
                   : { clientX: lastX, clientY: lastY };
               app.savePointer(pointer.clientX, pointer.clientY, "up");
             }
-            app.viewport.releaseOverscroll();
-            app.props.desktopIntegration?.onViewportGesture?.(
-              {
-                source: "pointer",
-                phase:
-                  upEvent?.type === EVENT.POINTER_UP &&
-                  (pointerId === undefined ||
-                    ("pointerId" in upEvent &&
-                      upEvent.pointerId === pointerId)) &&
-                  this.dependencies.getPointerCount() <= 1
-                    ? "end"
-                    : "cancel",
-                deltaY: 0,
-              },
-              app.state,
-            );
+            const elastic = app.state.scrollConstraints?.elasticPan;
+            if (!elastic) {
+              app.viewport.releaseOverscroll();
+            }
+            app.viewport.notifyPan({
+              source: "pointer",
+              phase:
+                upEvent?.type === EVENT.POINTER_UP &&
+                (pointerId === undefined ||
+                  ("pointerId" in upEvent &&
+                    upEvent.pointerId === pointerId)) &&
+                this.dependencies.getPointerCount() <= 1
+                  ? "end"
+                  : "cancel",
+              deltaY: 0,
+            });
+            if (elastic) {
+              // The host may append paper at release, extending the bounds.
+              app.viewport.releaseOverscrollAfterCommit();
+            }
           },
         );
         app.ownerWindow.removeEventListener(EVENT.POINTER_MOVE, onPointerMove);

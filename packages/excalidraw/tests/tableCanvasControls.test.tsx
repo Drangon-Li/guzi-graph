@@ -39,12 +39,20 @@ const setupTable = (data = createTableData(2, 2), angle = 0) => {
 };
 const columnBoundary = (index = 0) =>
   screen.getAllByRole("separator", { name: `调整第${index + 1}列宽` })[0];
-const down = (target: Element, x = 244, y = 124) =>
+const rowBoundaries = (index = 0) =>
+  screen.getAllByRole("separator", { name: `调整第${index + 1}行高` });
+const down = (
+  target: Element,
+  x = 244,
+  y = 124,
+  modifiers: Pick<PointerEventInit, "metaKey" | "ctrlKey"> = {},
+) =>
   fireEvent.pointerDown(target, {
     button: 0,
     pointerId: 1,
     clientX: x,
     clientY: y,
+    ...modifiers,
   });
 const move = (x: number, y = 124) =>
   fireEvent.pointerMove(window, { pointerId: 1, clientX: x, clientY: y });
@@ -83,14 +91,93 @@ it("resizes one column across several frames with one undo and no canvas movemen
   expect(table().width).toBe(288);
 });
 
+it.each(["ctrlKey", "metaKey"] as const)(
+  "scales unequal columns with %s and keeps the grabbed internal border under the pointer",
+  (modifier) => {
+    const originalModifier = KEYS.CTRL_OR_CMD;
+    Object.assign(KEYS, { CTRL_OR_CMD: modifier });
+    try {
+      const data = createTableData(2, 2);
+      data.columns = [80, 160];
+      setupTable(data);
+      const historySize = h.history.undoStack.length;
+      down(columnBoundary(), 180, 124, { [modifier]: true });
+      move(200);
+      move(220);
+      expect(table()).toMatchObject({ x: 100, y: 100, width: 360, height: 96 });
+      expect(columnBoundary().style.left).toBe("120px");
+      expect(table().customData.table.columns).toEqual([120, 240]);
+      expect(
+        table().customData.table.cells.map((cell) => cell.fontSize),
+      ).toEqual(data.cells.map((cell) => cell.fontSize));
+      expect(h.history.undoStack).toHaveLength(historySize);
+      up();
+      expect(h.history.undoStack).toHaveLength(historySize + 1);
+      undo();
+      expect(table().customData.table.columns).toEqual([80, 160]);
+    } finally {
+      Object.assign(KEYS, { CTRL_OR_CMD: originalModifier });
+    }
+  },
+);
+
+it("scales rows from a rotated leading edge and preserves the opposite edge", () => {
+  const data = createTableData(2, 2);
+  data.rows = [60, 100];
+  setupTable(data, Math.PI / 2);
+  API.setAppState({ zoom: { value: 2 as never } });
+  const oppositeCorner = (root: ReturnType<typeof table>) => ({
+    x: root.x + root.width / 2 - root.height / 2,
+    y: root.y + root.height / 2 - root.width / 2,
+  });
+  const before = oppositeCorner(table());
+  const boundaries = rowBoundaries();
+  down(boundaries[boundaries.length - 1], 400, 350, {
+    [KEYS.CTRL_OR_CMD]: true,
+  });
+  move(440, 350);
+  up();
+  expect(table().customData.table.rows).toEqual([67.5, 112.5]);
+  // Proportional vertical resizing explicitly sets the minima for every row.
+  expect(table().customData.table.rowMinHeights).toEqual([67.5, 112.5]);
+  expect(oppositeCorner(table()).x).toBeCloseTo(before.x);
+  expect(oppositeCorner(table()).y).toBeCloseTo(before.y);
+  expect(table().width).toBe(288);
+});
+
+it("clamps a proportional column resize at the first column's minimum", () => {
+  const data = createTableData(2, 2);
+  data.columns = [80, 160];
+  setupTable(data);
+  down(columnBoundary(), 180, 124, { [KEYS.CTRL_OR_CMD]: true });
+  move(100);
+  up();
+  expect(table().customData.table.columns).toEqual([40, 80]);
+});
+
+it("clamps a proportional row resize at the first cell's text height", () => {
+  const data = createTableData(2, 2);
+  data.rows = [96, 144];
+  data.cells[0].text = "first\nsecond";
+  setupTable(data);
+  const label = h.elements.find((element) => element.type === "text")!;
+  down(rowBoundaries()[0], 120, 196, { [KEYS.CTRL_OR_CMD]: true });
+  move(120, 100);
+  up();
+  const [first, second] = table().customData.table.rows;
+  expect(first).toBeCloseTo(label.height + 16);
+  expect(second / first).toBeCloseTo(1.5);
+});
+
 it.each(["Escape", "pointercancel"])(
   "rolls back %s without creating history",
   (method) => {
     setupTable();
     const historySize = h.history.undoStack.length;
     const original = table();
-    down(columnBoundary());
+    down(columnBoundary(), 244, 124, { [KEYS.CTRL_OR_CMD]: true });
     move(284);
+    expect(table().customData.table.columns[1]).toBeGreaterThan(144);
     if (method === "Escape") {
       fireEvent.keyDown(window, { key: "Escape" });
     } else {
@@ -155,6 +242,42 @@ it("resizes a row and respects content height and minimum column width", () => {
     minimumTextHeight,
   );
   expect(table().customData.table.rows[1]).toBeCloseTo(48);
+  expect(table().customData.table.rowMinHeights).toEqual([24, 48]);
+  down(columnBoundary(), 140, 124);
+  move(700);
+  up();
+  expect(table().customData.table.rows[0]).toBeLessThan(48);
+  expect(table().customData.table.rowMinHeights).toEqual([24, 48]);
+});
+
+it("keeps untouched legacy rows at their current heights until column reflow", () => {
+  const data = createTableData(3, 2);
+  data.rows = [72, 130, 96];
+  setupTable(data);
+  const root = table();
+  const legacy = { ...root.customData.table };
+  delete legacy.rowMinHeights;
+  API.updateScene({
+    elements: h.elements.map((element) =>
+      element.id === root.id
+        ? newElementWith(root, { customData: { table: legacy } })
+        : element,
+    ),
+  });
+
+  down(rowBoundaries()[0], 120, 172);
+  move(120, 192);
+  up();
+  expect(table().customData.table.rows).toEqual([92, 130, 96]);
+  expect(table().customData.table.rowMinHeights).toEqual([92, 24, 24]);
+
+  down(columnBoundary());
+  move(500);
+  up();
+  const [first, second, third] = table().customData.table.rows;
+  expect(first).toBe(92);
+  expect(second).toBeLessThan(130);
+  expect(third).toBeLessThan(96);
 });
 
 it("offers insertions on four sides and safe row and column deletion", () => {
@@ -166,30 +289,30 @@ it("offers insertions on four sides and safe row and column deletion", () => {
     screen.getAllByRole("button", { name: "在第1列前插入列" }),
   ).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: "选择第1行" }));
-  expect(
-    screen
-      .getByRole("toolbar", { name: "行操作" })
-      .querySelector("button:nth-child(3)"),
-  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "删除行" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "下方插入" }));
   expect(table().customData.table.rows).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: "选择第2行" }));
-  fireEvent.click(
-    screen
-      .getByRole("toolbar", { name: "行操作" })
-      .querySelector("button:nth-child(3)")!,
-  );
+  fireEvent.click(screen.getByRole("button", { name: "删除行" }));
   expect(table().customData.table.rows).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "选择第1列" }));
   fireEvent.click(screen.getByRole("button", { name: "右侧插入" }));
   expect(table().customData.table.columns).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: "选择第2列" }));
-  fireEvent.click(
-    screen
-      .getByRole("toolbar", { name: "列操作" })
-      .querySelector("button:nth-child(3)")!,
-  );
+  fireEvent.click(screen.getByRole("button", { name: "删除列" }));
   expect(table().customData.table.columns).toHaveLength(1);
+});
+
+it("selects the color range from canvas row and column menus", () => {
+  setupTable(createTableData(2, 2));
+  fireEvent.click(screen.getByRole("button", { name: "选择第2行" }));
+  const rowMenu = screen.getByRole("toolbar", { name: "行操作" });
+  fireEvent.click(rowMenu.querySelector("button")!);
+  expect(screen.getByText("着色范围 · 第2行")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "选择第2列" }));
+  const columnMenu = screen.getByRole("toolbar", { name: "列操作" });
+  fireEvent.click(columnMenu.querySelector("button")!);
+  expect(screen.getByText("着色范围 · 第2列")).toBeTruthy();
 });
 
 it("exposes only visible merged boundaries and keeps a complete grid after insertion", () => {

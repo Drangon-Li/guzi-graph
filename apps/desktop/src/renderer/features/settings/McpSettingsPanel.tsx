@@ -85,6 +85,29 @@ const statusLabels = {
   error: "出错",
 };
 
+const sshTunnelLabels = {
+  "zh-CN": {
+    title: "从另一台设备连接",
+    requirements:
+      "在这台 Mac 上开启「远程登录」（SSH），并保持 Guzi 和 MCP 服务运行。另一台设备需要能通过 SSH 连到这台 Mac。",
+    target: "Mac 的 SSH 登录目标",
+    invalidTarget: "请输入 SSH 主机名或用户名@主机名，例如 user@mac-host。",
+    copy: "复制 SSH 命令",
+    instructions:
+      "在另一台设备的终端运行命令并保持终端打开。两端使用同一 MCP 端口，该端口在另一台设备上需空闲。隧道建立后，在另一台设备上使用上方的回环地址、Token 和下方的客户端配置。",
+  },
+  en: {
+    title: "Connect from another device",
+    requirements:
+      "Turn on Remote Login (SSH) on this Mac and keep Guzi and its MCP service running. The other device needs to be able to reach this Mac over SSH.",
+    target: "Mac SSH destination",
+    invalidTarget: "Enter an SSH host or user@host, for example user@mac-host.",
+    copy: "Copy SSH command",
+    instructions:
+      "Run the command in a terminal on the other device and leave it open. Both devices use the same MCP port, which must be free on the other device. Once the tunnel is open, use the loopback address and token above with the client configuration below on the other device.",
+  },
+};
+
 const PluginCard = ({
   plugin,
   root,
@@ -99,6 +122,7 @@ const PluginCard = ({
   const t = (message: string) => translate(language, message);
   const desktop = root.ownerDocument.defaultView!.desktop;
   const [port, setPort] = useState(String(plugin.port));
+  const [sshDestination, setSshDestination] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -134,6 +158,15 @@ const PluginCard = ({
   const connected =
     plugin.status === "running" && !!plugin.endpoint && !!plugin.token;
   const configs = connectionConfigs(plugin);
+  const sshLabels = sshTunnelLabels[language];
+  const sshTarget = sshDestination.trim();
+  const validSshTarget = /^(?:[a-z\d_][a-z\d_.-]*@)?[a-z\d_][a-z\d_.-]*$/i.test(
+    sshTarget,
+  );
+  const sshCommand =
+    connected && validSshTarget
+      ? `ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:${plugin.port}:127.0.0.1:${plugin.port} ${sshTarget}`
+      : "";
   return (
     <article className="desktop-market-card" aria-label={plugin.name}>
       <header>
@@ -256,6 +289,39 @@ const PluginCard = ({
           <p className="desktop-market-hint">
             {t("Token 允许访问画布，请仅交给你信任的客户端。")}
           </p>
+          <details className="desktop-plugin-ssh">
+            <summary>{sshLabels.title}</summary>
+            <p>{sshLabels.requirements}</p>
+            <label>
+              {sshLabels.target}
+              <input
+                type="text"
+                placeholder="user@mac-host"
+                autoCapitalize="none"
+                spellCheck={false}
+                aria-invalid={!!sshTarget && !validSshTarget}
+                value={sshDestination}
+                onChange={(event) =>
+                  setSshDestination(event.currentTarget.value)
+                }
+              />
+            </label>
+            {!!sshTarget && !validSshTarget && (
+              <p role="alert">{sshLabels.invalidTarget}</p>
+            )}
+            {sshCommand && (
+              <pre>
+                <code>{sshCommand}</code>
+              </pre>
+            )}
+            <p>{sshLabels.instructions}</p>
+            <Button
+              disabled={!sshCommand}
+              onSelect={() => void copy(sshCommand)}
+            >
+              {sshLabels.copy}
+            </Button>
+          </details>
           <h3>{t("配置客户端")}</h3>
           <p>
             {t(

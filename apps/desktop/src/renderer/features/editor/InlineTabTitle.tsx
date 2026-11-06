@@ -71,11 +71,30 @@ export const InlineTabTitle = ({
       {document.saving ? "↻" : document.dirty ? "●" : ""}
     </span>
   );
+  const sleepLabel = t("已休眠，选择此标签以唤醒");
+  const sleep = document.asleep && (
+    <svg
+      className="desktop-tab-sleep"
+      width="13"
+      height="13"
+      viewBox="0 0 16 16"
+      fill="none"
+      role="img"
+      aria-label={sleepLabel}
+    >
+      <path
+        d="M13.5 2.5C7 2 3.5 4.5 3.5 8.5a4 4 0 0 0 4 4c4 0 6.5-3.5 6-10Z"
+        fill="currentColor"
+      />
+      <path d="m2.5 13.5 7-7" stroke="currentColor" strokeLinecap="round" />
+    </svg>
+  );
 
   if (editing) {
     return (
       <div className="desktop-tab-edit" style={{ width: width.current }}>
         {status}
+        {sleep}
         <input
           ref={input}
           aria-label={t("画布名称")}
@@ -133,9 +152,14 @@ export const InlineTabTitle = ({
         setValue(document.title);
         setEditing(true);
       }}
-      title={`${document.path || t("尚未保存")} · ${t("双击重命名")}`}
+      title={[
+        document.path || t("尚未保存"),
+        t("双击重命名"),
+        ...(document.asleep ? [sleepLabel] : []),
+      ].join(" · ")}
     >
       {status}
+      {sleep}
       <span>{document.title}</span>
     </button>
   );

@@ -1,3 +1,5 @@
+import { markDocumentActive } from "./tabSleep";
+
 import type { ProjectFile } from "../../../shared/desktop-api";
 import type { CanvasDocument } from "./types";
 import type { WorkspaceState } from "./state";
@@ -98,8 +100,11 @@ export const createCloseActions = (
       (item) => item !== document,
     );
     if (activeRef.current === document.id) {
-      activeRef.current =
-        documentsRef.current[Math.max(0, position - 1)]?.id || null;
+      const next = documentsRef.current[Math.max(0, position - 1)];
+      if (next) {
+        markDocumentActive(next);
+      }
+      activeRef.current = next?.id ?? null;
       projectRef.current = !activeRef.current;
     }
     refresh();

@@ -296,13 +296,17 @@ async function saveDocument(request) {
   let overwrite = false;
   const presentation = request.format === "presentation";
   const extension = presentation ? "guzi-presentation" : "excalidraw";
+  const initialDirectory =
+    !target && request.initialSaveCategory
+      ? await storage.initialSaveDirectory(request.initialSaveCategory)
+      : null;
   if (request.automation) {
     if (request.automation !== true || request.saveAs) {
       throw new Error("自动化仅支持保存当前文档。");
     }
     if (!target) {
-      const root = storage.getSettings().rootDirectory;
-      if (!root) {
+      const directory = initialDirectory || storage.getSettings().rootDirectory;
+      if (!directory) {
         throw Object.assign(new Error("自动保存前请先在设置中选择项目目录。"), {
           code: "ROOT_REQUIRED",
         });
@@ -314,7 +318,7 @@ async function saveDocument(request) {
         process.platform,
       );
       target = path.join(
-        root,
+        directory,
         `${path.basename(name, `.${extension}`)}-${randomUUID()}.${extension}`,
       );
       return storage.saveFile(
@@ -326,7 +330,7 @@ async function saveDocument(request) {
   }
   if (request.saveAs || !target) {
     const name = fileName(request.name, extension, undefined, process.platform);
-    const root = storage.getSettings().rootDirectory;
+    const directory = initialDirectory || storage.getSettings().rootDirectory;
     const result = await dialog.showSaveDialog(
       ...nativeDialogOptions({
         title: presentation
@@ -336,7 +340,7 @@ async function saveDocument(request) {
           : request.saveAs
           ? t("画布另存为")
           : t("保存画布"),
-        defaultPath: target || (root ? path.join(root, name) : name),
+        defaultPath: target || (directory ? path.join(directory, name) : name),
         filters: [
           {
             name: presentation ? t("Guzi 演示文稿") : t("Excalidraw 画布"),

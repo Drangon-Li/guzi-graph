@@ -9,6 +9,11 @@ export const apiSnapshot = (api: ExcalidrawImperativeAPI): SceneSnapshot => ({
   files: api.getFiles(),
 });
 
+export const isEditorReady = (
+  api: ExcalidrawImperativeAPI | null | undefined,
+): api is ExcalidrawImperativeAPI =>
+  !!api && !api.isDestroyed && !api.getAppState().isLoading;
+
 /** Commit any in-progress text edit in the document's active editor. */
 export const flushDocumentEditing = (document: CanvasDocument | undefined) => {
   if (document?.flushEditing) {
