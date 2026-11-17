@@ -142,6 +142,7 @@ describe("element canvas cache", () => {
       makeConfig(elements, { scale: 2, renderEnvironment: env }),
     );
     expect(canvases).toHaveLength(2);
+    expect([canvases[0].width, canvases[0].height]).toEqual([0, 0]);
     expect(canvases[1].width).toBe(100 * 2 + 40);
   });
 
@@ -196,11 +197,12 @@ describe("link icon cache", () => {
 
   // the icon canvas bakes at the fixed link icon size while the element
   // bitmap is element-width + padding, so filter on width to isolate the
-  // icon blits
+  // icon blits. Released element bitmaps can still be referenced by the mock.
   const iconBlits = (scene: HTMLCanvasElement, canvases: HTMLCanvasElement[]) =>
     getDrawImageSources(scene).filter(
       (source): source is HTMLCanvasElement =>
         canvases.includes(source as HTMLCanvasElement) &&
+        (source as HTMLCanvasElement).width > 0 &&
         (source as HTMLCanvasElement).width < 64,
     );
 
