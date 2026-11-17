@@ -1,5 +1,10 @@
 {
   "labels": {
+    "insertFormula": "插入 LaTeX 公式",
+    "editFormula": "編輯 LaTeX 公式",
+    "formulaSource": "LaTeX 原始碼",
+    "formulaPreview": "公式預覽",
+    "invalidFormula": "無法算繪這段公式，請檢查語法、指令和字元。",
     "signUp": "",
     "signIn": "",
     "paste": "貼上",
@@ -338,6 +343,8 @@
     "bucketfill": "油漆桶填充工具",
     "hand": "手形（平移工具）",
     "extraTools": "更多工具",
+    "scrollToolsLeft": "工具列向左捲動",
+    "scrollToolsRight": "工具列向右捲動",
     "mermaidToExcalidraw": "Mermaid 至 Excalidraw",
     "convertElementType": "切換形狀類型"
   },

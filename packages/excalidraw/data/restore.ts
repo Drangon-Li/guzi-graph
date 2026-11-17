@@ -569,7 +569,11 @@ export const restoreElement = (
       if (!isFiniteNumber(fontSize)) {
         fontSize = DEFAULT_FONT_SIZE;
       }
-      const text = (typeof element.text === "string" && element.text) || "";
+      const latex =
+        (typeof element.latex === "string" && element.latex.trim()) ||
+        undefined;
+      const text =
+        latex || (typeof element.text === "string" && element.text) || "";
 
       const lineHeight =
         element.lineHeight ||
@@ -581,12 +585,13 @@ export const restoreElement = (
         textAlign: element.textAlign || DEFAULT_TEXT_ALIGN,
         verticalAlign: element.verticalAlign || DEFAULT_VERTICAL_ALIGN,
         containerId: element.containerId ?? null,
-        originalText: element.originalText || text,
-        richText: normalizeRichText(element.richText),
+        originalText: latex || element.originalText || text,
+        ...(element.latex !== undefined && { latex }),
+        richText: latex ? undefined : normalizeRichText(element.richText),
         paragraphSpacing: isFiniteNumber(element.paragraphSpacing)
           ? Math.max(0, Math.min(10, element.paragraphSpacing))
           : undefined,
-        autoResize: element.autoResize ?? true,
+        autoResize: latex ? true : element.autoResize ?? true,
         lineHeight,
         labelPosition: isFiniteNumber(element.labelPosition)
           ? clamp(element.labelPosition, 0, 1)

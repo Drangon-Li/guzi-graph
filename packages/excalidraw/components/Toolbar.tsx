@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { KEYS } from "@excalidraw/common";
 
@@ -7,6 +7,10 @@ import { useTunnels } from "../context/tunnels";
 import { t } from "../i18n";
 
 import { TableInsertButton } from "../features/table/TableInsertButton";
+import {
+  FormulaInsertButton,
+  FormulaMenuItem,
+} from "../features/formula/FormulaMenuItem";
 
 import { useEditorInterface, useStylesPanelMode } from "./App";
 import { HintViewer } from "./HintViewer";
@@ -27,17 +31,24 @@ import {
   MagicIcon,
   mermaidLogoIcon,
   DotsIcon,
+  chevronRight,
 } from "./icons";
 import {
   ArrowToolButton,
+  AutoshapeToolButton,
+  BucketFillToolButton,
   DiamondToolButton,
   EllipseToolButton,
+  EmbeddableToolButton,
   EraserToolButton,
+  FrameToolButton,
   FreedrawToolPopover,
   FreedrawToolButton,
   getToolShortcut,
   HandToolButton,
+  ImageToolButton,
   isToolButtonDisabled,
+  LaserToolButton,
   LassoToolButton,
   LineToolButton,
   RectangleToolButton,
@@ -138,12 +149,13 @@ const ExtraToolsDropdown = ({
         onSelect={() => setIsExtraToolsMenuOpen(false)}
         className="App-toolbar__extra-tools-dropdown"
       >
+        <FormulaMenuItem app={app} />
         {UIOptions.tools?.image !== false && (
           <DropdownMenu.Item
             onSelect={() => app.setActiveTool({ type: "image" })}
             icon={ImageIcon}
             shortcut={KEYS["9"]}
-            data-testid="toolbar-image"
+            data-testid="menu-tool-image"
             selected={imageToolSelected}
             disabled={isToolButtonDisabled(app, "image")}
           >
@@ -154,7 +166,7 @@ const ExtraToolsDropdown = ({
           onSelect={() => app.setActiveTool({ type: "frame" })}
           icon={frameToolIcon}
           shortcut={KEYS.F.toLocaleUpperCase()}
-          data-testid="toolbar-frame"
+          data-testid="menu-tool-frame"
           selected={frameToolSelected}
           disabled={isToolButtonDisabled(app, "frame")}
         >
@@ -163,7 +175,7 @@ const ExtraToolsDropdown = ({
         <DropdownMenu.Item
           onSelect={() => app.setActiveTool({ type: "embeddable" })}
           icon={EmbedIcon}
-          data-testid="toolbar-embeddable"
+          data-testid="menu-tool-embeddable"
           selected={embeddableToolSelected}
           disabled={isToolButtonDisabled(app, "embeddable")}
         >
@@ -173,7 +185,7 @@ const ExtraToolsDropdown = ({
           onSelect={() => app.setActiveTool({ type: "autoshape" })}
           icon={drawShapeToolIcon}
           shortcut={getToolShortcut("autoshape")}
-          data-testid="toolbar-autoshape"
+          data-testid="menu-tool-autoshape"
           selected={drawShapeToolSelected}
           disabled={isToolButtonDisabled(app, "autoshape")}
         >
@@ -182,7 +194,7 @@ const ExtraToolsDropdown = ({
         <DropdownMenu.Item
           onSelect={() => app.setActiveTool({ type: "laser" })}
           icon={laserPointerToolIcon}
-          data-testid="toolbar-laser"
+          data-testid="menu-tool-laser"
           selected={laserToolSelected}
           shortcut={KEYS.K.toLocaleUpperCase()}
           disabled={isToolButtonDisabled(app, "laser")}
@@ -192,7 +204,7 @@ const ExtraToolsDropdown = ({
         <DropdownMenu.Item
           onSelect={() => app.setActiveTool({ type: "bucketfill" })}
           icon={bucketFillIcon}
-          data-testid="toolbar-bucketfill"
+          data-testid="menu-tool-bucketfill"
           selected={bucketFillToolSelected}
           shortcut={KEYS.B.toLocaleUpperCase()}
           disabled={isToolButtonDisabled(app, "bucketfill")}
@@ -203,7 +215,7 @@ const ExtraToolsDropdown = ({
           <DropdownMenu.Item
             onSelect={() => app.setActiveTool({ type: "lasso" })}
             icon={LassoIcon}
-            data-testid="toolbar-lasso"
+            data-testid="menu-tool-lasso"
             selected={lassoToolSelected}
             disabled={isToolButtonDisabled(app, "lasso")}
           >
@@ -217,7 +229,7 @@ const ExtraToolsDropdown = ({
         <DropdownMenu.Item
           onSelect={() => app.setOpenDialog({ name: "ttd", tab: "mermaid" })}
           icon={mermaidLogoIcon}
-          data-testid="toolbar-embeddable"
+          data-testid="menu-mermaid"
         >
           {t("toolBar.mermaidToExcalidraw")}
         </DropdownMenu.Item>
@@ -234,6 +246,134 @@ const ExtraToolsDropdown = ({
         )}
       </DropdownMenu.Content>
     </DropdownMenu>
+  );
+};
+
+const ToolbarScroll = ({
+  gap,
+  children,
+}: {
+  gap: number;
+  children: React.ReactNode;
+}) => {
+  const areaRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [directions, setDirections] = useState<
+    "none" | "left" | "right" | "both"
+  >("none");
+
+  useEffect(() => {
+    const area = areaRef.current!;
+    const row = scrollRef.current!;
+    const content = contentRef.current!;
+    const ownerWindow = row.ownerDocument.defaultView!;
+    const isRtl = () => ownerWindow.getComputedStyle(row).direction === "rtl";
+    const updateDirections = () => {
+      // Measure against the whole area, so the buttons can disappear again
+      // once all tools would fit without them.
+      if (content.offsetWidth <= area.clientWidth) {
+        setDirections("none");
+        return;
+      }
+      const range = row.scrollWidth - row.clientWidth;
+      const offset = isRtl() ? range + row.scrollLeft : row.scrollLeft;
+      const left = offset > 0.5;
+      const right = offset < range - 0.5;
+      setDirections(
+        left ? (right ? "both" : "left") : right ? "right" : "none",
+      );
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (
+        event.ctrlKey ||
+        event.metaKey ||
+        event.deltaX ||
+        !event.deltaY ||
+        row.scrollWidth <= row.clientWidth
+      ) {
+        return;
+      }
+
+      const { deltaMode, deltaY } = event;
+      const { WheelEvent } = ownerWindow;
+      const unit =
+        deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? 16
+          : deltaMode === WheelEvent.DOM_DELTA_PAGE
+          ? row.clientWidth
+          : 1;
+      const previous = row.scrollLeft;
+      row.scrollLeft += (isRtl() ? -1 : 1) * unit * deltaY;
+      if (row.scrollLeft !== previous) {
+        event.preventDefault();
+        hideTooltip();
+      }
+    };
+    const observer =
+      typeof ownerWindow.ResizeObserver === "function"
+        ? new ownerWindow.ResizeObserver(updateDirections)
+        : undefined;
+    observer?.observe(area);
+    observer?.observe(row);
+    observer?.observe(content);
+    updateDirections();
+    row.addEventListener("scroll", updateDirections, { passive: true });
+    row.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      observer?.disconnect();
+      row.removeEventListener("scroll", updateDirections);
+      row.removeEventListener("wheel", onWheel);
+    };
+  }, []);
+
+  const scroll = (direction: -1 | 1) => {
+    const row = scrollRef.current!;
+    const ownerWindow = row.ownerDocument.defaultView!;
+    const reducedMotion = ownerWindow.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    row.scrollBy({
+      left: direction * row.clientWidth * 0.8,
+      behavior: reducedMotion ? "instant" : "smooth",
+    });
+  };
+
+  return (
+    <div
+      className={clsx("App-toolbar__scroll-area", {
+        "App-toolbar__scroll-area--overflowing": directions !== "none",
+      })}
+      ref={areaRef}
+    >
+      {directions !== "none" && (
+        <button
+          className="App-toolbar__scroll-arrow App-toolbar__scroll-arrow--left"
+          type="button"
+          aria-label={t("toolBar.scrollToolsLeft")}
+          disabled={directions === "right"}
+          onClick={() => scroll(-1)}
+        >
+          {chevronRight}
+        </button>
+      )}
+      <div className="App-toolbar__scroll" ref={scrollRef}>
+        <Stack.Row className="App-toolbar__buttons" gap={gap} ref={contentRef}>
+          {children}
+        </Stack.Row>
+      </div>
+      {directions !== "none" && (
+        <button
+          className="App-toolbar__scroll-arrow App-toolbar__scroll-arrow--right"
+          type="button"
+          aria-label={t("toolBar.scrollToolsRight")}
+          disabled={directions === "left"}
+          onClick={() => scroll(1)}
+        >
+          {chevronRight}
+        </button>
+      )}
+    </div>
   );
 };
 
@@ -264,7 +404,7 @@ export const Toolbar = ({
   return (
     <Island
       padding={1}
-      className={clsx("App-toolbar", {
+      className={clsx("App-toolbar App-toolbar--scrollable", {
         "zen-mode": appState.zenModeEnabled,
         "App-toolbar--compact": isCompactStylesPanel,
       })}
@@ -277,7 +417,7 @@ export const Toolbar = ({
         app={app}
       />
       {heading}
-      <Stack.Row gap={isCompactStylesPanel ? 0.5 : 1}>
+      <ToolbarScroll gap={isCompactStylesPanel ? 0.5 : 1}>
         {/* in compact UI the pen mode button is rendered as a separate
             floating button below the compact actions menu */}
         {!isCompactStylesPanel && (
@@ -324,22 +464,29 @@ export const Toolbar = ({
           <FreedrawToolButton {...toolProps} />
         )}
         <TextToolButton {...toolProps} />
+        <FormulaInsertButton app={app} />
         <StickyNoteToolButton {...toolProps} />
         <TableInsertButton app={app} />
         <EraserToolButton {...toolProps} />
-
-        <div
-          className="App-toolbar__divider"
-          style={{ marginLeft: "0.25rem" }}
-        />
-
-        <ExtraToolsDropdown
-          app={app}
-          activeTool={activeTool}
-          setAppState={setAppState}
-          UIOptions={UIOptions}
-        />
-      </Stack.Row>
+        <div className="App-toolbar__divider" />
+        {UIOptions.tools?.image !== false && <ImageToolButton {...toolProps} />}
+        <FrameToolButton {...toolProps} />
+        <EmbeddableToolButton {...toolProps} />
+        <AutoshapeToolButton {...toolProps} />
+        <BucketFillToolButton {...toolProps} />
+        {!app.props.isCollaborating && <LaserToolButton {...toolProps} />}
+        {(isCompactStylesPanel ||
+          appState.preferredSelectionTool.type !== "lasso") && (
+          <LassoToolButton {...toolProps} hideShortcut />
+        )}
+      </ToolbarScroll>
+      <div className="App-toolbar__divider App-toolbar__divider--end" />
+      <ExtraToolsDropdown
+        app={app}
+        activeTool={activeTool}
+        setAppState={setAppState}
+        UIOptions={UIOptions}
+      />
     </Island>
   );
 };

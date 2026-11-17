@@ -1,5 +1,10 @@
 {
   "labels": {
+    "insertFormula": "Insert LaTeX formula",
+    "editFormula": "Edit LaTeX formula",
+    "formulaSource": "LaTeX source",
+    "formulaPreview": "Formula preview",
+    "invalidFormula": "Unable to render this formula. Check the syntax, commands, and characters.",
     "insertTable": "Insert table",
     "tableProperties": "Table details…",
     "subcanvasTitle": "Rename subcanvas…",
@@ -358,6 +363,8 @@
     "bucketfill": "Bucket fill",
     "hand": "Hand (panning tool)",
     "extraTools": "More tools",
+    "scrollToolsLeft": "Scroll toolbar left",
+    "scrollToolsRight": "Scroll toolbar right",
     "mermaidToExcalidraw": "Mermaid to Excalidraw",
     "convertElementType": "Toggle shape type"
   },

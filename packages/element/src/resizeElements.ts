@@ -365,6 +365,11 @@ export const resizeSingleTextElement = (
       nextHeight,
       (nextWidth / origElement.width) * origElement.height,
     );
+  } else if (
+    origElement.latex &&
+    (transformHandleType === "e" || transformHandleType === "w")
+  ) {
+    nextHeight = (nextWidth / origElement.width) * origElement.height;
   }
 
   const ruledElement = getRuledTextLineSpacing(origElement)
@@ -382,7 +387,11 @@ export const resizeSingleTextElement = (
     return;
   }
 
-  if (transformHandleType.includes("n") || transformHandleType.includes("s")) {
+  if (
+    origElement.latex ||
+    transformHandleType.includes("n") ||
+    transformHandleType.includes("s")
+  ) {
     const previousOrigin = pointFrom<GlobalPoint>(origElement.x, origElement.y);
     const ruledUpdate = ruledElement
       ? getRuledTextResizeUpdate(

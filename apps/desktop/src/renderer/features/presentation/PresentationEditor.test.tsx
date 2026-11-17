@@ -418,9 +418,14 @@ describe("presentation editor lifecycle", () => {
     ).toHaveLength(2);
   });
 
-  it("fits new pages before initialization and restores the saved camera on return", async () => {
+  it("shares the current page position and zoom across new and visited slides", async () => {
     const deck = createPresentation("first", "First");
-    deck.slides.push({ id: "second", title: "Second", scene: {} });
+    deck.slides.push({
+      id: "second",
+      title: "Second",
+      scene: {},
+      bounds: { x: 100, y: -50, width: deck.width, height: deck.height },
+    });
     const initializedCameras: unknown[] = [];
     const camera = (api: ExcalidrawImperativeAPI) => {
       const { scrollX, scrollY, zoom } = api.getAppState();
@@ -442,14 +447,29 @@ describe("presentation editor lifecycle", () => {
     );
     fireEvent.click(view.getByRole("button", { name: "Select Second" }));
     const second = await readyApi(first);
+    expect(camera(second)).toEqual({
+      scrollX: 23,
+      scrollY: 506,
+      zoom: { value: 0.75 },
+    });
     expect(initializedCameras[1]).toEqual(camera(second));
+    act(() =>
+      second.updateScene({
+        appState: {
+          scrollX: 71,
+          scrollY: 80,
+          zoom: { value: getNormalizedZoom(1.25) },
+        },
+      }),
+    );
     fireEvent.click(view.getByRole("button", { name: "Select First" }));
     const returned = await readyApi(second);
     expect(camera(returned)).toEqual({
-      scrollX: 123,
-      scrollY: 456,
-      zoom: { value: 0.75 },
+      scrollX: 171,
+      scrollY: 30,
+      zoom: { value: 1.25 },
     });
+    expect(initializedCameras[2]).toEqual(camera(returned));
   });
 
   it("retains the old canvas through rapid switches and resize until the target frame is ready", async () => {
@@ -489,8 +509,8 @@ describe("presentation editor lifecycle", () => {
     expect(overlay.hidden).toBe(false);
     const copy = overlay.querySelector("canvas")!;
     expect(copy).not.toBe(original);
-    expect(copy.width).toBe(original.width);
-    expect(copy.height).toBe(original.height);
+    expect([copy.width, copy.height]).toEqual([1000, 700]);
+    expect([original.width, original.height]).toEqual([0, 0]);
     drawFrame();
     expect(overlay.hidden).toBe(false);
     const staleFrames = [...frames.values()];

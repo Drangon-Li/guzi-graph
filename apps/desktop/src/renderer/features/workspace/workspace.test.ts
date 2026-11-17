@@ -14,6 +14,7 @@ import { Fonts } from "@excalidraw/excalidraw/fonts";
 
 import { FONT_FAMILY, getSystemFontId } from "@excalidraw/common";
 import { API } from "@excalidraw/excalidraw/tests/helpers/api";
+import { getNormalizedZoom } from "@excalidraw/excalidraw/scene/normalize";
 import {
   createTableData,
   createTableElements,
@@ -302,7 +303,10 @@ describe("desktop document workspace", () => {
     expect(desktop.openFiles).toHaveBeenCalledTimes(2);
   });
 
-  const addDocument = (hook: Awaited<ReturnType<typeof mount>>) => {
+  const addDocument = (
+    hook: Awaited<ReturnType<typeof mount>>,
+    createDocument = hook.result.current.newDocument,
+  ) => {
     let document!: CanvasDocument;
     let scene = snapshot();
     const api = {
@@ -326,7 +330,7 @@ describe("desktop document workspace", () => {
         hook.result.current.editorSave(document, scene, saveAs),
     } as unknown as ExcalidrawImperativeAPI;
     act(() => {
-      document = hook.result.current.newDocument();
+      document = createDocument();
       hook.result.current.initialize(document, api);
     });
     const edit = (version: number) =>
@@ -483,6 +487,58 @@ describe("desktop document workspace", () => {
       expect(background.document.api).toBe(background.api);
       expect(background.document.dirty).toBe(true);
       expect(hook.result.current.error).toBe("draft storage unavailable");
+    } finally {
+      hook.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("uses the camera saved at sleep when switching slides before wake finishes", async () => {
+    const hook = await mount();
+    vi.useFakeTimers();
+    try {
+      const background = addDocument(
+        hook,
+        () => hook.result.current.newPresentation()!,
+      );
+      const { document } = background;
+      const deck = document.presentation!;
+      const bounds = { width: deck.width, height: deck.height };
+      deck.slides[0].bounds = { x: 25, y: 30, ...bounds };
+      deck.slides.push({
+        id: "second",
+        title: "Second",
+        scene: {},
+        bounds: { x: 100, y: -50, ...bounds },
+      });
+      document.presentationViewport = {
+        pageOffsetX: 10,
+        pageOffsetY: 20,
+        zoom: { value: getNormalizedZoom(0.5) },
+      };
+      background.setState({
+        scrollX: 123,
+        scrollY: 456,
+        zoom: { value: getNormalizedZoom(0.75) },
+      });
+      addDocument(hook);
+      await advanceSleepClock(TAB_SLEEP_DELAY);
+      expect(document.asleep).toBe(true);
+
+      act(() => {
+        hook.result.current.activate(document.id);
+        background.setState({ isLoading: true });
+        document.api = background.api;
+        hook.result.current.selectSlide(document, "second");
+      });
+
+      expect(document.asleep).toBe(false);
+      expect(document.activeSlideId).toBe("second");
+      expect(document.initialData.appState).toMatchObject({
+        scrollX: 48,
+        scrollY: 536,
+        zoom: { value: 0.75 },
+      });
     } finally {
       hook.unmount();
       vi.useRealTimers();

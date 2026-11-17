@@ -1,5 +1,10 @@
 {
   "labels": {
+    "insertFormula": "插入 LaTeX 公式",
+    "editFormula": "编辑 LaTeX 公式",
+    "formulaSource": "LaTeX 源码",
+    "formulaPreview": "公式预览",
+    "invalidFormula": "无法渲染这段公式，请检查语法、命令和字符。",
     "insertTable": "插入表格",
     "tableProperties": "表格详细设置…",
     "subcanvasTitle": "修改子画布名称…",
@@ -343,10 +348,12 @@
     "magicframe": "线框图至代码",
     "embeddable": "嵌入网页",
     "laser": "激光笔",
-    "autoshape": "",
-    "bucketfill": "",
+    "autoshape": "手绘转形状",
+    "bucketfill": "区域填充",
     "hand": "抓手（平移工具）",
     "extraTools": "更多工具",
+    "scrollToolsLeft": "工具栏向左滚动",
+    "scrollToolsRight": "工具栏向右滚动",
     "mermaidToExcalidraw": "Mermaid 至 Excalidraw",
     "convertElementType": "切换形状种类"
   },

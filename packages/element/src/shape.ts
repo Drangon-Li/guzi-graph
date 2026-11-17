@@ -45,7 +45,7 @@ import type {
   SVGPathString,
 } from "@excalidraw/excalidraw/scene/types";
 
-import { elementWithCanvasCache } from "./renderElement";
+import { releaseElementCanvas } from "./renderElement";
 
 import {
   canBecomePolygon,
@@ -110,7 +110,7 @@ export class ShapeCache {
 
   public static delete = (element: ExcalidrawElement) => {
     ShapeCache.cache.delete(element);
-    elementWithCanvasCache.delete(element);
+    releaseElementCanvas(element);
   };
 
   public static destroy = () => {
@@ -143,7 +143,7 @@ export class ShapeCache {
       return cachedShape;
     }
 
-    elementWithCanvasCache.delete(element);
+    releaseElementCanvas(element);
 
     const shape = _generateElementShape(
       element,

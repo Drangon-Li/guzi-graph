@@ -66,6 +66,60 @@ describe("setElementRenderOverrides", () => {
     return { element: h.elements[0], onChange, rendering, submit, ...mounted };
   };
 
+  it("releases the editor's bitmaps even if a scene snapshot retains the elements", async () => {
+    mockBoundingClientRect({ width: 720, height: 480 });
+    const { element, unmount } = await setup();
+    const snapshot = h.app.api.getSceneElements();
+    const bitmap = Element.elementWithCanvasCache.get(element)!;
+    const viewport = h.app.canvas;
+    const interactiveCanvas = GlobalTestState.interactiveCanvas;
+    expect(bitmap.canvas.width).toBeGreaterThan(0);
+
+    const replacement = Element.newElementWith(element, { x: element.x + 1 });
+    API.setElements([replacement]);
+
+    expect(snapshot[0]).toBe(element);
+    expect(Element.elementWithCanvasCache.has(element)).toBe(false);
+    expect([bitmap.canvas.width, bitmap.canvas.height]).toEqual([0, 0]);
+    const replacementBitmap = Element.elementWithCanvasCache.get(replacement)!;
+    expect(replacementBitmap.canvas.width).toBeGreaterThan(0);
+
+    unmount();
+
+    expect(Element.elementWithCanvasCache.has(replacement)).toBe(false);
+    expect([
+      replacementBitmap.canvas.width,
+      replacementBitmap.canvas.height,
+    ]).toEqual([0, 0]);
+    expect([viewport.width, viewport.height]).toEqual([0, 0]);
+    expect([interactiveCanvas.width, interactiveCanvas.height]).toEqual([0, 0]);
+  });
+
+  it("restores the interactive canvas backing size on a Strict Mode remount", async () => {
+    mockBoundingClientRect({ width: 720, height: 480 });
+    const sizes: number[][] = [];
+    await render(
+      <React.StrictMode>
+        <Excalidraw
+          onMount={({ container }) => {
+            const canvas =
+              container!.querySelector<HTMLCanvasElement>(
+                "canvas.interactive",
+              )!;
+            sizes.push([canvas.width, canvas.height]);
+          }}
+        />
+      </React.StrictMode>,
+    );
+    expect(sizes).toHaveLength(2);
+    for (const [width, height] of sizes) {
+      expect(width).toBeGreaterThan(0);
+      expect(height).toBeGreaterThan(0);
+    }
+    const canvas = GlobalTestState.interactiveCanvas;
+    expect([canvas.width, canvas.height]).toEqual([720, 480]);
+  });
+
   it("copies and replaces the complete snapshot, including omitted fields", async () => {
     const { element, submit } = await setup();
     const value = { opacity: 25, offset: { x: 100, y: 20 } };

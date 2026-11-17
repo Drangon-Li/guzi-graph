@@ -108,7 +108,7 @@ export class AppWrap {
       (
         element,
       ): element is NonDeletedExcalidrawElement & ExcalidrawTextElement =>
-        isTextElement(element),
+        isTextElement(element) && !element.latex,
     );
     const labeledContainers = selectedElements.filter((element) =>
       hasBoundTextElement(element),

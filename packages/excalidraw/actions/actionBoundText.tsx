@@ -153,9 +153,7 @@ export const actionBindText = register({
     const selectedElements = app.scene.getSelectedElements(appState);
 
     if (selectedElements.length === 2) {
-      const textElement =
-        isTextElement(selectedElements[0]) ||
-        isTextElement(selectedElements[1]);
+      const textElement = selectedElements.find(isTextElement);
 
       let bindingContainer;
       if (isTextBindableContainer(selectedElements[0])) {
@@ -165,6 +163,7 @@ export const actionBindText = register({
       }
       if (
         textElement &&
+        !textElement.latex &&
         bindingContainer &&
         getBoundTextElement(
           bindingContainer,
@@ -193,7 +192,9 @@ export const actionBindText = register({
       container = selectedElements[0] as NonDeleted<ExcalidrawTextContainer>;
     }
 
-    return bindTextToContainer(elements, appState, textElement, container, app);
+    return textElement.latex
+      ? false
+      : bindTextToContainer(elements, appState, textElement, container, app);
   },
 });
 

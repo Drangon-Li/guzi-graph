@@ -1,0 +1,33 @@
+.excalidraw .formula-dialog {
+  display: grid;
+  gap: 12px;
+
+  textarea {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: auto;
+    margin-top: 8px;
+    padding: 8px;
+    font-family: monospace;
+    resize: vertical;
+  }
+
+  &__preview {
+    overflow: auto;
+    max-height: 10rem;
+    padding: 12px;
+    border: 1px solid var(--dialog-border-color);
+    border-radius: var(--border-radius-md);
+  }
+
+  &__error {
+    color: var(--color-danger);
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}
