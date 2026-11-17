@@ -510,6 +510,7 @@ export interface AppState {
     | { name: "commandPalette" }
     | { name: "settings" }
     | { name: "table"; elementId: ExcalidrawElement["id"] }
+    | { name: "formula"; elementId?: ExcalidrawElement["id"] }
     | { name: "subcanvasTitle"; elementId: ExcalidrawElement["id"] }
     | { name: "elementLinkSelector"; sourceElementId: ExcalidrawElement["id"] }
     | {

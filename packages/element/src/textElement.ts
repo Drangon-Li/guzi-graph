@@ -18,6 +18,7 @@ import { pointFrom, pointRotateRads, type Radians } from "@excalidraw/math";
 import type { ExtractSetType } from "@excalidraw/common/utility-types";
 
 import { layoutRichText } from "./richText";
+import { getFormulaDimensions, tryGetFormulaLayout } from "./formula";
 
 import {
   resetOriginalContainerCache,
@@ -60,6 +61,16 @@ export const redrawTextBoundingBox = (
   scene: Scene,
   renderEnvironment?: RenderEnvironment,
 ) => {
+  if (textElement.latex) {
+    const layout = tryGetFormulaLayout(textElement.latex);
+    if (layout) {
+      scene.mutateElement(
+        textElement,
+        getFormulaDimensions(layout, textElement.fontSize),
+      );
+      return;
+    }
+  }
   const elementsMap = scene.getNonDeletedElementsMap();
 
   if (container && isStickyNoteElement(container)) {

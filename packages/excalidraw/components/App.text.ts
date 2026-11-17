@@ -740,6 +740,16 @@ export class AppText {
           : null) ||
         this.getTextElementAtPosition(sceneX, sceneY);
 
+    if (existingTextElement?.latex) {
+      if (!existingTextElement.locked) {
+        this.app.setOpenDialog({
+          name: "formula",
+          elementId: existingTextElement.id,
+        });
+      }
+      return;
+    }
+
     const fontFamily =
       existingTextElement?.fontFamily || this.app.state.currentItemFontFamily;
 

@@ -401,12 +401,13 @@ body.excalidraw-cursor-resize * {
     pointer-events: none !important;
 
     & > * {
+      min-width: 0;
       pointer-events: var(--ui-pointerEvents);
     }
   }
 
   .App-menu_top {
-    grid-template-columns: 1fr 2fr 1fr;
+    grid-template-columns: 1fr minmax(0, max-content) 1fr;
     grid-gap: 1rem;
     align-items: flex-start;
     cursor: default;
@@ -417,7 +418,6 @@ body.excalidraw-cursor-resize * {
     }
 
     @media (min-width: 1536px) {
-      grid-template-columns: 1fr 1fr 1fr;
       grid-gap: 3rem;
     }
   }

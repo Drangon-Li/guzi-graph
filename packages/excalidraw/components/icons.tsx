@@ -74,6 +74,11 @@ const arrowheadPreviewIconProps: Opts = {
   height: 20,
 } as const;
 
+export const FormulaIcon = createIcon(<path d="M19 4H5l7 8-7 8h14" />, {
+  ...tablerIconProps,
+  strokeWidth: 1.8,
+});
+
 // -----------------------------------------------------------------------------
 
 // tabler-icons: present

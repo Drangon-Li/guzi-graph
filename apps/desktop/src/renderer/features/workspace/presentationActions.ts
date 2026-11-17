@@ -29,7 +29,11 @@ import {
   serializePresentation,
 } from "../presentation/model";
 
-import { apiSnapshot, isEditorReady } from "./editorSnapshot";
+import {
+  apiSnapshot,
+  capturePresentationViewport,
+  isEditorReady,
+} from "./editorSnapshot";
 import { pinDocumentSleep } from "./tabSleep";
 
 import type { Presentation } from "../presentation/model";
@@ -113,13 +117,19 @@ export const createPresentationActions = (
 
   const checkpointSlide = (document: CanvasDocument) => {
     commitText(document);
-    if (!document.activeSlideId || !isEditorReady(document.api)) {
+    const deck = document.presentation;
+    const slide = deck?.slides.find(
+      (item) => item.id === document.activeSlideId,
+    );
+    if (!deck || !slide || !isEditorReady(document.api)) {
       return;
     }
-    const previous = document.slideRuntime!.get(document.activeSlideId);
-    document.slideRuntime!.set(document.activeSlideId, {
+    const snapshot = document.getSnapshot?.() ?? apiSnapshot(document.api);
+    capturePresentationViewport(document, snapshot.appState);
+    const previous = document.slideRuntime!.get(slide.id);
+    document.slideRuntime!.set(slide.id, {
       children: previous?.children ?? new Map(),
-      snapshot: document.getSnapshot?.() ?? apiSnapshot(document.api),
+      snapshot,
       history: document.api.history.checkpoint?.(),
     });
   };
@@ -160,19 +170,21 @@ export const createPresentationActions = (
   };
 
   const selectSlide = (document: CanvasDocument, id: string) => {
-    const slide = document.presentation?.slides.find((item) => item.id === id);
-    if (!slide || document.activeSlideId === id || document.presenting) {
+    const deck = document.presentation;
+    const slide = deck?.slides.find((item) => item.id === id);
+    if (
+      !deck ||
+      !slide ||
+      document.activeSlideId === id ||
+      document.presenting
+    ) {
       return;
     }
     if (deferUntilImagesReady(document, () => selectSlide(document, id))) {
       return;
     }
     finishSlideNotesEdit(document);
-    if (
-      document.presentation!.slides.some(
-        (slide) => slide.id === document.activeSlideId,
-      )
-    ) {
+    if (deck.slides.some((slide) => slide.id === document.activeSlideId)) {
       checkpointSlide(document);
     }
     const cached = document.slideRuntime!.get(id);
@@ -182,10 +194,17 @@ export const createPresentationActions = (
       settingsRef.current.editorPreferences,
     );
     const scene = cached?.snapshot ?? slide.scene;
+    const bounds = getSlideBounds(slide, deck.width, deck.height);
+    const viewport = document.presentationViewport;
     document.initialData = {
       ...scene,
       appState: {
         ...scene.appState,
+        ...(viewport && {
+          scrollX: viewport.pageOffsetX - bounds.x,
+          scrollY: viewport.pageOffsetY - bounds.y,
+          zoom: viewport.zoom,
+        }),
         currentItemFontFamily: preferences.defaultFontFamily,
         fontRegistry: {
           ...scene.appState?.fontRegistry,

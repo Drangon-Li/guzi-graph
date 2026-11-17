@@ -317,7 +317,7 @@ export const PresentationEditor = ({
             viewModeEnabled={false}
             initialData={{ ...document.initialData, scrollToContent: false }}
             initialState={
-              runtime.snapshot
+              runtime.snapshot || document.presentationViewport
                 ? undefined
                 : {
                     viewport: {

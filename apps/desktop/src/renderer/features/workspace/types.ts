@@ -1,4 +1,5 @@
 import type {
+  AppState,
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
@@ -58,6 +59,11 @@ export interface CanvasDocument {
   presentationPastes?: { slideId: string; event?: ClipboardEvent }[];
   invalidateSubsceneHistory?: (ids: string[]) => void;
   slideRuntime?: Map<string, SlideRuntime>;
+  presentationViewport?: {
+    pageOffsetX: number;
+    pageOffsetY: number;
+    zoom: AppState["zoom"];
+  };
   presentationHistory?: PresentationHistory;
   id: string;
   path: string | null;

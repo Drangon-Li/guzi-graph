@@ -42,6 +42,7 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 - **本地工作区**：项目页、文件预览、多标签和文件夹分类；可设置默认画布目录，在多个文档之间切换。
 - **表格**：插入与编辑表格，增删行列、合并或拆分单元格，调整行高、列宽、文字与边框样式。
 - **富文本**：文字支持粗体、斜体、下划线、底色、有序与无序列表、缩进、行间距和段间距。
+- **LaTeX 公式**：从工具栏选择 Σ，输入 LaTeX 并预览。公式随画布或演示文稿保存，双击可重新编辑源码。
 - **子画布**：将便签转为子画布图钉，进入独立画布展开细节，通过导航返回上层；子画布与主画布保存在同一文件中。
 - **自定义偏好**：设置默认字体、字号与颜色快捷项，可添加本机字体；配置绘图样式预设及其快捷键，选中元素时应用样式，未选中时切换绘图工具。
 - **桌面体验**：中英文界面、浅色／深色／跟随系统主题，支持调整工具提示和选区悬浮工具栏。
@@ -54,9 +55,9 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 
 > **Windows 更新节奏调整**：Windows 版本暂缓日常持续迭代，后续按大版本规划推进，仅在关键版本集中更新。**Windows 开发仍将继续**，但不再跟随每个小版本同步发布。具体更新内容以对应版本的发布说明为准。
 
-当前桌面发布为 [v0.8.9](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.9)，提供 **macOS Apple Silicon（arm64）0.8.9** 和 **Windows 10 / 11 x64 0.8.5** 安装包。本次更新 macOS，Windows 沿用此前发布的 0.8.5。暂未提供 Intel Mac 或 Linux 安装包。
+当前桌面发布为 [v0.8.10](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.10)，提供 **macOS Apple Silicon（arm64）0.8.10** 和 **Windows 10 / 11 x64 0.8.5** 安装包。本次更新 macOS，Windows 沿用此前发布的 0.8.5。暂未提供 Intel Mac 或 Linux 安装包。
 
-1. 在 [v0.8.9 Releases](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.9) 下载 `Excalidraw-Guzi-0.8.9-arm64.dmg`。
+1. 在 [v0.8.10 Releases](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.10) 下载 `Excalidraw-Guzi-0.8.10-arm64.dmg`。
 2. 打开 DMG，将 **Excalidraw-Guzi.app** 拖入「应用程序」。
 3. 从「应用程序」启动，也可用它打开 `.excalidraw` 文件。
 

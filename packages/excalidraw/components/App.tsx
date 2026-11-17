@@ -173,6 +173,7 @@ import {
   isMeasureTextSupported,
   getMinTextElementWidth,
   ShapeCache,
+  releaseElementCanvas,
   resolveElementRenderState,
   getRenderElementWithPositionOverride,
   getSelectedGroupIdForElement,
@@ -377,6 +378,7 @@ import {
   isGridModeEnabled,
 } from "../snapping";
 import { Renderer } from "../scene/Renderer";
+import { cancelStaticSceneThrottle } from "../renderer/staticScene";
 import {
   type SetViewportOptions,
   getViewportForZoomWithScrollConstraints,
@@ -401,6 +403,7 @@ import { useAppStateValue } from "../hooks/useAppStateValue";
 
 import { TablePropertiesDialog } from "../features/table/TableActions";
 import { SubcanvasTitleDialog } from "../features/subcanvas/SubcanvasTitleDialog";
+import { FormulaDialog } from "../features/formula/FormulaDialog";
 
 import ConvertElementTypePopup, {
   getConversionTypeFromElements,
@@ -2746,6 +2749,12 @@ class App extends React.Component<AppProps, AppState> {
                                 }
                               />
                             )}
+                            {this.state.openDialog?.name === "formula" && (
+                              <FormulaDialog
+                                app={this}
+                                elementId={this.state.openDialog.elementId}
+                              />
+                            )}
                             {this.state.openDialog?.name ===
                               "subcanvasTitle" && (
                               <SubcanvasTitleDialog
@@ -3979,6 +3988,14 @@ class App extends React.Component<AppProps, AppState> {
     this.api = this.createExcalidrawAPI();
     this.host.sync();
 
+    // Strict Mode may remount with the canvas node that teardown resized.
+    const interactiveCanvas = this.interactiveCanvas;
+    if (interactiveCanvas?.width === 0 && interactiveCanvas.height === 0) {
+      const scale = this.ownerWindow.devicePixelRatio;
+      interactiveCanvas.width = this.state.width * scale;
+      interactiveCanvas.height = this.state.height * scale;
+    }
+
     this.excalidrawContainerValue.container =
       this.excalidrawContainerRef.current;
 
@@ -4027,7 +4044,22 @@ class App extends React.Component<AppProps, AppState> {
       });
     }
 
-    this.scene.onUpdate(this.triggerRender);
+    let previousElements = this.scene.getNonDeletedElementsMap();
+    this.scene.onUpdate(() => {
+      const nextElements = this.scene.getNonDeletedElementsMap();
+      if (previousElements !== nextElements) {
+        // A queued frame holding the old element identities could cache them again.
+        cancelStaticSceneThrottle(this.canvas);
+        const environment = this.renderEnvironment;
+        for (const [id, element] of previousElements) {
+          if (nextElements.get(id) !== element) {
+            releaseElementCanvas(element, environment);
+          }
+        }
+        previousElements = nextElements;
+      }
+      this.triggerRender();
+    });
     this.addEventListeners();
 
     if (this.props.autoFocus && this.excalidrawContainerRef.current) {
@@ -4111,6 +4143,18 @@ class App extends React.Component<AppProps, AppState> {
     this.host.destroy();
 
     this.renderer.destroy(this.canvas);
+    // A slide or sleeping tab can keep the scene's element objects alive.
+    // Their cached bitmaps belong to this editor's render environment.
+    const environment = this.renderEnvironment;
+    for (const element of this.scene.getElementsIncludingDeleted()) {
+      releaseElementCanvas(element, environment);
+    }
+    this.canvas.width = 0;
+    this.canvas.height = 0;
+    if (this.interactiveCanvas) {
+      this.interactiveCanvas.width = 0;
+      this.interactiveCanvas.height = 0;
+    }
     this.scene.destroy();
     this.scene = new Scene();
     this.fonts = new Fonts(this.scene, this.ownerDocument);

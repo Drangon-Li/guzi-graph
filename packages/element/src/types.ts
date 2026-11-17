@@ -270,6 +270,7 @@ export type ExcalidrawTextElement = _ExcalidrawElementBase &
     verticalAlign: VerticalAlign;
     containerId: ExcalidrawTextContainer["id"] | null;
     originalText: string;
+    latex?: string;
     richText?: import("./richText").RichTextDocument;
     /** Space between paragraphs, in em. */
     paragraphSpacing?: number;

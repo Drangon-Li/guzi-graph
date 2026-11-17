@@ -17,9 +17,11 @@ import {
   STICKY_NOTE_SHADOW_OPACITY,
 } from "@excalidraw/common";
 import {
+  createFormulaSvg,
   getRichTextFontSize,
   getRichTextUnderline,
   layoutRichText,
+  tryGetFormulaLayout,
 } from "@excalidraw/element";
 import { normalizeLink, toValidURL } from "@excalidraw/common";
 import {
@@ -926,6 +928,32 @@ const renderElementToSvg = (
             offsetY || 0
           }) rotate(${degree} ${cx} ${cy})`,
         );
+        const formula = element.latex
+          ? tryGetFormulaLayout(element.latex)
+          : null;
+        if (formula) {
+          node.appendChild(
+            createFormulaSvg(
+              formula,
+              svgRoot.ownerDocument,
+              element.width,
+              element.height,
+              applyDarkModeFilter(
+                element.strokeColor,
+                renderConfig.theme === THEME.DARK,
+              ),
+            ),
+          );
+          const clipped = maybeWrapNodesInFrameClipPath(
+            element,
+            root,
+            [node],
+            renderConfig.frameRendering,
+            elementsMap,
+          );
+          addToRoot(clipped || node, element);
+          break;
+        }
         if (element.richText) {
           const layout = layoutRichText(
             element,

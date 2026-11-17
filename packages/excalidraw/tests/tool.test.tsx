@@ -266,6 +266,8 @@ describe("props.activeTool (forced tool)", () => {
     );
     expect(queryToolButton("freedraw")!.disabled).toBe(true);
     expect(queryToolButton("eraser")!.disabled).toBe(true);
+    expect(queryToolButton("frame")!.disabled).toBe(true);
+    expect(queryToolButton("laser")!.disabled).toBe(true);
     expect(queryToolButton("lock")).toBe(null);
 
     // the extra-tools dropdown items are disabled as well
@@ -275,12 +277,12 @@ describe("props.activeTool (forced tool)", () => {
       )!,
     );
     const frameItem = document.querySelector<HTMLButtonElement>(
-      '[data-testid="toolbar-frame"]',
+      '[data-testid="menu-tool-frame"]',
     );
     expect(frameItem).not.toBe(null);
     expect(frameItem!.disabled).toBe(true);
     const laserItem = document.querySelector<HTMLButtonElement>(
-      '[data-testid="toolbar-laser"]',
+      '[data-testid="menu-tool-laser"]',
     );
     expect(laserItem!.disabled).toBe(true);
 
@@ -352,26 +354,41 @@ describe("props.activeTool (forced tool)", () => {
 describe("toolbar", () => {
   const queryTool = (type: string) =>
     document.querySelector<HTMLButtonElement>(
-      `[data-testid="toolbar-${type}"]`,
+      `.App-toolbar__scroll [data-testid="toolbar-${type}"]`,
+    );
+  const queryMenuTool = (type: string) =>
+    document.querySelector<HTMLButtonElement>(
+      `[data-testid="menu-tool-${type}"]`,
     );
   const openExtraTools = () =>
     fireEvent.click(
       document.querySelector(".App-toolbar__extra-tools-trigger")!,
     );
 
-  it("keeps the image tool in the extra-tools menu", async () => {
+  it("includes the extra drawing tools in the scrollable toolbar", async () => {
     await render(<Excalidraw />);
-    expect(queryTool("image")).toBe(null);
+    for (const type of [
+      "image",
+      "frame",
+      "embeddable",
+      "autoshape",
+      "bucketfill",
+      "laser",
+      "lasso",
+    ]) {
+      expect(queryTool(type)).not.toBe(null);
+    }
 
     openExtraTools();
-    expect(queryTool("image")).not.toBe(null);
-    expect(queryTool("frame")).not.toBe(null);
+    expect(queryMenuTool("image")).not.toBe(null);
+    expect(queryMenuTool("frame")).not.toBe(null);
   });
 
   it("hides the image tool through UIOptions.tools.image", async () => {
     await render(<Excalidraw UIOptions={{ tools: { image: false } }} />);
     openExtraTools();
     expect(queryTool("image")).toBe(null);
+    expect(queryMenuTool("image")).toBe(null);
     expect(queryTool("frame")).not.toBe(null);
   });
 

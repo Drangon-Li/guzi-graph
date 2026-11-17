@@ -53,6 +53,7 @@ import {
   layoutRichText,
 } from "./richText";
 import { getCreatePath, getRenderEnvironment } from "./renderEnvironment";
+import { drawFormulaOnCanvas, tryGetFormulaLayout } from "./formula";
 import { getElementAbsoluteCoords, getElementBounds } from "./bounds";
 import { drawImageBorder } from "./imageBorder";
 import {
@@ -747,6 +748,23 @@ const drawElementOnCanvas = (
     }
     default: {
       if (isTextElement(element)) {
+        const formula = element.latex
+          ? tryGetFormulaLayout(element.latex)
+          : null;
+        if (formula) {
+          drawFormulaOnCanvas(
+            context,
+            formula,
+            element.width,
+            element.height,
+            applyDarkModeFilter(
+              element.strokeColor,
+              renderConfig.theme === THEME.DARK,
+            ),
+            renderConfig.renderEnvironment,
+          );
+          break;
+        }
         if (element.richText) {
           const layout = layoutRichText(
             element,
@@ -857,6 +875,19 @@ export const elementWithCanvasCache = new WeakMap<
   ExcalidrawElementWithCanvas
 >();
 
+export const releaseElementCanvas = (
+  element: ExcalidrawElement,
+  environment?: RenderEnvironment,
+) => {
+  const bitmap = elementWithCanvasCache.get(element);
+  if (!bitmap || (environment && bitmap.environment !== environment)) {
+    return;
+  }
+  elementWithCanvasCache.delete(element);
+  bitmap.canvas.width = 0;
+  bitmap.canvas.height = 0;
+};
+
 const generateElementWithCanvas = (
   element: NonDeletedExcalidrawElement,
   elementsMap: NonDeletedSceneElementsMap,
@@ -898,6 +929,7 @@ const generateElementWithCanvas = (
       return null;
     }
 
+    releaseElementCanvas(element);
     elementWithCanvasCache.set(element, elementWithCanvas);
 
     return elementWithCanvas;

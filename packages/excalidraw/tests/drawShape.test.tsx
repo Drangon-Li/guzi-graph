@@ -799,7 +799,7 @@ describe("autoshape tool activation", () => {
 
     fireEvent.click(
       document.querySelector<HTMLButtonElement>(
-        '[data-testid="toolbar-autoshape"]',
+        '[data-testid="menu-tool-autoshape"]',
       )!,
     );
 
@@ -851,7 +851,11 @@ describe("autoshape compact toolbar placement", () => {
         return menu!;
       });
       expect(
-        extraTools.querySelector('[data-testid="toolbar-autoshape"]'),
+        extraTools.querySelector(
+          formFactor === "tablet"
+            ? '[data-testid="menu-tool-autoshape"]'
+            : '[data-testid="toolbar-autoshape"]',
+        ),
       ).not.toBeNull();
     },
   );

@@ -20,6 +20,7 @@ import type { Radians } from "@excalidraw/math";
 import type { MarkOptional, Merge } from "@excalidraw/common/utility-types";
 
 import { layoutRichText, richTextFromPlainText } from "./richText";
+import { getFormulaDimensions, tryGetFormulaLayout } from "./formula";
 import { isSubcanvasPin } from "./subcanvasPin";
 import {
   getElementAbsoluteCoords,
@@ -581,6 +582,16 @@ export const refreshTextDimensions = (
 ) => {
   if (textElement.isDeleted) {
     return;
+  }
+  if (textElement.latex) {
+    const layout = tryGetFormulaLayout(textElement.latex);
+    if (layout) {
+      return {
+        text: textElement.latex,
+        autoResize: true,
+        ...getFormulaDimensions(layout, textElement.fontSize),
+      };
+    }
   }
   if (textElement.richText) {
     let width = container

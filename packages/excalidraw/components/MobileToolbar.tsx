@@ -6,6 +6,10 @@ import { KEYS, capitalizeString } from "@excalidraw/common";
 import { t } from "../i18n";
 
 import { useTunnels } from "../context/tunnels";
+import {
+  FormulaInsertButton,
+  FormulaMenuItem,
+} from "../features/formula/FormulaMenuItem";
 
 import DropdownMenu from "./dropdownMenu/DropdownMenu";
 import { ToolPopover } from "./ToolPopover";
@@ -109,9 +113,10 @@ export const MobileToolbar = ({ app, setAppState }: MobileToolbarProps) => {
   const MIN_WIDTH = MIN_TOOLS * WIDTH + (MIN_TOOLS - 1) * GAP;
   const ADDITIONAL_WIDTH = WIDTH + GAP;
 
-  const showTextToolOutside = toolbarWidth >= MIN_WIDTH + 1 * ADDITIONAL_WIDTH;
-  const showImageToolOutside = toolbarWidth >= MIN_WIDTH + 2 * ADDITIONAL_WIDTH;
-  const showFrameToolOutside = toolbarWidth >= MIN_WIDTH + 3 * ADDITIONAL_WIDTH;
+  const showFormulaToolOutside = toolbarWidth >= MIN_WIDTH + ADDITIONAL_WIDTH;
+  const showTextToolOutside = toolbarWidth >= MIN_WIDTH + 2 * ADDITIONAL_WIDTH;
+  const showImageToolOutside = toolbarWidth >= MIN_WIDTH + 3 * ADDITIONAL_WIDTH;
+  const showFrameToolOutside = toolbarWidth >= MIN_WIDTH + 4 * ADDITIONAL_WIDTH;
 
   const extraTools: readonly typeof activeTool.type[] = (
     [
@@ -221,6 +226,7 @@ export const MobileToolbar = ({ app, setAppState }: MobileToolbarProps) => {
 
       {/* Text Tool */}
       {showTextToolOutside && <TextToolButton {...toolProps} hideShortcut />}
+      {showFormulaToolOutside && <FormulaInsertButton app={app} />}
 
       {/* Image */}
       {showImageToolOutside && <ImageToolButton {...toolProps} hideShortcut />}
@@ -259,6 +265,7 @@ export const MobileToolbar = ({ app, setAppState }: MobileToolbarProps) => {
           className="App-toolbar__extra-tools-dropdown"
           align="start"
         >
+          <FormulaMenuItem app={app} />
           {!showTextToolOutside && (
             <DropdownMenu.Item
               onSelect={() => app.setActiveTool({ type: "text" })}

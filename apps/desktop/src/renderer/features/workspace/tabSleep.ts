@@ -3,7 +3,7 @@ import { flushSync } from "react-dom";
 
 import { isCanvasBusy } from "../plugins/canvasCommands";
 
-import { apiSnapshot } from "./editorSnapshot";
+import { apiSnapshot, capturePresentationViewport } from "./editorSnapshot";
 
 import type { DocumentActions } from "./documents";
 import type { WorkspaceState } from "./state";
@@ -138,6 +138,7 @@ export const useTabSleep = (
           },
         };
         if (document.activeSlideId) {
+          capturePresentationViewport(document, snapshot.appState);
           document.slideRuntime!.set(document.activeSlideId, {
             ...checkpoint,
             snapshot: initialData,
