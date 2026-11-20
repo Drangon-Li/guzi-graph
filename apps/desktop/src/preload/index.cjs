@@ -3,7 +3,9 @@ const { contextBridge, ipcRenderer } = require("electron");
 const invoke = (name, ...args) =>
   ipcRenderer.invoke(`desktop:${name}`, ...args);
 const listen = (name, callback) => {
-  if (typeof callback !== "function") throw new TypeError("需要回调函数。");
+  if (typeof callback !== "function") {
+    throw new TypeError("需要回调函数。");
+  }
   const listener = (_event, value) => callback(value);
   ipcRenderer.on(`desktop:${name}`, listener);
   return () => ipcRenderer.removeListener(`desktop:${name}`, listener);
@@ -37,6 +39,18 @@ contextBridge.exposeInMainWorld("desktop", {
   respondPluginRequest: (response) =>
     ipcRenderer.send("desktop:plugin-response", response),
   setPluginHostReady: (ready) => invoke("set-plugin-host-ready", ready),
+  getCloudState: () => invoke("cloud-get-state"),
+  requestCloudCode: (input) => invoke("cloud-request-code", input),
+  cloudLogin: (input) => invoke("cloud-login", input),
+  cloudLoginWithCode: (input) => invoke("cloud-login-code", input),
+  cloudRegister: (input) => invoke("cloud-register", input),
+  cloudLogout: () => invoke("cloud-logout"),
+  setCloudEnabled: (enabled) => invoke("cloud-set-enabled", enabled),
+  listCloudTokens: () => invoke("cloud-list-tokens"),
+  createCloudToken: (input) => invoke("cloud-create-token", input),
+  revokeCloudToken: (id) => invoke("cloud-revoke-token", id),
+  openCloudAccount: () => invoke("cloud-open-account"),
+  onCloudState: (callback) => listen("cloud-state", callback),
   getSettings: () => invoke("get-settings"),
   updateSettings: (settings) => invoke("update-settings", settings),
   chooseDirectory: () => invoke("choose-directory"),

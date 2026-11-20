@@ -1123,6 +1123,101 @@ body,
     color: var(--desktop-muted);
     font-size: 12px;
   }
+
+  .desktop-cloud-tabs {
+    display: inline-flex;
+    gap: 4px;
+    margin-top: 8px;
+    padding: 4px;
+    border-radius: 10px;
+    background: var(--color-surface-low);
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 6px 14px;
+      color: var(--desktop-muted);
+      background: transparent;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    button[aria-selected="true"] {
+      color: inherit;
+      background: var(--island-bg-color);
+      font-weight: 600;
+    }
+  }
+  .desktop-market-card .desktop-cloud-form {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    max-width: 520px;
+
+    > label {
+      display: grid;
+      grid-template-columns: 96px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+    > label > span {
+      color: var(--desktop-muted);
+    }
+    p {
+      margin: 0 0 0 106px;
+    }
+    .desktop-plugin-copy-actions {
+      margin-top: 6px;
+    }
+  }
+  .desktop-market-card .desktop-cloud-form > .desktop-cloud-check {
+    display: flex;
+    gap: 8px;
+  }
+  .desktop-cloud-form input[type="text"],
+  .desktop-cloud-form input[type="email"],
+  .desktop-cloud-form input[type="password"] {
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--default-border-color);
+    color: inherit;
+    background: var(--color-surface-lowest);
+    font: inherit;
+    font-size: 13px;
+  }
+  .desktop-cloud-check input {
+    accent-color: var(--color-primary);
+  }
+  .desktop-cloud-tokens {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+
+    li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 0;
+      border-top: 1px solid var(--default-border-color);
+      font-size: 13px;
+    }
+    small {
+      color: var(--desktop-muted);
+    }
+  }
+  .desktop-cloud-created pre {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  .desktop-market-card .desktop-cloud-warning[role="alert"] {
+    color: inherit;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--color-surface-low);
+  }
 }
 
 .excalidraw.theme--dark .desktop-market .desktop-plugin-status.is-running {

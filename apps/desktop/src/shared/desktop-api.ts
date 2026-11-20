@@ -143,7 +143,85 @@ export interface DesktopUpdateState {
   reason?: string;
 }
 
+export type CloudConnection =
+  | "signed_out"
+  | "disabled"
+  | "idle"
+  | "connecting"
+  | "online"
+  | "reconnecting"
+  | "error";
+
+export interface CloudUser {
+  id: string;
+  username: string;
+  nickname: string;
+  email: string | null;
+}
+
+export interface CloudState {
+  signedIn: boolean;
+  user: CloudUser | null;
+  enabled: boolean;
+  connection: CloudConnection;
+  error: string;
+  deviceId: string;
+  endpoint: string;
+  accountUrl: string;
+}
+
+export interface CloudToken {
+  id: string;
+  name: string;
+  hint: string;
+  deviceId: string | null;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+
+export interface CreatedCloudToken {
+  token: string;
+  endpoint: string;
+  item: CloudToken;
+  configs: {
+    claudeCode: string;
+    json: string;
+    codex: string;
+    codexEnv: string;
+    envName: string;
+  };
+}
+
 export interface DesktopAPI {
+  getCloudState(): Promise<CloudState>;
+  requestCloudCode(input: {
+    purpose: "register" | "login" | "reset";
+    email: string;
+  }): Promise<{ cooldownSeconds: number }>;
+  cloudLogin(input: {
+    identifier: string;
+    password: string;
+  }): Promise<CloudState>;
+  cloudLoginWithCode(input: {
+    email: string;
+    code: string;
+  }): Promise<CloudState>;
+  cloudRegister(input: {
+    username: string;
+    password: string;
+    email: string;
+    code: string;
+  }): Promise<CloudState>;
+  cloudLogout(): Promise<CloudState>;
+  setCloudEnabled(enabled: boolean): Promise<CloudState>;
+  listCloudTokens(): Promise<CloudToken[]>;
+  createCloudToken(input: {
+    name: string;
+    bindDevice?: boolean;
+  }): Promise<CreatedCloudToken>;
+  revokeCloudToken(id: string): Promise<{ ok: true }>;
+  openCloudAccount(): Promise<void>;
+  onCloudState(callback: (state: CloudState) => void): () => void;
   getUpdateState(): Promise<DesktopUpdateState>;
   checkStartupUpdate(): Promise<DesktopUpdateState | null>;
   checkForUpdates(): Promise<DesktopUpdateState>;
