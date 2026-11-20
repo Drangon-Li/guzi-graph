@@ -75,7 +75,10 @@ test("host failures become MCP tool errors instead of transport errors", async (
   assert.equal(result.isError, true);
   assert.match(JSON.stringify(result.content), /HOST_UNAVAILABLE/);
   const stat = await fs.stat(path.join(userData, "guzi-cloud.json"));
-  assert.equal(stat.mode & 0o777, 0o600);
+  assert.equal(stat.isFile(), true);
+  if (process.platform !== "win32") {
+    assert.equal(stat.mode & 0o777, 0o600);
+  }
 });
 
 test("session tokens are sealed with safeStorage when it is available", () => {
