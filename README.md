@@ -48,6 +48,7 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 - **桌面体验**：中英文界面、浅色／深色／跟随系统主题，支持调整工具提示和选区悬浮工具栏。
 - **演示文稿**：多页手绘幻灯片、拖拽排序与放映；底部缩略图跟随界面主题，可从右下角添加或编辑每页备注，悬浮预览内容；支持保存、重开和整份 PDF 导出。
 - **Market 与 MCP**：在设置中启停内置 MCP，让 Codex 等客户端创建、编辑、保存和导出画布与演示文稿；通过 MCP 开发自己的插件，再在 Market 导入、启用或停用，默认采用手绘风格。
+- **谷子云端 MCP**：登录谷子账号后，AI 客户端用固定地址 `https://mcp.guzilab.com/graph` 和个人 token 即可连接，不需要开启本机 MCP 端口。调用转回这台电脑执行，画布仍只保存在本机。
 - **图片复制**：复制选中元素后，粘贴到聊天或文档时呈现图片，在画板内部粘贴仍可编辑，并保留关联子画布。
 - **多种导出**：PNG、SVG、PDF，以及带图片附件的 JSON / Markdown 结构化导出。
 
@@ -55,9 +56,9 @@ https://github.com/user-attachments/assets/261fd3b2-ab8a-4186-8e3d-64b3bbf11995
 
 > **Windows 更新节奏调整**：Windows 版本暂缓日常持续迭代，后续按大版本规划推进，仅在关键版本集中更新。**Windows 开发仍将继续**，但不再跟随每个小版本同步发布。具体更新内容以对应版本的发布说明为准。
 
-当前桌面发布为 [v0.8.10](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.10)，提供 **macOS Apple Silicon（arm64）0.8.10** 和 **Windows 10 / 11 x64 0.8.5** 安装包。本次更新 macOS，Windows 沿用此前发布的 0.8.5。暂未提供 Intel Mac 或 Linux 安装包。
+当前桌面发布为 [v0.8.11](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.11)，提供 **macOS Apple Silicon（arm64）0.8.11** 和 **Windows 10 / 11 x64 0.8.5** 安装包。本次更新 macOS，Windows 沿用此前发布的 0.8.5。暂未提供 Intel Mac 或 Linux 安装包。
 
-1. 在 [v0.8.10 Releases](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.10) 下载 `Excalidraw-Guzi-0.8.10-arm64.dmg`。
+1. 在 [v0.8.11 Releases](https://github.com/Drangon-Li/guzi-graph/releases/tag/v0.8.11) 下载 `Excalidraw-Guzi-0.8.11-arm64.dmg`。
 2. 打开 DMG，将 **Excalidraw-Guzi.app** 拖入「应用程序」。
 3. 从「应用程序」启动，也可用它打开 `.excalidraw` 文件。
 
@@ -76,6 +77,12 @@ v0.8.0 和 v0.8.1 的应用内检查、下载更新可用，但“安装并重�
 3. 保持谷子白板运行，即可让客户端创建画布、绘图、操作多页演示文稿、放映、导出和保存。新文件保存到设置的默认工作目录，已有文件沿用原位置。
 
 MCP 服务仅监听本机回环地址，并校验访问令牌；关闭设置中的开关后会停止服务。连接后可通过 `get_plugin_development_guide` 和 `get_plugin_api_schema` 获取开发指南与接口定义，校验并安装自己的 JavaScript 插件包。也可以在 Market 导入 `.json` 插件包；新安装或更新的插件默认停用，需要在 Market 手动启用。
+
+### 谷子云端 MCP（不开放本机端口）
+
+1. 在 **设置 → 内置 MCP → 谷子云端 MCP** 登录谷子账号（没有账号可直接用邮箱验证码注册）。
+2. 在同一处新建 token，按弹出的配置把客户端连到 `https://mcp.guzilab.com/graph`。token 只显示一次，也可在 [account.guzilab.com](https://account.guzilab.com) 管理和删除。
+3. 保持谷子白板运行。调用经谷子云端转发到这台电脑执行；应用未运行或关闭云端开关时，调用直接返回离线提示。云端只转发调用，不保存画布内容。
 
 ## 开始使用与经典示例
 

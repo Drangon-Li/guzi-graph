@@ -1,11 +1,13 @@
 const http = require("node:http");
 const { randomUUID } = require("node:crypto");
+
 const { McpServer, createMcpHandler } = require("@modelcontextprotocol/server");
 const {
   localhostHostValidation,
   localhostOriginValidation,
 } = require("@modelcontextprotocol/node");
 const { z } = require("zod/v4");
+
 const { createRequestListener } = require("./mcp-http.cjs");
 const { MAX_MESSAGE_BYTES } = require("./plugins.cjs");
 
@@ -466,62 +468,67 @@ function toToolResult(response) {
   };
 }
 
-function createCanvasHandler(execute) {
-  return createMcpHandler(
-    () => {
-      const server = new McpServer(
-        { name: "guzi-canvas", version: "1.0.0" },
-        { instructions: HAND_DRAWN_STYLE_INSTRUCTIONS },
-      );
-      for (const [command, inputSchema] of Object.entries(toolSchemas)) {
-        const readOnly = [
-          "get_capabilities",
-          "list_canvases",
-          "read_canvas",
-          "export_canvas",
-          "read_presentation",
-          "export_presentation",
-          "get_plugin_development_guide",
-          "get_plugin_api_schema",
-          "list_plugins",
-          "get_plugin",
-          "validate_plugin",
-        ].includes(command);
-        server.registerTool(
-          command,
-          {
-            description: descriptions[command],
-            inputSchema,
-            annotations: {
-              readOnlyHint: readOnly,
-              destructiveHint: [
-                "apply_operations",
-                "update_presentation",
-                "control_canvas",
-                "update_plugin",
-                "run_plugin_command",
-              ].includes(command),
-              openWorldHint: false,
-            },
-          },
-          async (args) => {
-            try {
-              return toToolResult(await execute(command, args));
-            } catch (error) {
-              return toToolResult({
-                error: {
-                  code: error.code || "HOST_UNAVAILABLE",
-                  message: error.message || "画布工作区不可用。",
-                },
-              });
-            }
-          },
-        );
-      }
-      return server;
-    },
-    { maxRequestBodySize: MAX_MESSAGE_BYTES, maxSubscriptions: 1 },
+// The single definition of the canvas MCP surface. The local HTTP service and the
+// Guzi cloud link (main process, in-memory transport) both serve this server so
+// tool schemas, validation and result shaping can never drift apart.
+function createCanvasServer(execute) {
+  const server = new McpServer(
+    { name: "guzi-canvas", version: "1.0.0" },
+    { instructions: HAND_DRAWN_STYLE_INSTRUCTIONS },
   );
+  for (const [command, inputSchema] of Object.entries(toolSchemas)) {
+    const readOnly = [
+      "get_capabilities",
+      "list_canvases",
+      "read_canvas",
+      "export_canvas",
+      "read_presentation",
+      "export_presentation",
+      "get_plugin_development_guide",
+      "get_plugin_api_schema",
+      "list_plugins",
+      "get_plugin",
+      "validate_plugin",
+    ].includes(command);
+    server.registerTool(
+      command,
+      {
+        description: descriptions[command],
+        inputSchema,
+        annotations: {
+          readOnlyHint: readOnly,
+          destructiveHint: [
+            "apply_operations",
+            "update_presentation",
+            "control_canvas",
+            "update_plugin",
+            "run_plugin_command",
+          ].includes(command),
+          openWorldHint: false,
+        },
+      },
+      async (args) => {
+        try {
+          return toToolResult(await execute(command, args));
+        } catch (error) {
+          return toToolResult({
+            error: {
+              code: error.code || "HOST_UNAVAILABLE",
+              message: error.message || "画布工作区不可用。",
+            },
+          });
+        }
+      },
+    );
+  }
+  return server;
+}
+
+function createCanvasHandler(execute) {
+  return createMcpHandler(() => createCanvasServer(execute), {
+    maxRequestBodySize: MAX_MESSAGE_BYTES,
+    maxSubscriptions: 1,
+  });
 }
 
 async function startService({ port, token, execute }) {
@@ -581,10 +588,11 @@ function runUtility(parentPort) {
   let service;
   const execute = (command, args) =>
     new Promise((resolve) => {
-      if (pending.size >= 32)
+      if (pending.size >= 32) {
         return resolve({
           error: { code: "BUSY", message: "待处理请求过多。" },
         });
+      }
       const requestId = randomUUID();
       const timer = setTimeout(() => {
         pending.delete(requestId);
@@ -628,7 +636,9 @@ function runUtility(parentPort) {
       }
     } else if (message?.type === "response") {
       const request = pending.get(message.requestId);
-      if (!request) return;
+      if (!request) {
+        return;
+      }
       pending.delete(message.requestId);
       clearTimeout(request.timer);
       request.resolve(message);
@@ -642,11 +652,14 @@ function runUtility(parentPort) {
   });
 }
 
-if (process.parentPort) runUtility(process.parentPort);
+if (process.parentPort) {
+  runUtility(process.parentPort);
+}
 
 module.exports = {
   startService,
   createCanvasHandler,
+  createCanvasServer,
   toolSchemas,
   toToolResult,
 };

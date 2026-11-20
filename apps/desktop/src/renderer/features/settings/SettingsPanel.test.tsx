@@ -112,6 +112,14 @@ it("opens the built-in MCP settings category", async () => {
     ...document.defaultView!.desktop,
     getPlugins,
     onPluginState: () => () => {},
+    getCloudState: vi.fn().mockResolvedValue({
+      signedIn: false,
+      connection: "signed_out",
+      enabled: false,
+      error: "",
+      endpoint: "https://mcp.guzilab.com/graph",
+    }),
+    onCloudState: () => () => {},
   } as unknown as DesktopAPI;
   render(
     <SettingsPanel

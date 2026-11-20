@@ -12,7 +12,9 @@ const {
   Menu,
   nativeTheme,
   net,
+  powerMonitor,
   protocol,
+  safeStorage,
   session,
   shell,
   utilityProcess,
@@ -84,6 +86,7 @@ let closeFinalizing = false;
 let rendererUnavailable = false;
 let nativeClosePending = false;
 let updates;
+let cloud;
 let startupUpdateChecked = false;
 let filesConsumerReady = false;
 const pendingPaths = new Set();
@@ -157,7 +160,9 @@ function requestClose(quit = false) {
 }
 
 async function confirmUnavailableClose() {
-  if (nativeClosePending || closeFinalizing) return;
+  if (nativeClosePending || closeFinalizing) {
+    return;
+  }
   nativeClosePending = true;
   const attempt = closeAttempt;
   const choice = await dialog.showMessageBox(
@@ -171,9 +176,13 @@ async function confirmUnavailableClose() {
       noLink: true,
     }),
   );
-  if (attempt !== closeAttempt) return;
+  if (attempt !== closeAttempt) {
+    return;
+  }
   nativeClosePending = false;
-  if (!rendererUnavailable) return;
+  if (!rendererUnavailable) {
+    return;
+  }
   if (choice.response === 1) {
     await approveClose();
   } else {
@@ -193,7 +202,9 @@ function resetClose() {
 }
 
 async function approveClose() {
-  if (closeFinalizing) return;
+  if (closeFinalizing) {
+    return;
+  }
   closeFinalizing = true;
   const attempt = closeAttempt;
   if (updates?.isInstallPending()) {
@@ -201,7 +212,9 @@ async function approveClose() {
     closeApproved = true;
     quitApproved = true;
     const installed = await updates.confirmInstall();
-    if (attempt !== closeAttempt) return;
+    if (attempt !== closeAttempt) {
+      return;
+    }
     if (!installed) {
       resetClose();
       return;
@@ -223,7 +236,9 @@ async function approveClose() {
     }
     return;
   }
-  if (attempt !== closeAttempt) return;
+  if (attempt !== closeAttempt) {
+    return;
+  }
   closeApproved = true;
   if (quitRequested) {
     quitApproved = true;
@@ -452,7 +467,9 @@ function installIPC() {
     });
   handle("get-update-state", () => updates.getState());
   handle("check-startup-update", () => {
-    if (startupUpdateChecked) return null;
+    if (startupUpdateChecked) {
+      return null;
+    }
     startupUpdateChecked = true;
     return updates.checkForUpdates();
   });
@@ -461,8 +478,9 @@ function installIPC() {
   handle("install-update", () => updates.installUpdate());
   handle("get-plugins", () => plugins.list());
   handle("get-user-plugins", () => {
-    if (userPlugins.store.configurationError)
+    if (userPlugins.store.configurationError) {
       throw new Error(userPlugins.store.configurationError);
+    }
     return userPlugins.list();
   });
   handle("install-user-plugin", (plugin, overwrite = false) =>
@@ -483,6 +501,29 @@ function installIPC() {
   );
   handle("set-plugin-host-ready", async (ready) => {
     await setHostsReady(ready);
+  });
+  const cloudLink = () => {
+    if (!cloud) {
+      throw new Error(t("云端 MCP 未能启动，请重启应用后再试。"));
+    }
+    return cloud.link;
+  };
+  handle("cloud-get-state", () => cloudLink().getState());
+  handle("cloud-request-code", (input) => cloudLink().requestCode(input));
+  handle("cloud-login", (input) => cloudLink().login(input));
+  handle("cloud-login-code", (input) => cloudLink().loginWithCode(input));
+  handle("cloud-register", (input) => cloudLink().register(input));
+  handle("cloud-logout", () => cloudLink().logout());
+  handle("cloud-set-enabled", (enabled) => cloudLink().setEnabled(enabled));
+  handle("cloud-list-tokens", () => cloudLink().listTokens());
+  handle("cloud-create-token", (input) => cloudLink().createToken(input));
+  handle("cloud-revoke-token", (id) => cloudLink().revokeToken(id));
+  handle("cloud-open-account", async () => {
+    const url = new URL(cloudLink().getState().accountUrl);
+    if (url.protocol !== "https:" && app.isPackaged) {
+      return;
+    }
+    await shell.openExternal(url.href);
   });
   ipcMain.on("desktop:plugin-response", (event, response) => {
     try {
@@ -519,7 +560,9 @@ function installIPC() {
         properties: ["openFile"],
       }),
     );
-    if (result.canceled || !result.filePaths[0]) return null;
+    if (result.canceled || !result.filePaths[0]) {
+      return null;
+    }
     const candidate = result.filePaths[0];
     const file = await fs.open(candidate, "r");
     try {
@@ -731,7 +774,9 @@ function installIPC() {
     } catch {
       return;
     }
-    if (rendererUnavailable) return;
+    if (rendererUnavailable) {
+      return;
+    }
     updates.cancelInstall();
     resetClose();
   });
@@ -1040,6 +1085,7 @@ if (!hasLock) {
       requestClose(true);
     } else {
       void setHostsReady(false);
+      void cloud?.dispose();
     }
   });
   app.on("window-all-closed", () => {
@@ -1057,12 +1103,40 @@ if (!hasLock) {
         userData: app.getPath("userData"),
         fork: (...args) => utilityProcess.fork(...args),
         send: (channel, value) => {
-          if (window && !window.isDestroyed())
+          if (window && !window.isDestroyed()) {
             window.webContents.send(`desktop:${channel}`, value);
+          }
         },
         handleCommand: (command, args) =>
           userPlugins.handleCommand(command, args),
       }).initialize();
+      // 云端 MCP 是可选能力：任何初始化失败都只影响设置里的云端卡片，不能阻止应用启动。
+      // 开发构建可以用环境变量指向本机的 guzi-cloud；发布版固定使用 guzilab.com。
+      try {
+        const { createGraphCloud } = require("./cloud.cjs");
+        cloud = await createGraphCloud({
+          userData: app.getPath("userData"),
+          appVersion: app.getVersion(),
+          platform: process.platform,
+          plugins,
+          safeStorage,
+          send: (channel, value) => {
+            if (window && !window.isDestroyed()) {
+              window.webContents.send(`desktop:${channel}`, value);
+            }
+          },
+          accountOrigin: app.isPackaged
+            ? undefined
+            : process.env.GUZI_CLOUD_ACCOUNT_ORIGIN,
+          mcpOrigin: app.isPackaged
+            ? undefined
+            : process.env.GUZI_CLOUD_MCP_ORIGIN,
+        }).initialize();
+        powerMonitor.on("resume", () => cloud?.link.nudge());
+      } catch (error) {
+        cloud = null;
+        console.error("Guzi cloud MCP failed to start:", error);
+      }
       userPlugins = new UserPlugins({
         store: await new UserPluginStore({
           userData: app.getPath("userData"),
@@ -1076,8 +1150,9 @@ if (!hasLock) {
           }),
         execute: (...args) => plugins.execute(...args),
         send: (value) => {
-          if (window && !window.isDestroyed())
+          if (window && !window.isDestroyed()) {
             window.webContents.send("desktop:user-plugin-state", value);
+          }
         },
       });
       secureSession();

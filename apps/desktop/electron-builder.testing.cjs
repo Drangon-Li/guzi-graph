@@ -12,6 +12,10 @@ module.exports = {
   extraMetadata: {
     ...build.extraMetadata,
     buildChannel: "test",
+    // app.name comes from the packaged package.json, and macOS safeStorage uses
+    // the "<app.name> Safe Storage" Keychain item, so rename it here too or this
+    // build shares (and gets blocked by) the stable app's Keychain item.
+    productName: "Excalidraw-Guzi Test",
   },
   mac: {
     ...build.mac,

@@ -1,6 +1,7 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { randomBytes, randomUUID } = require("node:crypto");
+
 const { atomicWrite } = require("./storage.cjs");
 const { DEVELOPMENT_COMMANDS } = require("./plugin-development.cjs");
 
@@ -99,7 +100,9 @@ class PluginHost {
       }
       for (const [id, runtime] of this.runtimes) {
         const saved = configuration.plugins[id];
-        if (!saved) continue;
+        if (!saved) {
+          continue;
+        }
         if (
           typeof saved.enabled !== "boolean" ||
           !validPort(saved.port) ||
@@ -113,8 +116,9 @@ class PluginHost {
         runtime.state.token = saved.token;
       }
     } catch (error) {
-      if (error.code === "ENOENT") missing = true;
-      else {
+      if (error.code === "ENOENT") {
+        missing = true;
+      } else {
         this.configurationError =
           "插件配置损坏或无法读取；请修复或移走 plugins.json 后重启应用。";
         for (const runtime of this.runtimes.values()) {
@@ -125,8 +129,9 @@ class PluginHost {
         return this;
       }
     }
-    for (const { state } of this.runtimes.values())
+    for (const { state } of this.runtimes.values()) {
       state.status = state.enabled ? "starting" : "disabled";
+    }
     if (missing) {
       try {
         await this.persist();
@@ -151,7 +156,9 @@ class PluginHost {
     this.send("plugin-state", this.list());
   }
   async persist() {
-    if (this.configurationError) throw new Error(this.configurationError);
+    if (this.configurationError) {
+      throw new Error(this.configurationError);
+    }
     const plugins = Object.fromEntries(
       [...this.runtimes].map(
         ([
@@ -172,16 +179,24 @@ class PluginHost {
   }
   runtime(id) {
     const runtime = this.runtimes.get(id);
-    if (!runtime) throw new Error("未知插件。");
+    if (!runtime) {
+      throw new Error("未知插件。");
+    }
     return runtime;
   }
 
   setEnabled(id, enabled) {
     const runtime = this.runtime(id);
-    if (typeof enabled !== "boolean") throw new Error("插件状态无效。");
+    if (typeof enabled !== "boolean") {
+      throw new Error("插件状态无效。");
+    }
     return this.serialize(async () => {
-      if (this.configurationError) throw new Error(this.configurationError);
-      if (runtime.state.enabled === enabled) return this.list();
+      if (this.configurationError) {
+        throw new Error(this.configurationError);
+      }
+      if (runtime.state.enabled === enabled) {
+        return this.list();
+      }
       const previous = runtime.state.enabled;
       runtime.state.enabled = enabled;
       try {
@@ -190,8 +205,11 @@ class PluginHost {
         runtime.state.enabled = previous;
         throw error;
       }
-      if (enabled) await this.start(runtime);
-      else await this.stop(runtime);
+      if (enabled) {
+        await this.start(runtime);
+      } else {
+        await this.stop(runtime);
+      }
       this.emit();
       return this.list();
     });
@@ -207,8 +225,12 @@ class PluginHost {
       throw new Error("端口必须是 1024 到 65535 的整数。");
     }
     return this.serialize(async () => {
-      if (this.configurationError) throw new Error(this.configurationError);
-      if (runtime.state.port === configuration.port) return this.list();
+      if (this.configurationError) {
+        throw new Error(this.configurationError);
+      }
+      if (runtime.state.port === configuration.port) {
+        return this.list();
+      }
       const previous = runtime.state.port;
       runtime.state.port = configuration.port;
       try {
@@ -225,15 +247,19 @@ class PluginHost {
   }
 
   setReady(ready) {
-    if (typeof ready !== "boolean") throw new Error("插件工作区状态无效。");
+    if (typeof ready !== "boolean") {
+      throw new Error("插件工作区状态无效。");
+    }
     this.ready = ready;
     // Cancel synchronously before renderer initialization can resume.
-    if (!ready)
+    if (!ready) {
       for (const runtime of new Set([
         ...this.runtimes.values(),
         ...[...this.pending.values()].map((pending) => pending.runtime),
-      ]))
+      ])) {
         this.cancelRequests(runtime);
+      }
+    }
     return this.serialize(async () => {
       await Promise.all(
         [...this.runtimes.values()].map((runtime) =>
@@ -245,10 +271,15 @@ class PluginHost {
   }
 
   async start(runtime) {
-    if (this.configurationError || !this.ready || !runtime.state.enabled)
+    if (this.configurationError || !this.ready || !runtime.state.enabled) {
       return;
-    if (runtime.stopping) await runtime.stopping;
-    if (runtime.child) return;
+    }
+    if (runtime.stopping) {
+      await runtime.stopping;
+    }
+    if (runtime.child) {
+      return;
+    }
     const { state, manifest } = runtime;
     state.status = "starting";
     delete state.error;
@@ -270,7 +301,9 @@ class PluginHost {
       }, 15000);
       runtime.startupTimer.unref?.();
       child.on("message", (message) => {
-        if (runtime.child !== child || runtime.stoppingChild) return;
+        if (runtime.child !== child || runtime.stoppingChild) {
+          return;
+        }
         if (message?.type === "ready") {
           clearTimeout(runtime.startupTimer);
           state.status = "running";
@@ -285,11 +318,15 @@ class PluginHost {
                 : "插件服务启动失败。";
             this.emit();
           });
-        } else if (message?.type === "request") this.forward(runtime, message);
+        } else if (message?.type === "request") {
+          this.forward(runtime, message);
+        }
       });
       child.on("exit", () => {
         clearTimeout(runtime.startupTimer);
-        if (runtime.child !== child) return;
+        if (runtime.child !== child) {
+          return;
+        }
         runtime.child = null;
         delete state.endpoint;
         this.cancelRequests(runtime);
@@ -314,7 +351,9 @@ class PluginHost {
 
   cancelRequests(runtime) {
     for (const [requestId, pending] of this.pending) {
-      if (pending.runtime !== runtime) continue;
+      if (pending.runtime !== runtime) {
+        continue;
+      }
       clearTimeout(pending.timer);
       this.pending.delete(requestId);
       this.send("plugin-request-cancelled", requestId);
@@ -327,18 +366,25 @@ class PluginHost {
   }
 
   stop(runtime) {
-    if (!runtime)
+    if (!runtime) {
       return Promise.all(
         [...this.runtimes.values()].map((item) => this.stop(item)),
       );
-    if (runtime.stopping) return runtime.stopping;
+    }
+    if (runtime.stopping) {
+      return runtime.stopping;
+    }
     clearTimeout(runtime.startupTimer);
     this.cancelRequests(runtime);
     delete runtime.state.endpoint;
-    if (this.configurationError) return Promise.resolve();
+    if (this.configurationError) {
+      return Promise.resolve();
+    }
     delete runtime.state.error;
     runtime.state.status = runtime.state.enabled ? "starting" : "disabled";
-    if (!runtime.child) return Promise.resolve();
+    if (!runtime.child) {
+      return Promise.resolve();
+    }
     runtime.stoppingChild = true;
     const child = runtime.child;
     runtime.stopping = new Promise((resolve) => {
@@ -367,25 +413,30 @@ class PluginHost {
       typeof requestId !== "string" ||
       requestId.length > 100 ||
       this.pending.has(requestId)
-    )
+    ) {
       return;
+    }
     const reject = (code, text) =>
       runtime.child?.postMessage({
         type: "response",
         requestId,
         error: failure(code, text),
       });
-    if (!this.ready || runtime.stoppingChild)
+    if (!this.ready || runtime.stoppingChild) {
       return reject("HOST_UNAVAILABLE", "画布工作区尚未就绪。");
+    }
     if (
       !runtime.manifest.commands.includes(command) ||
       !args ||
       typeof args !== "object" ||
       Array.isArray(args) ||
       Buffer.byteLength(JSON.stringify(args)) > MAX_MESSAGE_BYTES
-    )
+    ) {
       return reject("INVALID_ARGUMENTS", "命令参数无效或过大。");
-    if (this.pending.size >= 32) return reject("BUSY", "待处理请求过多。");
+    }
+    if (this.pending.size >= 32) {
+      return reject("BUSY", "待处理请求过多。");
+    }
     const timer = setTimeout(() => {
       this.pending.delete(requestId);
       this.send("plugin-request-cancelled", requestId);
@@ -418,13 +469,18 @@ class PluginHost {
     });
   }
 
-  execute(command, args, signal) {
+  // In-process entry for callers inside the main process. User plugins only get
+  // canvas commands; the Guzi cloud link passes includeManagement so it exposes
+  // exactly the same tool surface as the local MCP service.
+  execute(command, args, signal, { includeManagement = false } = {}) {
     return new Promise((resolve, reject) => {
-      const requestId = `user-${randomUUID()}`;
+      const requestId = `${
+        includeManagement ? "cloud" : "user"
+      }-${randomUUID()}`;
       const runtime = {
         manifest: {
           commands: [...COMMANDS].filter(
-            (name) => !MANAGEMENT_COMMANDS.has(name),
+            (name) => includeManagement || !MANAGEMENT_COMMANDS.has(name),
           ),
         },
         child: {
@@ -437,7 +493,9 @@ class PluginHost {
                   response.error,
                 ),
               );
-            } else resolve(response.result);
+            } else {
+              resolve(response.result);
+            }
           },
         },
       };
@@ -454,9 +512,13 @@ class PluginHost {
   }
 
   respond(response) {
-    if (!response || typeof response.requestId !== "string") return;
+    if (!response || typeof response.requestId !== "string") {
+      return;
+    }
     const pending = this.pending.get(response.requestId);
-    if (!pending) return;
+    if (!pending) {
+      return;
+    }
     if (Buffer.byteLength(JSON.stringify(response)) > 24 * 1024 * 1024) {
       response = {
         requestId: response.requestId,

@@ -199,6 +199,18 @@ describe("desktop document workspace", () => {
     cancelPlugin = () => {};
     desktop = {
       importPdf: vi.fn().mockResolvedValue(null),
+      getCloudState: vi.fn(),
+      requestCloudCode: vi.fn(),
+      cloudLogin: vi.fn(),
+      cloudLoginWithCode: vi.fn(),
+      cloudRegister: vi.fn(),
+      cloudLogout: vi.fn(),
+      setCloudEnabled: vi.fn(),
+      listCloudTokens: vi.fn().mockResolvedValue([]),
+      createCloudToken: vi.fn(),
+      revokeCloudToken: vi.fn(),
+      openCloudAccount: vi.fn(),
+      onCloudState: vi.fn(() => () => {}),
       getUpdateState: vi.fn(),
       checkStartupUpdate: vi.fn().mockResolvedValue(null),
       checkForUpdates: vi.fn(),

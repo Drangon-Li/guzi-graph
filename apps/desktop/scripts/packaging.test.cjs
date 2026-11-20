@@ -25,6 +25,8 @@ test("isolated channels use target Electron downloads and distinct Windows names
     const channel = require(path.join("..", filename));
     assert.equal(channel.electronDist, undefined);
     assert.notEqual(channel.appId, build.appId);
+    assert.equal(channel.extraMetadata.productName, channel.productName);
+    assert.notEqual(channel.extraMetadata.productName, build.productName);
     assert.notEqual(channel.win.artifactName, build.win.artifactName);
     assert.deepEqual(channel.fileAssociations, []);
     assert.equal(channel.publish, null);

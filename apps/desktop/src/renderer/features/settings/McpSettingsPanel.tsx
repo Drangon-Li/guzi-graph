@@ -4,6 +4,8 @@ import { Button } from "@excalidraw/excalidraw";
 
 import { translate } from "../../shared/i18n/i18n";
 
+import { CloudMcpCard } from "./CloudMcpCard";
+
 import type { DesktopLanguage } from "../../shared/i18n/i18n";
 import type { PluginState } from "../../../shared/plugins";
 
@@ -417,6 +419,7 @@ export const McpSettingsPanel = ({
   }, [root]);
   return (
     <div className="desktop-market desktop-mcp-settings">
+      <CloudMcpCard root={root} language={language} />
       {loading && <p role="status">{t("正在读取 MCP 设置…")}</p>}
       {error && <p role="alert">{t("无法读取内置 MCP，请重新打开设置。")}</p>}
       {!loading && !error && plugins.length === 0 && (

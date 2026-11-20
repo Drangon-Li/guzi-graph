@@ -63,7 +63,9 @@ async function harness(
       },
     };
     app.emit("before-quit", event);
-    if (!event.prevented) app.quitCompleted++;
+    if (!event.prevented) {
+      app.quitCompleted++;
+    }
   };
   const calls = {
     commands: [],
@@ -148,7 +150,9 @@ async function harness(
         },
       };
       this.emit("close", event);
-      if (!event.prevented) this.emit("closed");
+      if (!event.prevented) {
+        this.emit("closed");
+      }
       return event;
     }
   }
@@ -159,6 +163,12 @@ async function harness(
     ipcMain,
     protocol,
     session: { defaultSession: browserSession },
+    powerMonitor: new EventEmitter(),
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: (text) => Buffer.from(`sealed:${text}`),
+      decryptString: (buffer) => buffer.toString().replace(/^sealed:/, ""),
+    },
     dialog: {
       showSaveDialog: async (...args) => {
         calls.saveDialog = args.at(-1);
@@ -190,10 +200,13 @@ async function harness(
       },
     },
     shell: {
+      openExternal: async (url) => calls.opened?.push(url),
       showItemInFolder: () => {},
       trashItem: async (target) => {
         calls.trash.push(target);
-        if (calls.trashError) throw calls.trashError;
+        if (calls.trashError) {
+          throw calls.trashError;
+        }
         await fs.rename(target, `${target}.trashed-fixture`);
       },
     },
@@ -273,6 +286,24 @@ async function harness(
     nativeTheme,
   };
 }
+
+test("cloud MCP IPC starts signed out with the fixed guzilab endpoint and opens the account page", async (t) => {
+  const { invoke, calls, base } = await harness(t);
+  const state = await invoke("cloud-get-state");
+  assert.equal(state.signedIn, false);
+  assert.equal(state.connection, "signed_out");
+  assert.equal(state.endpoint, "https://mcp.guzilab.com/graph");
+  assert.match(state.deviceId, /^[A-Za-z0-9_-]{8,64}$/);
+  const saved = JSON.parse(
+    await fs.readFile(path.join(base, "userData", "guzi-cloud.json"), "utf8"),
+  );
+  assert.equal(saved.deviceId, state.deviceId);
+  assert.equal(saved.session, null);
+  await assert.rejects(invoke("cloud-list-tokens"), /请先登录/);
+  calls.opened = [];
+  await invoke("cloud-open-account");
+  assert.deepEqual(calls.opened, ["https://account.guzilab.com/"]);
+});
 
 test("Windows native controls follow app and system themes while macOS retains traffic lights", async (t) => {
   const mac = await harness(t);
@@ -441,16 +472,18 @@ test("development network allowlist only accepts explicitly selected loopback po
   for (const url of [
     "http://127.0.0.1:4317/src/main.tsx",
     "ws://127.0.0.1:4317/",
-  ])
+  ]) {
     calls.beforeRequest({ url }, (result) =>
       assert.equal(result.cancel, false),
     );
+  }
   for (const url of [
     "http://127.0.0.1:9999/",
     "http://example.com:4317/",
     "http://localhost:4317/",
-  ])
+  ]) {
     calls.beforeRequest({ url }, (result) => assert.equal(result.cancel, true));
+  }
 });
 
 test("clipboard permission only allows trusted main document and needed operations", async (t) => {
@@ -557,7 +590,9 @@ test("renderer crash permits native close and quit confirmation with cancellatio
   for (const quit of [false, true]) {
     const h = await harness(t);
     await h.invoke("take-pending-files");
-    if (quit) await h.invoke("update-settings", { language: "en" });
+    if (quit) {
+      await h.invoke("update-settings", { language: "en" });
+    }
     let closed = 0;
     h.window.on("closed", () => closed++);
     const commands = () =>
@@ -619,7 +654,9 @@ test("renderer recovery restores saved-close confirmation and ignores a stale na
       respond = resolve;
     });
     h.window.webContents.emit("render-process-gone");
-    if (pendingClose) h.app.quit();
+    if (pendingClose) {
+      h.app.quit();
+    }
     h.window.webContents.emit(
       "did-start-navigation",
       {},
@@ -628,7 +665,9 @@ test("renderer recovery restores saved-close confirmation and ignores a stale na
       true,
     );
     await h.invoke("take-pending-files");
-    if (!pendingClose) h.app.quit();
+    if (!pendingClose) {
+      h.app.quit();
+    }
     await new Promise(setImmediate);
     assert.equal(
       h.calls.commands
@@ -1170,11 +1209,12 @@ test("new IPC endpoints reject foreign senders before text, removal or PDF side 
     "save-pdf",
     "export-pdf",
     "save-export",
-  ])
+  ]) {
     await assert.rejects(
       handlers.get(`desktop:${endpoint}`)({ ...event, sender: {} }),
       /拒绝/,
     );
+  }
   assert.deepEqual(calls.textCommands, []);
   assert.deepEqual(calls.trash, []);
   assert.deepEqual(calls.printWindows, []);
@@ -1281,11 +1321,12 @@ test("Markdown export rejects unsafe paths and symlinks and preserves unrelated 
     " name",
     "name\0",
     "name:",
-  ])
+  ]) {
     await assert.rejects(
       invoke("save-export", { ...request, assetDirectory: unsafe }),
       /路径无效/,
     );
+  }
   await assert.rejects(
     invoke("save-export", {
       ...request,
@@ -1373,11 +1414,12 @@ test("JSON structured export writes relative image attachments and other export 
     await fs.readFile(path.join(base, "drawing-assets", "image.png"), "utf8"),
     "image-fixture",
   );
-  for (const extension of ["png", "svg", "excalidraw", "excalidrawlib"])
+  for (const extension of ["png", "svg", "excalidraw", "excalidrawlib"]) {
     await assert.rejects(
       invoke("save-export", { ...request, extension }),
       /无效/,
     );
+  }
 });
 
 test("PDF IPC translates invalid PDF request errors to the selected language", async (t) => {
@@ -1451,7 +1493,9 @@ for (const outcome of ["up-to-date", "error"]) {
       updateAdapter: ({ emit }) => ({
         async check() {
           checks++;
-          if (outcome === "error") throw new Error("Offline");
+          if (outcome === "error") {
+            throw new Error("Offline");
+          }
           emit({ status: outcome });
         },
       }),

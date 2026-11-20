@@ -115,5 +115,6 @@
   "下载更新失败，请稍后重试。": "Could not download the update. Please try again later.",
   "安装更新失败，请重新下载后重试。": "Could not install the update. Download it again and retry.",
   "导入 PDF": "Import PDF",
-  "请选择不超过 128 MB 的 PDF 文件。": "Choose a PDF file no larger than 128 MB."
+  "请选择不超过 128 MB 的 PDF 文件。": "Choose a PDF file no larger than 128 MB.",
+  "云端 MCP 未能启动，请重启应用后再试。": "Cloud MCP failed to start. Restart the app and try again."
 }

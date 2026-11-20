@@ -21,6 +21,16 @@ const plugin: PluginState = {
   status: "disabled",
   port: 27831,
 };
+const signedOutCloud = {
+  signedIn: false,
+  user: null,
+  enabled: false,
+  connection: "signed_out",
+  error: "",
+  deviceId: "device-1",
+  endpoint: "https://mcp.guzilab.com/graph",
+  accountUrl: "https://account.guzilab.com",
+};
 const roots: HTMLElement[] = [];
 const mount = (ownerDocument = document) => {
   const root = ownerDocument.createElement("div");
@@ -43,6 +53,9 @@ const mount = (ownerDocument = document) => {
       .fn()
       .mockResolvedValue([{ ...plugin, enabled: true, status: "starting" }]),
     configurePlugin: vi.fn().mockResolvedValue([{ ...plugin, port: 27832 }]),
+    getCloudState: vi.fn().mockResolvedValue(signedOutCloud),
+    onCloudState: vi.fn(() => () => {}),
+    listCloudTokens: vi.fn().mockResolvedValue([]),
   };
   ownerDocument.defaultView!.desktop = desktop as unknown as DesktopAPI;
   const view = render(<McpSettingsPanel root={root} language="en" />, {
